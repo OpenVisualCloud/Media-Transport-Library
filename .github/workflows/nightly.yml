@@ -29,7 +29,7 @@ on:
         type: boolean
         default: true
       gtest_cases:
-        description: 'Regex of profiles.yaml run names to run, for example ^Dma (empty = all)'
+        description: 'Regex of gtest_runner.py run names to run, for example ^dma_cvt_va (empty = all)'
         required: false
         type: string
       pytest:
@@ -114,7 +114,7 @@ jobs:
         id: build
         uses: ./.github/actions/build-artifacts
 
-  # ── gtest on each NIC, sharded by profiles.yaml groups ──
+  # ── gtest on each NIC, sharded by gtest_runner.py groups ──
   run-gtest:
     needs: build
     if: ${{ inputs.gtest }}
@@ -191,7 +191,7 @@ jobs:
         # st20p takes about 6 h on one runner, so 4 shards spread it over the
         # runners of the NIC. A dispatch with pytest_dir runs only that one
         # directory. Every directory under tests/acceptance/tests/single/ with
-        # pytest.mark.nightly must appear here (enforced by test_nightly_workflow.py).
+        # pytest.mark.nightly must appear here.
         suite: >-
           ${{ fromJSON(inputs.pytest_dir && format('[{{"dir": {0}}}]', toJSON(inputs.pytest_dir)) || '[
           {"dir": "backends"}, {"dir": "cross_app"}, {"dir": "dma"},
@@ -252,7 +252,6 @@ jobs:
 
       - name: 'execution: Run the nightly tests of ${{ env.SUITE }}'
         env:
-          MTL_NIC_LABEL: ${{ matrix.nic }}
           TEST_PATH: ${{ matrix.suite.dir }}
           PYTEST_SHARD: ${{ matrix.suite.shard && format('{0}/{1}', matrix.suite.shard, matrix.suite.shards) }}
           PYTEST_FILTER: ${{ inputs.pytest_filter }}
@@ -263,9 +262,7 @@ jobs:
         uses: ./.github/actions/pytest-collect
         with:
           report_name: nightly-test-report-${{ matrix.nic }}-${{ env.SUITE }}
-          report_path: |
-            ./tests/acceptance/results.jsonl
-            ./tests/acceptance/report.html
+          report_path: ./tests/acceptance/report.html
           status_name: system-info-${{ matrix.nic }}-${{ env.SUITE }}
 
   aggregate-python-reports:

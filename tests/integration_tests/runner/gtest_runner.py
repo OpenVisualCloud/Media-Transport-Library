@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
-"""Lean KahawaiTest integration runner (replaces gtest.sh, noctx/run.sh, noctx/run_pf.sh).
-
-Shell (nic_setup.sh) performs only create-tvf and bind-pvf (plus teardown).
-Profiles and runs come from tests/integration_tests/profiles.yaml.
-"""
+"""Pure-stdlib KahawaiTest integration runner."""
 
 from __future__ import annotations
 
@@ -16,235 +12,205 @@ import re
 import secrets
 import signal
 import socket
-import subprocess  # nosec B404 # runs KahawaiTest and nic_setup.sh via argv lists, no shell
+import subprocess  # nosec B404 # argv lists only, no shell
 import sys
+import tempfile
 import time
-import xml.etree.ElementTree as ET  # nosec B405 # parses local JUnit XML produced by KahawaiTest
+import xml.etree.ElementTree as ET  # nosec B405 # parses local JUnit XML
 from pathlib import Path
-from typing import Any
 
-import yaml
-
-HOST_FAULT_EXIT = 3
+REPO = Path(__file__).resolve().parents[3]
+NICCTL, ISOLATE = REPO / "script/nicctl.sh", REPO / "tests/tools/isolate/isolate.sh"
 BDF_RE = re.compile(r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$")
-RUNNER_DIR = Path(__file__).resolve().parent
-REPO_ROOT = RUNNER_DIR.parent.parent.parent
-DEFAULT_PROFILES = RUNNER_DIR.parent / "profiles.yaml"
-
-CONFIG_ERRORS = (
-    re.compile(r"EAL: Cannot use IOVA as"),
-    re.compile(r"libmtl\.so: cannot open shared object file:"),
-    re.compile(r"EAL: Cannot set up DMA remapping, error 12"),
-    re.compile(r"Cannot bind to driver vfio-pci"),
-    re.compile(r"mt_user_params_check\(\d+\), invalid ip"),
+CFG_ERR = re.compile(
+    r"EAL: Cannot use IOVA as|libmtl\.so: cannot open shared object file:"
+    r"|EAL: Cannot set up DMA remapping, error 12|Cannot bind to driver vfio-pci"
+    r"|mt_user_params_check\(\d+\), invalid ip"
 )
-NIC_IDS = {
-    "0x1592": "E810",
-    "0x1593": "E810",
-    "0x12d1": "E830",
-    "0x12d2": "E830",
-    "0x1248": "E835",
-    "0x1249": "E835",
+NIC_IDS = {"0x1592": "E810", "0x1593": "E810", "0x12d1": "E830", "0x12d2": "E830"}
+NIC_IDS |= {"0x1248": "E835", "0x1249": "E835"}
+NOCTX_ISO = (
+    "st20p_default_timestamps st20p_user_pacing st20p_exact_user_pacing "
+    "st30p_user_pacing vrx_margin rl_staged_overload"
+).split()
+NOCTX_ENV = {
+    "NOCTX_REQUIRE_STRICT": "1",
+    "NOCTX_STABILITY_SECONDS": "60",
+    "NOCTX_TEST_DURATION": "10",
+    "MTL_ISOLATE": "require",
 }
+_PF = "St20p.digest*:St20p.transport_*:St20p.tx_*no_epoch_drop"
+_KL = (
+    "St20p.tx_create_free_mix:St20p.rx_create_free_mix:St20p.digest_1080p_s1:"
+    "St20p.digest_1080i_s2:St20p.put_frame_abort:St20p.query_params:"
+    "St20p.session_stats_reset:St20p.update_source_and_destination"
+)
+_F20 = "St20_rx*:St20_tx*-St20_tx.create_queue_cnt"
+_F34 = "St3*:St4*-St30p.redundant*:St40p.redundant*"
+_FRD = "St20p.redundant*:St30p.redundant*:St40p.redundant*"
+_P0 = "--rss_mode l3_l4 --pacing_way"
+_P_TSC = f"{_P0} tsc --iova_mode va --multi_src_port"
+_P_PA = f"{_P0} auto --iova_mode pa --multi_src_port"
+_P_VA = f"{_P0} auto --iova_mode va --multi_src_port"
+
+# Run TSC before RL init: ice PF keeps VF queue rate limits on DPDK < 26.07.91.
+GROUPS = {
+    "pr_core": "st2110_20 st2110_20p st2110_20_tx_queue_cnt st2110_22 st2110_3x_4x",
+    "core_misc": "core_misc redundant_stats st20p_kernel_loopback",
+    "pacing_dma": "st20p_tsc_pacing dma_cvt_va st20p_auto_pacing_pa st20p_auto_pacing_va",
+    "noctx": "noctx noctx_pf",
+}
+# (name, filter, topo, extra_args_str, flags)
+_FPA, _FPV = f"{_PF}:Dma.iova_pa*-St20p.*ext*", f"{_PF}-St20p.*ext*"
+_Q24, _VA = "--queue_cnt 24", "--iova_mode va"
+RUNS = (
+    ("st2110_20", _F20, "vf_pair", "", "pr,dma"),
+    ("st2110_20p", "St20p*-St20p.redundant*", "vf_pair", "", "pr"),
+    ("st2110_20_tx_queue_cnt", "St20_tx.create_queue_cnt", "vf_pair", _Q24, "pr"),
+    ("st2110_22", "St22*", "vf_pair", "", "pr"),
+    ("st2110_3x_4x", _F34, "vf_pair", "", "pr"),
+    ("core_misc", "Main*:Misc*:Sch*:TxUserTimestampSync*", "vf_pair", "", ""),
+    ("redundant_stats", _FRD, "vf_quad", "", ""),
+    ("st20p_kernel_loopback", _KL, "kernel_lo", "", "noroot"),
+    ("st20p_tsc_pacing", _FPV, "vf_pair", _P_TSC, ""),
+    ("dma_cvt_va", "Dma*:Cvt*-Dma.iova_pa*", "vf_pair", _VA, "dma"),
+    ("st20p_auto_pacing_pa", _FPA, "vf_pair", _P_PA, ""),
+    ("st20p_auto_pacing_va", _FPV, "vf_pair", _P_VA, ""),
+    ("noctx", "NoCtxTest.*-NoCtxTest.*_pf_*", "cross_pf_quad", "", "noctx,env"),
+    ("noctx_pf", "NoCtxTest.*_pf_*", "pf_pair", "", "noctx"),
+)
 
 
 class HostFault(RuntimeError):
     pass
 
 
-def load_profiles(yaml_path: Path = DEFAULT_PROFILES) -> list[dict[str, Any]]:
-    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
-    tdefs = data.get("topologies") or {}
-    pdefs = data.get("profiles") or {}
-    group_of = {
-        name: str(grp)
-        for grp, members in (data.get("groups") or {}).items()
-        for name in (members or [])
-    }
-    runs: list[dict[str, Any]] = []
-    seen_names: set[str] = set()
-    for tier, items in (data.get("runs") or {}).items():
-        for r in items or []:
-            name = str(r["name"])
-            if name in seen_names:
-                raise ValueError(f"Duplicate run name '{name}' in {yaml_path}")
-            seen_names.add(name)
-            prof_name = str(r.get("profile", "default"))
-            if prof_name not in pdefs:
-                raise ValueError(
-                    f"Run '{name}' references unknown profile '{prof_name}'"
-                )
-            topo_name = str(r.get("topology", ""))
-            if topo_name not in tdefs:
-                raise ValueError(
-                    f"Run '{name}' references unknown topology '{topo_name}'"
-                )
-            pd = pdefs[prof_name] or {}
-            env = {str(k): str(v) for k, v in (pd.get("env") or {}).items()}
-            env.update({str(k): str(v) for k, v in (r.get("env") or {}).items()})
-            runs.append(
-                {
-                    "name": name,
-                    "tier": str(tier),
-                    "group": group_of.get(name, ""),
-                    "mode": "noctx" if pd.get("instance") == "own" else "shared",
-                    "topology": topo_name,
-                    "filter": str(r["filter"]),
-                    "extra_args": [str(x) for x in (pd.get("extra_args") or [])],
-                    "env": env,
-                    "dma_auto": bool(r.get("dma_auto", False)),
-                    "needs_root": bool(r.get("needs_root", True)),
-                }
-            )
-    return runs
-
-
-def parse_bdfs(raw: str | None) -> list[str]:
-    if not raw:
-        return []
-    out = [x for x in re.split(r"[\s,]+", raw.strip()) if x]
-    for bdf in out:
-        if not BDF_RE.match(bdf):
-            raise ValueError(f"Invalid PCI BDF '{bdf}'")
+def _bdfs(raw: str | None) -> list[str]:
+    out = [x for x in re.split(r"[\s,]+", (raw or "").strip()) if x]
+    if any(not BDF_RE.match(b) for b in out):
+        raise ValueError(f"Invalid PCI BDF in '{raw}'")
     return list(dict.fromkeys(out))
 
 
-def _rtxt(p: Path) -> str:
+def _nicctl(sub: str, *args: str) -> None:
+    cmd = ([] if os.geteuid() == 0 else ["sudo", "-E"]) + [str(NICCTL), sub, *args]
     try:
-        return p.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired as exc:
+        raise HostFault(f"nicctl.sh {sub} {' '.join(args)} timed out") from exc
+    if r.stderr.strip():
+        sys.stderr.write(r.stderr)
+    if r.returncode != 0:
+        raise HostFault(f"nicctl.sh {sub} {' '.join(args)} failed (rc={r.returncode})")
 
 
-def scan_nics(sysfs_pci: Path) -> list[dict[str, str]]:
-    if not sysfs_pci.is_dir():
-        return []
-    nics = []
-    for dev in sorted(sysfs_pci.iterdir()):
-        if not BDF_RE.match(dev.name) or not _rtxt(dev / "class").startswith("0x0200"):
-            continue
-        drv = (dev / "driver").resolve().name if (dev / "driver").exists() else ""
-        pf = (dev / "physfn").resolve().name if (dev / "physfn").exists() else ""
-        nets = sorted((dev / "net").iterdir()) if (dev / "net").is_dir() else []
-        state = _rtxt(nets[0] / "operstate").lower() if nets else ""
-        nics.append(
-            {
-                "bdf": dev.name,
-                "drv": drv,
-                "pf": pf,
-                "state": state,
-                "id": _rtxt(dev / "device").lower(),
-            }
-        )
-    return nics
+def _setup_ports(
+    ports_arg: str | None, selected: list, created: list[str], bound: list[str]
+) -> tuple[list[str], list[str], list[str], str]:
+    def scan():
+        by, pf_vfs, up_ice = {}, {}, []
+        sysfs = Path("/sys/bus/pci/devices")
+        for d in sorted(sysfs.iterdir()) if sysfs.is_dir() else ():
+            cls = (d / "class").read_text().strip() if (d / "class").is_file() else ""
+            if not BDF_RE.match(d.name) or not cls.startswith("0x0200"):
+                continue
+            drv = (d / "driver").resolve().name if (d / "driver").exists() else ""
+            pf = (d / "physfn").resolve().name if (d / "physfn").exists() else ""
+            dev = d / "device"
+            did = dev.read_text().strip().lower() if dev.is_file() else ""
+            by[d.name] = (drv, pf, did)
+            if drv == "vfio-pci" and pf:
+                pf_vfs.setdefault(pf, []).append(d.name)
+            nets = sorted((d / "net").iterdir()) if (d / "net").is_dir() else []
+            op = nets[0] / "operstate" if nets else None
+            if not pf and drv == "ice" and op and op.is_file():
+                if op.read_text().strip() == "up":
+                    up_ice.append(d.name)
+        return by, pf_vfs, up_ice
 
+    pvf = _bdfs(os.environ.get("BIND_PVFS"))
+    for bdf in pvf:
+        bound.append(bdf)
+        _nicctl("bind_pmd", bdf)
+    by, pf_vfs, up_ice = scan()
+    topos = {r[2] for r in selected}
+    need = 4 if "vf_quad" in topos else (2 if "vf_pair" in topos else 0)
+    noctx_p: list[str] = []
 
-def detect_nic(nics: list[dict[str, str]], ports: list[str]) -> str:
-    by = {n["bdf"]: n for n in nics}
-    for port in ports:
-        info = by.get(port, {})
-        for dev_id in (
-            by.get(info.get("pf", ""), {}).get("id", ""),
-            info.get("id", ""),
-        ):
-            if dev_id in NIC_IDS:
-                return NIC_IDS[dev_id]
-    return os.environ.get("MTL_NIC_LABEL", "unknown")
+    if "cross_pf_quad" in topos and not ports_arg and len(pvf) < 4:
+        ready = [pf for pf, vfs in sorted(pf_vfs.items()) if len(vfs) >= 2]
+        for pf in [p for p in up_ice if p not in ready][: max(0, 2 - len(ready))]:
+            created.append(pf)
+            _nicctl("create_tvf", pf, "6" if not ready else "2")
+            ready.append(pf)
+        if created:
+            by, pf_vfs, up_ice = scan()
+        if len(ready) >= 2:
+            a, b = pf_vfs.get(ready[0], []), pf_vfs.get(ready[1], [])
+            if len(a) >= 2 and len(b) >= 2:
+                noctx_p = [a[0], b[0], a[1], b[1]]
 
-
-def list_cases(binary: Path, flt: str) -> list[str]:
-    cmd = [str(binary), "--gtest_list_tests", f"--gtest_filter={flt}"]
-    res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
-    if res.returncode != 0:
-        raise RuntimeError(
-            f"--gtest_list_tests failed (rc={res.returncode}) for '{flt}'"
-        )
-    cases, suite = [], ""
-    for line in res.stdout.splitlines():
-        line = line.split("#", 1)[0].rstrip()
-        if line and not line.startswith(" ") and line.endswith("."):
-            suite = line[:-1]
-        elif line.startswith("  ") and suite:
-            cases.append(f"{suite}.{line.strip()}")
-    return cases
-
-
-def list_case_metadata(binary: Path) -> dict[str, dict[str, Any]]:
-    res = subprocess.run(
-        [str(binary), "--list-json"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
+    vf_p = (
+        _bdfs(ports_arg) if ports_arg else pf_vfs.get(created[0], []) if created else []
     )
-    if res.returncode != 0:
-        return {}
-    try:
-        return {
-            it["case"]: it
-            for it in json.loads(res.stdout)
-            if isinstance(it, dict) and "case" in it
-        }
-    except json.JSONDecodeError:
-        return {}
+    if need and len(vf_p) < need:
+        by_pf: dict[str, list[str]] = {}
+        for bdf, (drv, pf, _) in sorted(by.items()):
+            if drv == "vfio-pci":
+                by_pf.setdefault(pf or "_", []).append(bdf)
+        found = next((v for _, v in sorted(by_pf.items()) if len(v) >= need), [])
+        vf_p = pvf if len(pvf) >= need else found
+        if len(vf_p) < need and up_ice:
+            created.append(up_ice[0])
+            _nicctl("create_tvf", up_ice[0], "6")
+            by, pf_vfs, _ = scan()
+            vf_p = pf_vfs.get(created[-1], [])
+        if len(vf_p) < need:
+            raise HostFault(f"Need {need} vfio-pci ports, got {len(vf_p)}")
+
+    noctx_p = noctx_p or (vf_p or pvf)[:4]
+    if not pvf:
+        pfs = (by[p][1] for p in [*vf_p, *noctx_p] if p in by and by[p][1])
+        for pf in dict.fromkeys(pf for pf in pfs if pf not in created):
+            _nicctl("vf_rss_lut", pf)
+    if any(r[2] != "kernel_lo" for r in selected):
+        hp = Path("/sys/kernel/mm/hugepages")
+        hfs = [
+            hp / s / "free_hugepages"
+            for s in ("hugepages-2048kB", "hugepages-1048576kB")
+        ]
+        if sum(int(p.read_text()) for p in hfs if p.is_file()) == 0:
+            raise HostFault("No free 2 MB or 1 GB hugepages on this host")
+    nic = os.environ.get("MTL_NIC_LABEL", "")
+    for p in [] if nic else (vf_p or noctx_p or pvf):
+        pf_id = by.get(by.get(p, ("", "", ""))[1], ("", "", ""))[2]
+        nic = NIC_IDS.get(pf_id) or NIC_IDS.get(by.get(p, ("", "", ""))[2], "")
+        if nic:
+            break
+    return vf_p, noctx_p, pvf, nic or "unknown"
 
 
-def parse_xml(
-    xml_path: Path, ctx: dict[str, str], attempt: int
-) -> list[dict[str, Any]]:
-    if not xml_path.is_file():
+def _sudo(root: bool, extra: dict[str, str]) -> list[str]:
+    if not root or os.geteuid() == 0:
         return []
-    out = []
-    for tc in (
-        ET.parse(xml_path)  # nosec B314 # parses local JUnit XML written by KahawaiTest
-        .getroot()
-        .iter("testcase")
-    ):
-        cls, name = tc.attrib.get("classname", ""), tc.attrib.get("name", "")
-        full = f"{cls}.{name}" if cls else name
-        fail = tc.find("failure")
-        if fail is None:
-            fail = tc.find("error")
-        skip = tc.find("skipped")
-        if fail is not None:
-            res, msg = (
-                "failed",
-                (fail.attrib.get("message") or fail.text or "").strip()[:400],
-            )
-        elif skip is not None or tc.attrib.get("result") == "skipped":
-            res = "skipped"
-            msg = (skip.attrib.get("message") if skip is not None else "") or ""
-        else:
-            res, msg = "passed", ""
-        ms = round(float(tc.attrib.get("time", "0") or 0) * 1000, 1)
-        out.append(
-            {
-                **ctx,
-                "case": full,
-                "attempt": attempt,
-                "result": res,
-                "duration_ms": ms,
-                "message": msg,
-            }
-        )
-    return out
+    path = f"PATH={os.environ.get('PATH', '')}"
+    return ["sudo", "-E", "env", path, *[f"{k}={v}" for k, v in extra.items()]]
 
 
-def run_cmd(
-    cmd: list[str], env: dict[str, str], log_path: Path, timeout_s: int, quiet: bool
+def _run_cmd(
+    cmd: list[str], env: dict[str, str], to_s: int, tmp: Path, log_fh
 ) -> tuple[int, str]:
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("w+", encoding="utf-8", errors="replace") as fh:
+    with tmp.open("w+", encoding="utf-8", errors="replace") as fh:
         proc = subprocess.Popen(
             cmd, stdout=fh, stderr=subprocess.STDOUT, env=env, start_new_session=True
         )
         try:
-            rc = proc.wait(timeout=timeout_s)
+            rc = proc.wait(timeout=to_s)
         except subprocess.TimeoutExpired:
-            for sig, wait_s in ((signal.SIGTERM, 15), (signal.SIGKILL, 5)):
+            for sig, ws in ((signal.SIGTERM, 15), (signal.SIGKILL, 5)):
                 try:
                     os.killpg(proc.pid, sig)
-                    proc.wait(timeout=wait_s)
+                    proc.wait(timeout=ws)
                     break
                 except (ProcessLookupError, subprocess.TimeoutExpired):
                     pass
@@ -252,601 +218,298 @@ def run_cmd(
         fh.flush()
         fh.seek(0)
         out = fh.read()
-    if not quiet and out:
+    if out:
         sys.stdout.write(out)
+        log_fh.write(out)
+        log_fh.flush()
     return rc, out
 
 
-def nic_shell(nic_setup: Path, args: list[str], dry_run: bool) -> list[str]:
-    if dry_run:
-        print(f"[dry-run] {nic_setup} {' '.join(args)}")
+def _parse_xml(xml: Path, ctx: dict[str, str]) -> list[dict]:
+    if not xml.is_file():
         return []
-    proc = subprocess.run(
-        [str(nic_setup), *args],
-        capture_output=True,
-        text=True,
-        timeout=180,
-        check=False,
-    )
-    if proc.stderr.strip():
-        sys.stderr.write(proc.stderr)
-    if proc.returncode != 0:
-        raise HostFault(f"nic_setup.sh {' '.join(args)} failed (rc={proc.returncode})")
-    return [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
-
-
-def _sudo(needs_root: bool, no_sudo: bool, extra_env: dict[str, str]) -> list[str]:
-    if not needs_root or os.geteuid() == 0 or no_sudo:
-        return []
-    path_kv = f"PATH={os.environ.get('PATH', '')}"
-    return ["sudo", "-E", "env", path_kv, *[f"{k}={v}" for k, v in extra_env.items()]]
-
-
-def _check_config(label: str, out: str) -> None:
-    for pat in CONFIG_ERRORS:
-        if pat.search(out):
-            raise HostFault(f"Config error in {label}: {pat.pattern}")
-
-
-def _mk(
-    ctx: dict[str, str], case: str, att: int, res: str, msg: str = ""
-) -> dict[str, Any]:
-    return {
-        **ctx,
-        "case": case,
-        "attempt": att,
-        "result": res,
-        "duration_ms": 0.0,
-        "message": msg,
-    }
-
-
-def _run_case(
-    a: argparse.Namespace,
-    ctx: dict[str, str],
-    base: list[str],
-    case: str,
-    root: bool,
-    env_map: dict[str, str],
-    timeout_s: int,
-    start_att: int,
-    out_dir: Path,
-    isolate_sh: Path,
-    first_msg: str = "",
-    iso: bool = False,
-) -> dict[str, Any]:
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", case)
-    sweep = [*_sudo(True, a.no_sudo, {}), str(isolate_sh), "--sweep"]
-    final = _mk(ctx, case, start_att, "failed", first_msg)
-    for att in range(start_att, max(1, a.retries) + 1):
-        if att > 1 and a.retry_delay > 0:
-            time.sleep(a.retry_delay)
-        xml = out_dir / "junit" / f"{ctx['profile']}_{safe}_try{att}.xml"
-        log = out_dir / "logs" / f"{ctx['profile']}_{safe}_try{att}.log"
-        inner = [*base, f"--gtest_filter={case}", f"--gtest_output=xml:{xml}"]
-        pfx = _sudo(root, a.no_sudo, env_map)
-        cmd = [*pfx, str(isolate_sh), "--", *inner] if iso else [*pfx, *inner]
-        if att > 1:
-            print(f"  ↻ retrying {case} ({att}/{a.retries})")
-        if iso:
-            subprocess.run(sweep, capture_output=True, check=False)
-        rc, out = run_cmd(cmd, {**os.environ, **env_map}, log, timeout_s, a.quiet)
-        if iso:
-            subprocess.run(sweep, capture_output=True, check=False)
-        parsed = parse_xml(xml, ctx, att)
-        if rc != 0:
-            _check_config(case, out)
-        cur = (
-            parsed[0]
-            if parsed
-            else _mk(
-                ctx,
-                case,
-                att,
-                "passed" if rc == 0 else "failed",
-                "" if rc == 0 else f"rc={rc}",
-            )
-        )
-        if cur["result"] in ("passed", "skipped"):
-            if att > 1 and cur["result"] == "passed":
-                msg = (
-                    f"Passed on retry {att}; first: {first_msg}"
-                    if first_msg
-                    else f"Passed on retry {att}"
-                )
-                return {**cur, "result": "flaky", "message": msg}
-            return cur
-        final = cur
-    return final
-
-
-def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(
-        description="MTL KahawaiTest runner (shell: create-tvf + bind-pvf only)."
-    )
-    add = ap.add_argument
-    add("--binary")
-    add("--repo-root", default=str(REPO_ROOT))
-    add("--profiles", default=str(DEFAULT_PROFILES))
-    add("--nic-setup", default=str(RUNNER_DIR / "nic_setup.sh"))
-    add("--tier", choices=("pr", "nightly"), default="nightly")
-    add("--group", help="Run only profiles in this profiles.yaml group")
-    add("--profile", help="Regex of profile names")
-    add("--filter", help="Override gtest_filter")
-    add("--tvf-pf", help="PF BDF(s) for nic_setup.sh create-tvf")
-    add("--tvf-count", type=int, default=6)
-    add("--bind-pvf", help="PCI BDF(s) for nic_setup.sh bind-pvf")
-    add("--ports", help="Already-bound VF/DPDK port BDFs")
-    add("--pf-ports", help="Already-bound PF port BDFs for noctx_pf")
-    add("--out-dir", default=f"/tmp/mtl_gtest_{os.getpid()}")
-    add("--log-file", help="Optional combined log file path for CI compatibility")
-    add("--p-sip", default=f"192.168.{secrets.randbelow(256)}.1")
-    add("--retries", type=int, default=2)
-    add("--retry-delay", type=int, default=5)
-    add("--timeout", type=int, default=1800)
-    add("--noctx-timeout", type=int, default=2100)
-    add("--noctx-sleep", type=int, default=0)
-    for flag in (
-        "--exit-on-failure",
-        "--fail-fast",
-        "--no-cleanup",
-        "--no-sudo",
-        "--dry-run",
-        "--list-tests",
-        "--quiet",
-    ):
-        add(flag, action="store_true")
-    add("--sysfs-pci", default="/sys/bus/pci/devices", help=argparse.SUPPRESS)
-    add("--sysfs-hugepages", default="/sys/kernel/mm/hugepages", help=argparse.SUPPRESS)
-    return ap.parse_args(argv)
-
-
-def _setup_ports(
-    a: argparse.Namespace,
-    selected: list[dict[str, Any]],
-    nic_setup: Path,
-    created_pfs: list[str],
-    bound_pvfs: list[str],
-) -> tuple[list[str], list[str], list[str], str]:
-    nics = scan_nics(Path(a.sysfs_pci))
-    pvf_req, tvf_req = parse_bdfs(a.bind_pvf), parse_bdfs(a.tvf_pf)
-    pf_ports: list[str] = []
-    if pvf_req:
-        bound_pvfs.extend(pvf_req)
-        pf_ports = nic_shell(nic_setup, ["bind-pvf", *pvf_req], a.dry_run) or list(
-            pvf_req
-        )
-    if a.pf_ports:
-        pf_ports = parse_bdfs(a.pf_ports)
-
-    created_vfs, created_sib = [], []
-    if tvf_req:
-        created_pfs.append(tvf_req[0])
-        created_vfs = nic_shell(
-            nic_setup, ["create-tvf", tvf_req[0], str(a.tvf_count)], a.dry_run
-        ) or [f"{tvf_req[0].rsplit('.', 1)[0]}.{i}" for i in range(1, a.tvf_count + 1)]
-        if len(tvf_req) >= 2:
-            created_pfs.append(tvf_req[1])
-            created_sib = nic_shell(
-                nic_setup, ["create-tvf", tvf_req[1], "2"], a.dry_run
-            ) or [f"{tvf_req[1].rsplit('.', 1)[0]}.{i}" for i in (1, 2)]
-        nics = scan_nics(Path(a.sysfs_pci))
-
-    topos = {p["topology"] for p in selected}
-    need_vf = 4 if "vf_quad" in topos else (2 if "vf_pair" in topos else 0)
-
-    pf_vfs: dict[str, list[str]] = {}
-    for n in nics:
-        if n["drv"] == "vfio-pci" and n["pf"]:
-            pf_vfs.setdefault(n["pf"], []).append(n["bdf"])
-    for vfs in pf_vfs.values():
-        vfs.sort()
-
-    noctx_ports: list[str] = []
-    if (
-        "cross_pf_quad" in topos
-        and not a.ports
-        and not created_vfs
-        and len(pf_ports) < 4
-    ):
-        ready_pfs = [pf for pf, vfs in sorted(pf_vfs.items()) if len(vfs) >= 2]
-        if len(ready_pfs) < 2:
-            up = [
-                n["bdf"]
-                for n in nics
-                if not n["pf"]
-                and n["drv"] == "ice"
-                and n["state"] == "up"
-                and n["bdf"] not in ready_pfs
-            ]
-            created_any = False
-            for pf in up:
-                if len(ready_pfs) >= 2:
-                    break
-                cnt = a.tvf_count if not created_vfs else 2
-                created_pfs.append(pf)
-                new_vfs = nic_shell(
-                    nic_setup, ["create-tvf", pf, str(cnt)], a.dry_run
-                ) or [f"{pf.rsplit('.', 1)[0]}.{i}" for i in range(1, cnt + 1)]
-                if not created_vfs:
-                    created_vfs = new_vfs
-                pf_vfs[pf] = sorted(new_vfs)
-                ready_pfs.append(pf)
-                created_any = True
-            if created_any:
-                nics = scan_nics(Path(a.sysfs_pci))
-        if len(ready_pfs) >= 2:
-            p0, p1 = pf_vfs[ready_pfs[0]], pf_vfs[ready_pfs[1]]
-            noctx_ports = [p0[0], p1[0], p0[1], p1[1]]
-
-    vf_ports: list[str] = []
-    if a.ports:
-        vf_ports = parse_bdfs(a.ports)
-    elif created_vfs:
-        vf_ports = created_vfs
-    elif need_vf and len(pf_ports) >= need_vf:
-        vf_ports = list(pf_ports)
-    elif need_vf:
-        by_pf: dict[str, list[str]] = {}
-        for n in nics:
-            if n["drv"] == "vfio-pci":
-                by_pf.setdefault(n["pf"] or "standalone", []).append(n["bdf"])
-        vf_ports = next(
-            (sorted(v) for _, v in sorted(by_pf.items()) if len(v) >= need_vf), []
-        )
-        if len(vf_ports) < need_vf:
-            up = [
-                n["bdf"]
-                for n in nics
-                if not n["pf"] and n["drv"] == "ice" and n["state"] == "up"
-            ]
-            if up:
-                created_pfs.append(up[0])
-                vf_ports = nic_shell(
-                    nic_setup, ["create-tvf", up[0], str(a.tvf_count)], a.dry_run
-                ) or [
-                    f"{up[0].rsplit('.', 1)[0]}.{i}" for i in range(1, a.tvf_count + 1)
-                ]
-                created_vfs = vf_ports
-                nics = scan_nics(Path(a.sysfs_pci))
-        if len(vf_ports) < need_vf and not a.dry_run:
-            raise HostFault(
-                f"Need {need_vf} vfio-pci ports, found {len(vf_ports)}; pass --tvf-pf, --bind-pvf, or --ports"
-            )
-
-    if not noctx_ports:
-        if created_vfs and len(created_sib) >= 2:
-            noctx_ports = [
-                created_vfs[0],
-                created_sib[0],
-                created_vfs[1],
-                created_sib[1],
-            ]
-        elif len(vf_ports) >= 4:
-            noctx_ports = list(vf_ports[:4])
-        elif len(pf_ports) >= 4:
-            noctx_ports = list(pf_ports[:4])
+    out = []
+    for tc in ET.parse(xml).getroot().iter("testcase"):  # nosec B314
+        cls, name = tc.attrib.get("classname", ""), tc.attrib.get("name", "")
+        fail = tc.find("failure")
+        fail = tc.find("error") if fail is None else fail
+        skip = tc.find("skipped")
+        if fail is not None:
+            res = "failed"
+            msg = (fail.attrib.get("message") or fail.text or "").strip()[:400]
+        elif skip is not None or tc.attrib.get("result") == "skipped":
+            res = "skipped"
+            msg = (skip.attrib.get("message") if skip is not None else "") or ""
         else:
-            noctx_ports = list(vf_ports[:4])
-
-    if a.dry_run:
-        if len(vf_ports) < need_vf:
-            placeholders = [f"0000:00:00.{i}" for i in range(1, max(need_vf, 4) + 1)]
-            vf_ports = list(dict.fromkeys([*vf_ports, *placeholders]))[:need_vf]
-        if "cross_pf_quad" in topos and len(noctx_ports) < 4:
-            noctx_placeholders = [
-                "0000:00:00.1",
-                "0000:00:01.1",
-                "0000:00:00.2",
-                "0000:00:01.2",
-            ]
-            noctx_ports = list(dict.fromkeys([*noctx_ports, *noctx_placeholders]))[:4]
-
-    reused_ports = list(dict.fromkeys([*vf_ports, *noctx_ports]))
-    if reused_ports and not pvf_req and not a.dry_run:
-        created_set = set(created_pfs)
-        pfs_used = list(
-            dict.fromkeys(
-                n["pf"]
-                for n in nics
-                if n["bdf"] in reused_ports and n["pf"] and n["pf"] not in created_set
-            )
+            res, msg = "passed", ""
+        ms = round(float(tc.attrib.get("time", "0") or 0) * 1000, 1)
+        case = f"{cls}.{name}" if cls else name
+        out.append(
+            {"case": case, **ctx, "result": res, "duration_ms": ms, "message": msg}
         )
-        if pfs_used:
-            nic_shell(nic_setup, ["vf-rss-lut", *pfs_used], False)
+    return out
 
-    if any(p["topology"] != "kernel_lo" for p in selected) and not a.dry_run:
-        hp_free = sum(
-            int(_rtxt(Path(a.sysfs_hugepages) / s / "free_hugepages") or 0)
-            for s in ("hugepages-2048kB", "hugepages-1048576kB")
-        )
-        if hp_free == 0:
-            raise HostFault("No free 2 MB or 1 GB hugepages on this host")
 
-    return (
-        vf_ports,
-        noctx_ports,
-        pf_ports,
-        detect_nic(nics, vf_ports or noctx_ports or pf_ports),
-    )
+def _list_cases(binary: Path, flt: str) -> list[str]:
+    cmd = [str(binary), "--gtest_list_tests", f"--gtest_filter={flt}"]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        raise RuntimeError(f"--gtest_list_tests failed (rc={r.returncode}) for '{flt}'")
+    cases, suite = [], ""
+    for ln in r.stdout.splitlines():
+        ln = ln.split("#", 1)[0].rstrip()
+        if ln and not ln.startswith(" ") and ln.endswith("."):
+            suite = ln[:-1]
+        elif ln.startswith("  ") and suite:
+            cases.append(f"{suite}.{ln.strip()}")
+    return cases
 
 
 def main(argv: list[str] | None = None) -> int:
-    a = _parse_args(argv)
-    repo = Path(a.repo_root).resolve()
-    local_bin = repo / ".local_install/mtl/bin/KahawaiTest"
+    e = os.environ
+    ap = argparse.ArgumentParser(description="MTL KahawaiTest integration runner.")
+    add = ap.add_argument
+    add("--ports", default=e.get("TEST_PORTS"))
+    add("--group", choices=tuple(GROUPS), default=e.get("GTEST_GROUP") or None)
+    add("--profile", default=e.get("GTEST_CASES") or None)
+    add(
+        "--tier",
+        choices=("pr", "nightly"),
+        default="pr" if e.get("NIGHTLY") == "0" else "nightly",
+    )
+    tmp = str(Path(tempfile.gettempdir()) / f"mtl_gtest_{os.getpid()}")
+    add("--out-dir", default=e.get("GTEST_OUT_DIR") or e.get("TMP_FOLDER") or tmp)
+    add("--retries", type=int, default=int(e.get("MAX_RETRIES", "2")))
+    add("--timeout", type=int, default=int(e.get("TEST_CASE_TIMEOUT", "1800")))
+    add(
+        "--exit-on-failure",
+        action="store_true",
+        default=e.get("EXIT_ON_FAILURE") == "1",
+    )
+    add("--binary", default=e.get("KAHAWAI_TEST_BINARY") or None)
+    add("--p-sip", default=e.get("TEST_P_SIP") or f"192.168.{secrets.randbelow(256)}.1")
+    add("--log-file", default=e.get("LOG_FILE") or None)
+    a = ap.parse_args(argv)
+
+    loc = REPO / ".local_install/mtl/bin/KahawaiTest"
     binary = (
         Path(a.binary)
         if a.binary
-        else (local_bin if local_bin.is_file() else repo / "build/tests/KahawaiTest")
+        else (loc if loc.is_file() else REPO / "build/tests/KahawaiTest")
     )
-    nic_setup, isolate_sh = (
-        Path(a.nic_setup).resolve(),
-        repo / "tests/tools/isolate/isolate.sh",
-    )
-
-    tiers = {"pr"} if a.tier == "pr" else {"pr", "nightly"}
+    allowed = set(GROUPS[a.group].split()) if a.group else None
     selected = [
-        p
-        for p in load_profiles(Path(a.profiles))
-        if p["tier"] in tiers
-        and (not a.group or p["group"] == a.group)
-        and (not a.profile or re.search(a.profile, p["name"]))
+        r
+        for r in RUNS
+        if (a.tier == "nightly" or "pr" in r[4].split(","))
+        and (allowed is None or r[0] in allowed)
+        and (not a.profile or re.search(a.profile, r[0]))
     ]
     if not selected:
-        print("Error: no profiles selected", file=sys.stderr)
-        return 2
-    if a.list_tests:
-        for p in selected:
-            n = len(list_cases(binary, a.filter or p["filter"]))
-            print(f"{p['name']} ({p['tier']}, {p['topology']}): {n} cases")
-        return 0
+        return print("Error: no profiles selected", file=sys.stderr) or 2
+    if not binary.is_file():
+        return print(f"Error: KahawaiTest not found at {binary}", file=sys.stderr) or 1
 
-    out_dir = Path(a.out_dir).resolve()
-    jsonl = out_dir / "results.jsonl"
-    if not a.dry_run:
-        if not binary.is_file():
-            print(f"Error: KahawaiTest not found at {binary}", file=sys.stderr)
-            return 1
-        (out_dir / "junit").mkdir(parents=True, exist_ok=True)
-        (out_dir / "logs").mkdir(parents=True, exist_ok=True)
-        jsonl.write_text("", encoding="utf-8")
-
-    created_pfs: list[str] = []
-    bound_pvfs: list[str] = []
+    out = Path(a.out_dir).resolve()
+    (out / "junit").mkdir(parents=True, exist_ok=True)
+    jsonl = out / "results.jsonl"
+    jsonl.write_text("", encoding="utf-8")
+    log_p = Path(a.log_file).resolve() if a.log_file else out / "gtest.log"
+    log_p.parent.mkdir(parents=True, exist_ok=True)
+    created, bound, records, done = [], [], [], set()
 
     def cleanup() -> None:
-        if a.no_cleanup:
-            return
-        for action, items in (("restore-pvf", bound_pvfs), ("disable-vf", created_pfs)):
-            if items:
-                batch, items[:] = list(items), []
+        for sub, items in (("bind_kernel", bound), ("disable_vf", created)):
+            batch, items[:] = list(items), []
+            for bdf in batch:
                 try:
-                    nic_shell(nic_setup, [action, *batch], a.dry_run)
+                    _nicctl(sub, bdf)
                 except HostFault as exc:
                     print(f"Warning: {exc}", file=sys.stderr)
 
-    def _sig(signum: int, _f: Any) -> None:
+    def _sig(signum: int, _f) -> None:
         cleanup()
         sys.exit(128 + signum)
 
-    prev_i, prev_t = signal.signal(signal.SIGINT, _sig), signal.signal(
-        signal.SIGTERM, _sig
+    pi, pt = signal.signal(signal.SIGINT, _sig), signal.signal(signal.SIGTERM, _sig)
+    host, t0, fault, failed = socket.gethostname(), time.monotonic(), "", False
+    nic = e.get("MTL_NIC_LABEL") or "unknown"
+    noctx_to, delay = int(e.get("NOCTX_CASE_TIMEOUT", "2100")), int(
+        e.get("RETRY_DELAY", "5")
     )
-    records: list[dict[str, Any]] = []
-    host, t0, fault_msg, any_fail = socket.gethostname(), time.monotonic(), "", False
-    vf_ports: list[str] = []
-    noctx_ports: list[str] = []
-    pf_ports: list[str] = []
-    nic_label = "unknown"
-    done_profiles: set[str] = set()
 
-    def record(rec: dict[str, Any]) -> None:
+    def emit(
+        ctx: dict[str, str], case: str, res: str, ms: float = 0.0, msg: str = ""
+    ) -> None:
+        rec = {"case": case, **ctx, "result": res, "duration_ms": ms, "message": msg}
         records.append(rec)
-        if not a.dry_run:
-            with jsonl.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(rec) + "\n")
+        with jsonl.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
 
-    try:
-        vf_ports, noctx_ports, pf_ports, nic_label = _setup_ports(
-            a, selected, nic_setup, created_pfs, bound_pvfs
-        )
-        for p in selected:
-            name, topo, eff_flt = p["name"], p["topology"], a.filter or p["filter"]
-            penv, root = p["env"], p["needs_root"]
-            ctx = {"profile": name, "topology": topo, "nic": nic_label, "host": host}
-            if p["mode"] == "shared":
-                xml = out_dir / "junit" / f"gtest_{name}.xml"
-                base = [str(binary), f"--p_sip={a.p_sip}", "--auto_start_stop"]
-                if topo == "kernel_lo":
-                    base += ["--p_port", "kernel:lo", "--r_port", "kernel:lo"]
-                elif topo == "vf_quad":
-                    base += ["--port_list", ",".join(vf_ports[:4])]
-                else:
-                    base += ["--p_port", vf_ports[0], "--r_port", vf_ports[1]]
-                if p["dma_auto"]:
-                    base.append("--dma_auto")
-                base += p["extra_args"] + (["--gtest_fail_fast"] if a.fail_fast else [])
-                cmd = [
-                    *_sudo(root, a.no_sudo, penv),
-                    *base,
-                    f"--gtest_output=xml:{xml}",
-                    f"--gtest_filter={eff_flt}",
-                ]
-                print(f"\n==> [{name}] topology={topo} filter={eff_flt}")
-                if a.dry_run:
-                    print(f"[dry-run] {' '.join(cmd)}")
-                    done_profiles.add(name)
-                    continue
-                rc, out = run_cmd(
-                    cmd,
-                    {**os.environ, **penv},
-                    out_dir / "logs" / f"{name}.log",
-                    a.timeout,
-                    a.quiet,
+    with log_p.open("w", encoding="utf-8", errors="replace") as log_fh:
+
+        def tee(msg: str) -> None:
+            sys.stdout.write(msg)
+            log_fh.write(msg)
+
+        def run_case(ctx, base, case, root, extra, to_s, start, first="", iso=False):
+            safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", case)
+            sweep = [*_sudo(True, {}), str(ISOLATE), "--sweep"]
+            sh = ("GTEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX")
+            env = {k: v for k, v in {**e, **extra}.items() if k not in sh}
+            fin = {
+                "case": case,
+                **ctx,
+                "result": "failed",
+                "duration_ms": 0.0,
+                "message": first,
+            }
+            for att in range(start, max(1, a.retries) + 1):
+                if att > 1 and delay > 0:
+                    time.sleep(delay)
+                xml = out / "junit" / f"{ctx['profile']}_{safe}_try{att}.xml"
+                iso_p = [str(ISOLATE), "--"] if iso else []
+                fa, xa = f"--gtest_filter={case}", f"--gtest_output=xml:{xml}"
+                cmd = [*_sudo(root, extra), *iso_p, *base, fa, xa]
+                if att > 1:
+                    tee(f"  retrying {case} ({att}/{a.retries})\n")
+                if iso:
+                    subprocess.run(sweep, capture_output=True)
+                rc, txt = _run_cmd(cmd, env, to_s, out / "last.log", log_fh)
+                if iso:
+                    subprocess.run(sweep, capture_output=True)
+                if rc != 0 and (m := CFG_ERR.search(txt)):
+                    raise HostFault(f"Config error in {case}: {m.group(0)}")
+                parsed = _parse_xml(xml, ctx)
+                st = "passed" if rc == 0 else "failed"
+                cur = (
+                    parsed[0]
+                    if parsed
+                    else {**fin, "result": st, "message": "" if rc == 0 else f"rc={rc}"}
                 )
-                parsed = parse_xml(xml, ctx, 1)
-                if rc != 0 and not parsed:
-                    _check_config(name, out)
-                if not parsed and rc != 0:
-                    record(
-                        _mk(
-                            ctx,
-                            f"{name}.<process>",
-                            1,
-                            "failed",
-                            f"rc={rc} without XML",
+                if cur["result"] in ("passed", "skipped"):
+                    if att > 1 and cur["result"] == "passed":
+                        ms = f"Passed on retry {att}" + (
+                            f"; first: {first}" if first else ""
                         )
-                    )
-                    any_fail = True
-                retry_env = {
-                    k: v
-                    for k, v in penv.items()
-                    if k not in ("GTEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX")
-                }
-                for r in parsed:
-                    final = (
-                        _run_case(
-                            a,
-                            ctx,
-                            base,
-                            r["case"],
-                            root,
-                            retry_env,
-                            a.timeout,
-                            2,
-                            out_dir,
-                            isolate_sh,
-                            r["message"],
-                        )
-                        if (r["result"] == "failed" and a.retries >= 2)
-                        else r
-                    )
-                    record(final)
-                    any_fail = any_fail or final["result"] == "failed"
-            else:
-                ports = pf_ports[:2] if topo == "pf_pair" else noctx_ports[:4]
-                need = 2 if topo == "pf_pair" else 4
-                if len(ports) < need:
-                    if topo == "pf_pair":
-                        print(f"\n==> [{name}] skipped (pass --bind-pvf or --pf-ports)")
-                        record(_mk(ctx, f"{name}.*", 0, "skipped", "no PF ports"))
-                        done_profiles.add(name)
-                        continue
-                    raise HostFault(f"{name} needs {need} ports, got {len(ports)}")
-                base = [
-                    str(binary),
-                    "--auto_start_stop",
-                    f"--p_sip={a.p_sip}",
-                    f"--port_list={','.join(ports)}",
-                ]
-                if a.dry_run and not binary.is_file():
-                    dcmd = [
-                        *_sudo(root, a.no_sudo, penv),
-                        *base,
-                        f"--gtest_filter={eff_flt}",
-                    ]
-                    print(f"\n==> [{name}] per-process on {','.join(ports)}")
-                    print(f"[dry-run] {' '.join(dcmd)}")
-                    done_profiles.add(name)
-                    continue
-                cases = list_cases(binary, eff_flt)
-                meta_map = list_case_metadata(binary)
-                if cases and not meta_map:
-                    raise HostFault(
-                        f"{name}: --list-json returned empty metadata for {len(cases)} cases"
-                    )
-                print(
-                    f"\n==> [{name}] {len(cases)} per-process cases on {','.join(ports)}"
-                )
-                for idx, case in enumerate(cases, 1):
-                    iso = (
-                        bool(meta_map.get(case, {}).get("isolated"))
-                        and isolate_sh.is_file()
-                    )
-                    cenv = dict(penv)
-                    if iso:
-                        cenv["MTL_ISOLATE_PORTS"] = ",".join(ports[0::2])
-                        cenv["MTL_ISOLATE_MEM_PORTS"] = ",".join(ports[1::2])
-                    if a.dry_run:
-                        dcmd = [
-                            *_sudo(root, a.no_sudo, cenv),
-                            *base,
-                            f"--gtest_filter={case}",
-                        ]
-                        print(f"[dry-run] ({idx}/{len(cases)}) {' '.join(dcmd)}")
-                        continue
-                    final_c = _run_case(
-                        a,
-                        ctx,
-                        base,
-                        case,
-                        root,
-                        cenv,
-                        a.noctx_timeout,
-                        1,
-                        out_dir,
-                        isolate_sh,
-                        iso=iso,
-                    )
-                    record(final_c)
-                    if final_c["result"] == "failed":
-                        any_fail = True
-                        if a.exit_on_failure:
-                            break
-                    if a.noctx_sleep > 0 and idx < len(cases):
-                        time.sleep(a.noctx_sleep)
-            done_profiles.add(name)
-            if any_fail and a.exit_on_failure:
-                break
-    except HostFault as exc:
-        fault_msg = str(exc)
-        for p in selected:
-            if p["name"] not in done_profiles:
-                ctx = {
-                    "profile": p["name"],
-                    "topology": p["topology"],
-                    "nic": nic_label,
+                        return {**cur, "result": "flaky", "message": ms}
+                    return cur
+                fin = cur
+            return fin
+
+        try:
+            vf_p, noctx_p, pf_p, nic = _setup_ports(a.ports, selected, created, bound)
+            for name, flt, topo, extra_s, flag_s in selected:
+                flags = set(flag_s.split(",")) if flag_s else set()
+                penv = dict(NOCTX_ENV) if "env" in flags else {}
+                root, ctx = "noroot" not in flags, {
+                    "profile": name,
+                    "nic": nic,
                     "host": host,
                 }
-                record(
-                    _mk(ctx, f"{p['name']}.*", 0, "not_run", f"host_fault: {fault_msg}")
-                )
-    finally:
-        cleanup()
-        signal.signal(signal.SIGINT, prev_i)
-        signal.signal(signal.SIGTERM, prev_t)
-
-    counts = {
-        k: sum(1 for r in records if r["result"] == k)
-        for k in ("passed", "failed", "flaky", "skipped", "not_run")
-    }
-    summary = {
-        "host": host,
-        "nic": nic_label,
-        "tier": a.tier,
-        "ports": {"vf": vf_ports, "noctx": noctx_ports, "pf": pf_ports},
-        "counts": counts,
-        "host_fault": fault_msg,
-        "elapsed_s": round(time.monotonic() - t0, 1),
-        "results_jsonl": str(jsonl),
-    }
-    if not a.dry_run:
-        (out_dir / "summary.json").write_text(
-            json.dumps(summary, indent=2) + "\n", encoding="utf-8"
-        )
-        if a.log_file:
-            lp = Path(a.log_file)
-            lp.parent.mkdir(parents=True, exist_ok=True)
-            lp.write_text(
-                jsonl.read_text(encoding="utf-8")
-                + f"=== GTEST SUMMARY ({host}/{nic_label}): {counts} elapsed={summary['elapsed_s']}s ===\n",
-                encoding="utf-8",
-            )
-    print(
-        f"\n=== GTEST SUMMARY ({host}/{nic_label}): {counts} elapsed={summary['elapsed_s']}s ==="
-    )
-    return HOST_FAULT_EXIT if fault_msg else (1 if any_fail else 0)
+                if "noctx" not in flags:
+                    xml = out / "junit" / f"gtest_{name}.xml"
+                    if topo == "kernel_lo":
+                        pargs = ["--p_port", "kernel:lo", "--r_port", "kernel:lo"]
+                    elif topo == "vf_quad":
+                        pargs = ["--port_list", ",".join(vf_p[:4])]
+                    else:
+                        pargs = ["--p_port", vf_p[0], "--r_port", vf_p[1]]
+                    base = [str(binary), f"--p_sip={a.p_sip}", "--auto_start_stop"]
+                    base += [*pargs, *extra_s.split()]
+                    if "dma" in flags:
+                        base.append("--dma_auto")
+                    if a.tier == "pr":
+                        base.append("--gtest_fail_fast")
+                    xa, fa = f"--gtest_output=xml:{xml}", f"--gtest_filter={flt}"
+                    cmd = [*_sudo(root, penv), *base, xa, fa]
+                    tee(f"\n==> [{name}] topology={topo} filter={flt}\n")
+                    rc, txt = _run_cmd(
+                        cmd, {**e, **penv}, a.timeout, out / "last.log", log_fh
+                    )
+                    parsed = _parse_xml(xml, ctx)
+                    if rc != 0 and not parsed:
+                        if m := CFG_ERR.search(txt):
+                            raise HostFault(f"Config error in {name}: {m.group(0)}")
+                        emit(
+                            ctx,
+                            f"{name}.<process>",
+                            "failed",
+                            msg=f"rc={rc} without XML",
+                        )
+                        failed = True
+                    for r in parsed:
+                        if r["result"] == "failed" and a.retries >= 2:
+                            r = run_case(
+                                ctx,
+                                base,
+                                r["case"],
+                                root,
+                                penv,
+                                a.timeout,
+                                2,
+                                r["message"],
+                            )
+                        emit(
+                            ctx, r["case"], r["result"], r["duration_ms"], r["message"]
+                        )
+                        failed = failed or r["result"] == "failed"
+                else:
+                    ports, need = (
+                        (pf_p[:2], 2) if topo == "pf_pair" else (noctx_p[:4], 4)
+                    )
+                    if len(ports) < need:
+                        if topo == "pf_pair":
+                            tee(f"\n==> [{name}] skipped (no PF ports)\n")
+                            emit(ctx, f"{name}.*", "skipped", msg="no PF ports")
+                            done.add(name)
+                            continue
+                        raise HostFault(f"{name} needs {need} ports, got {len(ports)}")
+                    pl = ",".join(ports)
+                    base = [
+                        str(binary),
+                        "--auto_start_stop",
+                        f"--p_sip={a.p_sip}",
+                        f"--port_list={pl}",
+                    ]
+                    cases = _list_cases(binary, flt)
+                    tee(f"\n==> [{name}] {len(cases)} per-process cases on {pl}\n")
+                    for c in cases:
+                        iso = any(sub in c for sub in NOCTX_ISO) and ISOLATE.is_file()
+                        ie = {}
+                        if iso:
+                            ie = {
+                                "MTL_ISOLATE_PORTS": ",".join(ports[0::2]),
+                                "MTL_ISOLATE_MEM_PORTS": ",".join(ports[1::2]),
+                            }
+                        r = run_case(
+                            ctx, base, c, root, {**penv, **ie}, noctx_to, 1, iso=iso
+                        )
+                        emit(
+                            ctx, r["case"], r["result"], r["duration_ms"], r["message"]
+                        )
+                        if r["result"] == "failed":
+                            failed = True
+                            if a.exit_on_failure:
+                                break
+                done.add(name)
+                if failed and a.exit_on_failure:
+                    break
+        except HostFault as exc:
+            fault = str(exc)
+            for name, *_ in selected:
+                if name not in done:
+                    ctx = {"profile": name, "nic": nic, "host": host}
+                    emit(ctx, f"{name}.*", "not_run", msg=f"host_fault: {fault}")
+        finally:
+            cleanup()
+            signal.signal(signal.SIGINT, pi)
+            signal.signal(signal.SIGTERM, pt)
+        keys = ("passed", "failed", "flaky", "skipped", "not_run")
+        cnt = {k: sum(1 for r in records if r["result"] == k) for k in keys}
+        el = round(time.monotonic() - t0, 1)
+        tee(f"\n=== GTEST SUMMARY ({host}/{nic}): {cnt} elapsed={el}s ===\n")
+    return 3 if fault else (1 if failed else 0)
 
 
 if __name__ == "__main__":

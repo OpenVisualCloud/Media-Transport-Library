@@ -1123,7 +1123,6 @@ def run_gtest(
     dma_dev: str = "",
     timeout_seconds: int = 600,
     auto_start_stop: bool = True,
-    level: str = "",
 ) -> str:
     """
     Run MTL integration tests (KahawaiTest).
@@ -1138,9 +1137,6 @@ def run_gtest(
         dma_dev: Comma-separated DMA devices for DMA tests (e.g. '0000:00:01.0,0000:00:01.1').
         timeout_seconds: Max seconds for test run (default 600).
         auto_start_stop: Pass --auto_start_stop flag (default True).
-        level: Test level, 'all' or 'mandatory'. Binary default (mandatory-only) if empty.
-            Non-mandatory cases (gated ST_TEST_LEVEL_ALL) silently no-op unless 'all' is
-            passed here -- they still report PASS at 0ms, so a real run must set this.
     """
     binary = REPO_ROOT / "build/tests/KahawaiTest"
     if not binary.is_file():
@@ -1178,9 +1174,6 @@ def run_gtest(
     if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
         return "Error: invalid gtest_filter characters. Use alphanumeric, *, ., :, /, -"
 
-    if level and level not in ("all", "mandatory"):
-        return "Error: level must be 'all' or 'mandatory'"
-
     # NoCtxTest cases need their own topology/port list and per-case isolation
     # (handled by run_noctx_tests / run_noctx_pf_tests). Refuse here and point
     # at the dedicated tool.
@@ -1196,8 +1189,6 @@ def run_gtest(
         cmd_parts.append("--auto_start_stop")
     if dma_dev:
         cmd_parts.extend(["--dma_dev", dma_dev])
-    if level:
-        cmd_parts.extend(["--level", level])
     cmd_parts.append(f"--gtest_filter={_exclude_noctx_tests(gtest_filter)}")
 
     out = _run_output(cmd_parts, timeout=timeout_seconds, env=_test_runtime_env())

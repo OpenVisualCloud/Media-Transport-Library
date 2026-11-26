@@ -92,6 +92,40 @@ class AnalyzeRegressionsTest(unittest.TestCase):
         for key in _KEYS:
             self.assertEqual(_names(_run(*cases), _run(*cases), key), [], key)
 
+    def test_gtest_regressions_are_scoped_by_profile(self):
+        def _gtest(cases):
+            return [
+                {
+                    "test_cases": [
+                        {
+                            "platform": "gtest",
+                            "nic": "E810",
+                            "category": "St20p",
+                            "profile": prof,
+                            "test_name": "St20p.digest_1080p_s1",
+                            "result": res,
+                            "log": log,
+                        }
+                        for prof, res, log in cases
+                    ]
+                }
+            ]
+
+        base = _gtest(
+            [("st20p_tsc_pacing", "PASSED", ""), ("st20p_auto_pacing_pa", "PASSED", "")]
+        )
+        cur = _gtest(
+            [
+                ("st20p_tsc_pacing", "PASSED", ""),
+                ("st20p_auto_pacing_pa", "FAILED", "timeout"),
+            ]
+        )
+        rep = analyze_regressions([], cur, [], base)
+        self.assertEqual(
+            [e["test_name"] for e in rep["regressions"]],
+            ["[st20p_auto_pacing_pa] St20p.digest_1080p_s1"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

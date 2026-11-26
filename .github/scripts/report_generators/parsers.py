@@ -9,59 +9,6 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 
-def parse_pytest_jsonl(jsonl_file):
-    """Parse structured pytest results.jsonl emitted by pytest_jsonl_plugin."""
-    path = Path(jsonl_file)
-    default_nic, default_cat = _extract_nic_category_from_filename(path.stem)
-    stats = {
-        "nic": default_nic,
-        "category": default_cat,
-        "passed": 0,
-        "failed": 0,
-        "skipped": 0,
-        "error": 0,
-        "xpassed": 0,
-        "xfailed": 0,
-        "total": 0,
-        "runner": "unknown",
-        "test_cases": [],
-    }
-    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        rec = json.loads(line)
-        nic = (rec.get("nic") or default_nic).upper()
-        cat = rec.get("category") or default_cat
-        stats["nic"], stats["category"] = nic, cat
-        if rec.get("host"):
-            stats["runner"] = rec["host"]
-        res = str(rec.get("result", "failed")).lower()
-        key = (
-            res
-            if res in ("passed", "failed", "skipped", "error", "xpassed", "xfailed")
-            else "failed"
-        )
-        stats[key] += 1
-        stats["total"] += 1
-        stats["test_cases"].append(
-            {
-                "nic": nic,
-                "category": cat,
-                "test_name": rec["case"],
-                "result": key.upper(),
-                "duration": f"{rec.get('duration_ms', 0)} ms",
-                "platform": "pytest",
-                "log": (
-                    rec.get("message", "")
-                    if key in ("failed", "error", "skipped")
-                    else ""
-                ),
-            }
-        )
-    return stats
-
-
 def parse_pytest_html(html_file):
     """Parse pytest HTML report and extract test results and individual test cases."""
     with open(html_file, "r") as f:
@@ -102,7 +49,7 @@ def parse_gtest_log(log_file):
     """Parse gtest results from structured results.jsonl (or legacy gtest.log)."""
     path = Path(log_file)
     content = path.read_text(encoding="utf-8", errors="replace")
-    match = re.match(r"nightly-gtest-report-(.+)", path.stem)
+    match = re.match(r"nightly-gtest-report-([^-]+)", path.stem)
     default_nic = match.group(1).upper() if match else "UNKNOWN"
 
     # Preferred format: structured JSON lines from tests/integration_tests/runner/

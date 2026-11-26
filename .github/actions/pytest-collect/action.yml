@@ -36,8 +36,6 @@ runs:
       with:
         name: ${{ inputs.report_name }}
         path: ${{ inputs.report_path }}
-        if-no-files-found: warn
-      # Accepts both structured results.jsonl and human-readable report.html.
 
     - name: Add the report to the summary
       if: always() && inputs.summary == 'true'

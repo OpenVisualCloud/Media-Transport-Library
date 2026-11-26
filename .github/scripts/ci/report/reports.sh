@@ -6,19 +6,25 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../../.."
 
 flatten_reports() {
-	local directory=$1 pattern=$2 primary_name=$3 fallback_name=$4 fallback_ext=$5
+	local directory=$1 pattern=$2 source_name=$3 extension=$4 fallback_name=${5:-} fallback_ext=${6:-}
 	cd "$directory"
 	shopt -s nullglob
 	for report_dir in ./${pattern}; do
 		[[ -d $report_dir ]] || continue
-		if [[ -f $report_dir/$primary_name ]]; then
-			mv "$report_dir/$primary_name" "${report_dir}.jsonl"
-		elif [[ -f $report_dir/$fallback_name ]]; then
+		if [[ -f $report_dir/$source_name ]]; then
+			mv "$report_dir/$source_name" "${report_dir}.${extension}"
+		elif [[ -n $fallback_name && -f $report_dir/$fallback_name ]]; then
 			mv "$report_dir/$fallback_name" "${report_dir}.${fallback_ext}"
 		fi
 		rm -rf "$report_dir"
 	done
-	ls -lh ./*.jsonl ./*."$fallback_ext" 2>/dev/null || echo "No jsonl or ${fallback_ext} reports found"
+	local files=(./*."$extension")
+	[[ -n $fallback_ext ]] && files+=(./*."$fallback_ext")
+	if ((${#files[@]} > 0)); then
+		ls -lh "${files[@]}"
+	else
+		echo "No ${extension} reports found"
+	fi
 }
 
 case "${1:-}" in
@@ -49,8 +55,8 @@ performance)
 	# upload-artifact rejects the colons in the timestamped log directory names.
 	tar -czf perf-logs.tar.gz logs/performance || echo "::warning::Packing the performance logs failed"
 	;;
-flatten-pytest) flatten_reports "${REPORT_DIR:-python-reports}" 'nightly-test-report-*' results.jsonl report.html html ;;
-flatten-gtest) flatten_reports "${REPORT_DIR:-gtest-reports}" 'nightly-gtest-report-*' results.jsonl gtest.log log ;;
+flatten-pytest) flatten_reports "${REPORT_DIR:-python-reports}" 'nightly-test-report-*' report.html html ;;
+flatten-gtest) flatten_reports "${REPORT_DIR:-gtest-reports}" 'nightly-gtest-report-*' results.jsonl jsonl gtest.log log ;;
 list-system-info) ls -lah system-info-reports || echo "No system info reports found (this is optional)" ;;
 install-dependencies) python3 -m pip install --require-hashes --only-binary :all: -r .github/scripts/ci/report/requirements.txt ;;
 combine-pytest)

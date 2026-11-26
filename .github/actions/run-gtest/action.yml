@@ -3,7 +3,7 @@ description: >-
   Run the bare-metal gtest harness on a host that validate-host prepared, then
   stop the test processes. The nightly mode runs a profile group (or regex
   filter), keeps going after failures, and uploads structured results.jsonl,
-  summary.json, gtest.log, and system status.
+  gtest.log, and system status.
 
 inputs:
   nic:
@@ -14,7 +14,7 @@ inputs:
     required: false
     default: 'false'
   gtest_group:
-    description: Profile group name from tests/integration_tests/profiles.yaml. Nightly only.
+    description: Profile group name from gtest_runner.py. Nightly only.
     required: false
     default: ''
   gtest_cases:
@@ -70,7 +70,6 @@ runs:
         name: nightly-gtest-report-${{ inputs.nic }}${{ inputs.gtest_group && format('-{0}', inputs.gtest_group) || '' }}
         path: |
           gtest-results/results.jsonl
-          gtest-results/summary.json
           gtest-results/gtest.log
         if-no-files-found: warn
 
