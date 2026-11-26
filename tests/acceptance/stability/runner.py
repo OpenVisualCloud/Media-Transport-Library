@@ -143,10 +143,15 @@ class Run:
             return
         log = open(os.path.join(self.dir, "mtl_manager.log"), "wb")
         app = set(cpu_list(self.host.cpus.app)) or None
+        fence = self.fence
 
         def pre():
             os.setsid()
-            if app:
+            # The fence limits the slice of the engine to the housekeeping CPUs, so
+            # the manager goes into the fence cgroup first, as a worker does.
+            if fence:
+                fence.enter(mask=self.host.cpus.app)
+            elif app:
                 os.sched_setaffinity(0, app)
 
         self.manager = subprocess.Popen(
@@ -281,6 +286,8 @@ class Run:
                 break
             if self.fence and now - self.t0 > SETTLE_S:
                 live = [p.popen.pid for p in self.procs.values() if p.rc is None]
+                if self.manager and self.manager.poll() is None:
+                    live.append(self.manager.pid)
                 n_lc, n_app = self.fence.move_threads(live)
                 if not isolated:
                     state = self.fence.isolate()
