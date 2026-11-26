@@ -22,6 +22,8 @@ void ut_trs_destroy(ut_trs_ctx* ctx);
 void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns);
 /* an in-frame pad each pad_interval pkts */
 void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval);
+/* video_trs_rl_pad_due(): whether the pkt at pkt_idx of a bulk of bulk takes a pad */
+bool ut_trs_pad_due(int pkt_idx, float pad_interval, int bulk);
 void ut_trs_set_warm_pkts_cap(ut_trs_ctx* ctx, uint32_t warm_pkts_cap);
 void ut_trs_set_target_tsc(ut_trs_ctx* ctx, uint64_t target_tsc);
 void ut_trs_set_target_tsc_port(ut_trs_ctx* ctx, int port, uint64_t target_tsc);
@@ -180,6 +182,8 @@ void ut_trs_set_cpu_stalls(ut_trs_ctx* ctx, const uint64_t* at_tsc, const uint64
                            int n);
 /* one visit of the RL tasklet, a transmitter call of its own */
 int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx);
+/* the next ut_trs_call_rl_tasklet() visits the port lag_ns after its call began */
+void ut_trs_set_visit_lag_ns(ut_trs_ctx* ctx, uint64_t lag_ns);
 /* a call carrying pads then pkts takes n of them, 0 all */
 void ut_trs_set_mixed_accept(ut_trs_ctx* ctx, uint16_t n);
 /* such a call stalls ns before its doorbell */

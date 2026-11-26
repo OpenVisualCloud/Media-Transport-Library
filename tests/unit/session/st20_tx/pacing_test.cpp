@@ -25,10 +25,13 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <limits>
 #include <string>
 
 #include "session/st20_tx/rl_vrx_model.h"
 #include "session/st20_tx_harness.h"
+#include "session/st_video_transmitter_harness.h"
 #include "session/stderr_capture.h"
 #include "st2110/st_tx_video_rl.h"
 
@@ -1526,4 +1529,76 @@ TEST(St20TxRlPlanArming, EveryRlFormatArmsItsPlanOrWarns) {
           }
           ut_txv_destroy(ctx);
         }
+}
+
+TEST(St20TxRlCachedPacingTest, CachedFieldsAndPadDueMatchExactFloatingPoint) {
+  const long double trs_cases[] = {
+      1000000000.0L * 1001.0L / 60000.0L * 1080.0L / 1125.0L / 4320.0L,
+      1000000000.0L * 1001.0L / 60000.0L * 2160.0L / 2250.0L / 17280.0L,
+      563.824544L,
+      8341.6666666666666667L,
+      2500000000.0L, /* past UINT32_MAX: warm-up (warm >= 2), near-lead and tx * trs */
+  };
+  for (long double trs : trs_cases) {
+    for (uint32_t warm : {0u, 1u, 59u, 118u, 128u, 4000u}) {
+      uint64_t got_warm = 0, got_near = 0, got_tx[5] = {};
+      ut_txv_check_cached_pacing(trs, warm, &got_warm, &got_near, got_tx);
+      EXPECT_EQ(got_warm, (uint64_t)(warm * trs));
+      EXPECT_EQ(got_near, (uint64_t)(2 * warm * trs));
+      for (uint16_t tx = 0; tx <= 4; tx++) {
+        EXPECT_EQ(got_tx[tx], (uint64_t)(tx * trs));
+      }
+    }
+  }
+
+  ASSERT_EQ(ut_trs_init(), 0);
+  const float intervals[] = {4.0001f, 7.5f, 160.0f, 164.37f, 170.125f};
+  for (float pad_interval : intervals) {
+    ut_trs_ctx* ctx = ut_trs_create();
+    ASSERT_NE(ctx, nullptr);
+    /* nic_desc 0: the direct mock counts every mbuf not from the priv pool, stream pkts
+     * too */
+    ASSERT_EQ(ut_trs_setup_stream(ctx, 3707.407407L, 0, 1), 0);
+    ut_trs_set_pad_interval(ctx, pad_interval);
+    ut_trs_stream_fill(ctx);
+
+    uint32_t expected_pads = 0;
+    const int bulk = 4; /* ST_SESSION_MAX_BULK set by ut_trs_setup_stream */
+    /* ut_trs_stream_fill queues 1023 pkts -> 255 full bursts of 4 starting at idx = 1 */
+    for (int b = 0; b < 255; b++) {
+      int pkt_idx = 1 + b * bulk;
+      if (std::fmod(static_cast<float>(pkt_idx + 1) + pad_interval / 2.0f, pad_interval) <
+          static_cast<float>(bulk))
+        expected_pads++;
+    }
+    for (int c = 0; c < 300; c++) {
+      ut_trs_advance_mock_tsc(ctx, 30000);
+      ut_trs_call_rl_tasklet(ctx);
+    }
+    ASSERT_EQ(ut_trs_port_packets(ctx), 255u * bulk);
+    uint32_t actual_pads =
+        ut_trs_pad_send_count(ctx) - static_cast<uint32_t>(ut_trs_port_packets(ctx));
+    EXPECT_EQ(actual_pads, expected_pads) << "pad_interval=" << pad_interval;
+    ut_trs_destroy(ctx);
+  }
+}
+
+/* video_trs_rl_pad_due() against fmodf() itself, the fallback inputs included */
+TEST(St20TxRlCachedPacingTest, PadDueMatchesFmodfOnEdgeInputs) {
+  const float inf = std::numeric_limits<float>::infinity();
+  const float intervals[] = {0.0f,   -0.0f,  -1.0f,   std::nanf(""), inf,  -inf,
+                             1e-30f, 1e-7f,  0.5f,    1.0f,          3.0f, 4.0001f,
+                             7.5f,   160.0f, 164.37f, 1e9f};
+  const int idxs[] = {-1, 0, 1, 2, 3, 159, 160, 4319, 268435455, 268435456, 2147483646};
+  for (float pad_interval : intervals) {
+    for (int pkt_idx : idxs) {
+      for (int bulk : {1, 4, 16}) {
+        bool expect = std::fmod(static_cast<float>(pkt_idx + 1) + pad_interval / 2.0f,
+                                pad_interval) < static_cast<float>(bulk);
+        EXPECT_EQ(ut_trs_pad_due(pkt_idx, pad_interval, bulk), expect)
+            << "pkt_idx " << pkt_idx << " pad_interval " << pad_interval << " bulk "
+            << bulk;
+      }
+    }
+  }
 }

@@ -95,10 +95,10 @@ TEST_P(St20TxRlIdleCost, APortWaitingForItsWindowReadsTheClockOnce) {
   EXPECT_EQ(ctx_.size(), ut_trs_sch_dp_gets(sch_)) << "the visits' only";
 }
 
-/* the builder ring empty: no burst, and one clock read, which times the reclaim */
-TEST_P(St20TxRlIdleCost, APortWithAnEmptyRingReadsTheClockOnce) {
+/* the builder ring empty and no batch due when the call began: no burst, no clock read */
+TEST_P(St20TxRlIdleCost, APortWithAnEmptyRingReadsNoClock) {
   ASSERT_EQ(0u, IdleCall());
-  EXPECT_EQ(1u + ctx_.size(), ut_trs_sch_tsc_reads(sch_)) << "the call's and one a port";
+  EXPECT_EQ(1u, ut_trs_sch_tsc_reads(sch_)) << "the call's only";
   EXPECT_EQ(ctx_.size(), ut_trs_sch_dp_gets(sch_)) << "the visits' only";
 }
 
@@ -156,7 +156,7 @@ TEST_P(St20TxRlIdleCost, APortBehindAFullNicQueueRetriesInOneBurst) {
 
 /* A scheduler that falls behind sends each port the bulk its builder just added, and
  * finds the ring empty behind it: the burst is stamped by one clock read, and the reclaim
- * reads none, as no batch comes due within a tick of that stamp. */
+ * reads none, as no batch was due when the call began. */
 TEST_P(St20TxRlIdleCost, APortThatSentItsOnlyBulkReadsTheClockOnce) {
   ASSERT_EQ(0u, IdleCall());
   /* to the call that reclaims: the next batch is due a batch time on */
@@ -190,6 +190,21 @@ TEST_P(St20TxRlIdleCost, ABurstAfterAStallIsFollowedByAnEmptyOne) {
   for (ut_trs_ctx* c : ctx_) EXPECT_EQ(1u, ut_trs_real_send_count(c));
   EXPECT_EQ(1u + 2 * ctx_.size(), ut_trs_sch_tsc_reads(sch_))
       << "the call's and two a port";
+}
+
+/* a port that sent all its builder ring had leaves a short NIC queue and nothing more to
+ * send: the catch-up does not come back to it */
+TEST_P(St20TxRlIdleCost, APortThatSentItsWholeRingIsNotCaughtUp) {
+  ASSERT_EQ(0u, IdleCall());
+  /* the two pkts a port sends are short of it */
+  ut_trs_sch_set_schedule_ns(sch_, 200000);
+  for (ut_trs_ctx* c : ctx_) {
+    ut_trs_enqueue_mid_pkt(c);
+    ut_trs_enqueue_mid_pkt(c);
+  }
+  ut_trs_sch_call(sch_);
+  for (ut_trs_ctx* c : ctx_) EXPECT_EQ(2u, ut_trs_real_send_count(c));
+  EXPECT_EQ(ctx_.size(), ut_trs_sch_dp_gets(sch_)) << "the visits' only";
 }
 
 INSTANTIATE_TEST_SUITE_P(Sessions, St20TxRlIdleCost, ::testing::Values(1, 13, 60));

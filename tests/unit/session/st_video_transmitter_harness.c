@@ -79,6 +79,7 @@ struct ut_trs_ctx {
   bool cost_stamp_pending;
   /* the next tsc read begins a transmitter call, and stands for its read of visit_tsc */
   bool visit_pending;
+  uint64_t visit_lag_ns; /* ut_trs_set_visit_lag_ns(), for the next call only */
   uint32_t refcnt_since_tsc;
   uint32_t max_refcnt_before_burst;
   /* the PMD of a reclaiming port: done rs batches it has not freed yet */
@@ -162,6 +163,13 @@ static uint64_t ut_trs_tsc_time_fn(struct mtl_main_impl* impl) {
 /* outside a scheduler, each call of ctx is a transmitter call of its own */
 static void ut_trs_visit_alone(struct ut_trs_ctx* ctx) {
   ctx->visit_pending = ctx->session.mgr == &ctx->mgr;
+  /* until that read, the call began at the latest time known */
+  if (ctx->visit_pending) ctx->mgr.visit_tsc = ctx->clock ? *ctx->clock : ctx->last_tsc;
+  if (ctx->visit_pending && ctx->visit_lag_ns) {
+    ctx->mgr.visit_tsc -= ctx->visit_lag_ns;
+    ctx->visit_pending = false;
+    ctx->visit_lag_ns = 0;
+  }
 }
 
 static uint64_t ut_trs_ptp_time_fn(struct mtl_main_impl* impl, enum mtl_port port) {
@@ -597,16 +605,28 @@ void ut_trs_destroy(ut_trs_ctx* ctx) {
   free(ctx);
 }
 
+/* the inputs of the reclaim batch time changed: recompute it at the next due batch */
+static void ut_trs_reclaim_batch_reset(struct ut_trs_ctx* ctx) {
+  memset(ctx->session.trs_reclaim_batch_ns, 0, sizeof(ctx->session.trs_reclaim_batch_ns));
+}
+
 void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
+  st_tx_video_pacing_sync(&ctx->session.pacing);
+  ut_trs_reclaim_batch_reset(ctx);
 }
 
 void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval) {
   ctx->session.pacing.pad_interval = pad_interval;
 }
 
+bool ut_trs_pad_due(int pkt_idx, float pad_interval, int bulk) {
+  return video_trs_rl_pad_due(pkt_idx, pad_interval, bulk);
+}
+
 void ut_trs_set_warm_pkts_cap(ut_trs_ctx* ctx, uint32_t warm_pkts_cap) {
   ctx->session.pacing.warm_pkts = warm_pkts_cap;
+  st_tx_video_pacing_sync(&ctx->session.pacing);
 }
 
 void ut_trs_set_target_tsc(ut_trs_ctx* ctx, uint64_t target_tsc) {
@@ -634,6 +654,7 @@ void ut_trs_set_drain(ut_trs_ctx* ctx, int port, long double drain_ns) {
   plan->trim_pads = st_tx_video_rl_trim_pads(plan->pad_size);
   plan->armed = drain_ns != 0;
   ut_trs_plan_anchor(plan);
+  ut_trs_reclaim_batch_reset(ctx);
 }
 
 void ut_trs_set_credit(ut_trs_ctx* ctx, int port, long double credit_ns) {
@@ -800,6 +821,7 @@ void ut_trs_set_pmd_done_batches(ut_trs_ctx* ctx, uint16_t rs_thresh, uint32_t b
                                  uint64_t free_ns) {
   ctx->impl.inf[MTL_PORT_P].tx_reclaim_rs_thresh = rs_thresh;
   if (rs_thresh) ctx->impl.inf[MTL_PORT_P].nb_tx_desc = MT_DEV_TX_DESC_DEEP;
+  ut_trs_reclaim_batch_reset(ctx);
   ctx->pmd_groups = 0;
   ut_trs_add_pmd_done_batches(ctx, batches, free_ns);
 }
@@ -1096,6 +1118,10 @@ int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx) {
   return ret;
 }
 
+void ut_trs_set_visit_lag_ns(ut_trs_ctx* ctx, uint64_t lag_ns) {
+  ctx->visit_lag_ns = lag_ns;
+}
+
 void ut_trs_set_burst_cost(ut_trs_ctx* ctx, const uint64_t* d_ns, const uint64_t* g_ns,
                            int n) {
   if (n > UT_TRS_MAX_BURST_COST) n = UT_TRS_MAX_BURST_COST;
@@ -1188,6 +1214,8 @@ int ut_trs_setup_stream(ut_trs_ctx* ctx, long double trs_ns, uint16_t nic_desc,
 
   s->bulk = ST_SESSION_MAX_BULK;
   s->pacing.trs = trs_ns;
+  st_tx_video_pacing_sync(&s->pacing);
+  ut_trs_reclaim_batch_reset(ctx);
   /* no in-frame pads, < 1 % of the wire */
   s->pacing.pad_interval = 1e9f;
   ctx->nic_desc = nic_desc;

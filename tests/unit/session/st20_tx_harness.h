@@ -138,6 +138,10 @@ int64_t ut_txv_run_frame_visit_cursor(ut_txv_ctx* ctx, int pkt_idx,
 /* The next ut_txv_run_frame_visit() is slice level, the app reporting lines ready; -1,
  * the default, keeps it frame level. */
 void ut_txv_set_visit_slice_lines(ut_txv_ctx* ctx, int lines);
+/* a frame visit's transmitter call read the clock lag_ns before it */
+void ut_txv_set_visit_lag_ns(ut_txv_ctx* ctx, uint64_t lag_ns);
+/* a slice-level frame visit's lines-ready callback takes lines_ns */
+void ut_txv_set_visit_lines_ns(ut_txv_ctx* ctx, uint64_t lines_ns);
 /* Drives tv_tasklet_rtp() with one app packet whose st20_rfc4175_rtp_hdr row
  * number carries the given field parity, so the production builders' F-bit
  * extraction is what tv_sync_pacing() is told. tx_no_chain selects tv_build_rtp()
@@ -765,6 +769,10 @@ int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx);
 /* notify_frame_done calls when the leg's first mt_txq_flush() or mt_txq_recovery_flush()
  * started, -1 for none */
 int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg);
+/* st_tx_video_pacing_sync() on trs and warm_pkts: the cached warm-up, near-lead and
+ * tx * trs (tx 0..ST_SESSION_MAX_BULK) ns */
+void ut_txv_check_cached_pacing(long double trs, uint32_t warm_pkts, uint64_t* out_warm,
+                                uint64_t* out_near, uint64_t out_tx[5]);
 
 #ifdef __cplusplus
 }

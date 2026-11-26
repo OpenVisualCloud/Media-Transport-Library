@@ -164,6 +164,8 @@ struct st_tx_video_pacing {
   long double tr_offset;  /* in ns, tr offset time of each frame */
   uint32_t vrx;           /* packets unit, VRX start value of each frame */
   uint32_t warm_pkts;     /* packets unit, pkts for RL pacing warm boot */
+  uint32_t warmup_u32;    /* warm_pkts * trs in ns, UINT32_MAX: recompute */
+  uint32_t near_lead_u32; /* 2 * warm_pkts * trs in ns, UINT32_MAX: recompute */
   long double frame_time; /* time of the frame in nanoseconds */
   long double frame_time_sampling; /* time of the frame in sampling(90k) */
   /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts) */
@@ -174,6 +176,7 @@ struct st_tx_video_pacing {
   int32_t snap_loss_ns;
   /* in ns, how much less than snap_loss_ns the current frame's snap took */
   int32_t vrx_room_ns;
+  uint32_t bulk4_trs_u32; /* ST_SESSION_MAX_BULK * trs in ns, UINT32_MAX: recompute */
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
@@ -192,6 +195,33 @@ struct st_tx_video_pacing {
    * sends them after it anyway */
   uint64_t user_start_tai;
 };
+
+static inline void st_tx_video_pacing_sync(struct st_tx_video_pacing* p) {
+  uint64_t warm_ns = (uint64_t)(p->warm_pkts * p->trs);
+  uint64_t near_ns = (uint64_t)(2 * p->warm_pkts * p->trs);
+  uint64_t bulk4_ns = (uint64_t)(ST_SESSION_MAX_BULK * p->trs);
+  p->warmup_u32 = warm_ns < UINT32_MAX ? (uint32_t)warm_ns : UINT32_MAX;
+  p->near_lead_u32 = near_ns < UINT32_MAX ? (uint32_t)near_ns : UINT32_MAX;
+  p->bulk4_trs_u32 = bulk4_ns < UINT32_MAX ? (uint32_t)bulk4_ns : UINT32_MAX;
+}
+
+static inline uint64_t st_tx_video_pacing_warmup_ns(const struct st_tx_video_pacing* p) {
+  if (likely(p->warmup_u32 != UINT32_MAX)) return p->warmup_u32;
+  return (uint64_t)(p->warm_pkts * p->trs);
+}
+
+static inline uint64_t st_tx_video_pacing_near_lead_ns(
+    const struct st_tx_video_pacing* p) {
+  if (likely(p->near_lead_u32 != UINT32_MAX)) return p->near_lead_u32;
+  return (uint64_t)(2 * p->warm_pkts * p->trs);
+}
+
+static inline uint64_t st_tx_video_pacing_tx_trs(const struct st_tx_video_pacing* p,
+                                                 uint16_t tx) {
+  if (likely(tx == ST_SESSION_MAX_BULK && p->bulk4_trs_u32 != UINT32_MAX))
+    return p->bulk4_trs_u32;
+  return (uint64_t)(tx * p->trs);
+}
 
 enum st_tx_video_rl_state {
   ST_TX_VIDEO_RL_STATE_IDLE = 0,
@@ -444,6 +474,9 @@ struct st_tx_video_session_impl {
   /* when the oldest TX batch no tx_burst has gone for is done; every RL burst reads it,
    * a refused or short one raises it */
   uint64_t trs_reclaim_tsc[MTL_SESSION_PORT_MAX];
+  /* its batch time and ring span, set at the first due batch after a port reset */
+  uint64_t trs_reclaim_batch_ns[MTL_SESSION_PORT_MAX];
+  uint64_t trs_reclaim_ring_ns[MTL_SESSION_PORT_MAX];
   long double trs_rl_drained[MTL_SESSION_PORT_MAX];
   /* the latest the shaper finishes the pads queued since packet 0 was dequeued */
   long double trs_rl_pads_end[MTL_SESSION_PORT_MAX];
@@ -467,6 +500,9 @@ struct st_tx_video_sessions_mgr {
   /* control plane only, the tasklets skip a session while it is held */
   rte_spinlock_t mutex[ST_SCH_MAX_TX_VIDEO_SESSIONS];
   struct mt_sch_dp_slot dp_slot; /* the session the tasklets are on */
+  /* the tsc at the start of the current builder call; kept last: ahead of sessions[],
+   * mutex[] or dp_slot it shifts them, which slows the TX loop */
+  uint64_t build_tsc;
 };
 
 struct st_video_transmitter_impl {

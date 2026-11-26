@@ -112,6 +112,8 @@ struct ut_txv_ctx {
   int trim_pad_tag;
   long double train_drain_end_ns;
   int visit_slice_lines; /* ut_txv_set_visit_slice_lines(), -1 for frame level */
+  uint64_t visit_lag_ns; /* ut_txv_set_visit_lag_ns() */
+  uint64_t lines_ns;     /* ut_txv_set_visit_lines_ns() */
   bool stale_stamps;     /* ut_txv_set_stale_stamps() */
   int migrated_refused;  /* trs_refused[] of the last ut_txv_run_migrate()'s new slot */
   int64_t r_budget;      /* ut_txv_set_redundant_budget() */
@@ -574,10 +576,12 @@ void ut_txv_set_start_vrx(ut_txv_ctx* ctx, uint16_t start_vrx) {
 
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
+  st_tx_video_pacing_sync(&ctx->session.pacing);
 }
 
 void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts) {
   ctx->session.pacing.warm_pkts = warm_pkts;
+  st_tx_video_pacing_sync(&ctx->session.pacing);
 }
 
 void ut_txv_set_interlaced(ut_txv_ctx* ctx, bool enable) {
@@ -838,11 +842,20 @@ static int ut_txv_visit_lines_ready(void* priv, uint16_t frame_idx,
   struct ut_txv_ctx* ctx = priv;
   (void)frame_idx;
   meta->lines_ready = ctx->visit_slice_lines;
+  ctx->mock_tsc_ns += ctx->lines_ns;
   return 0;
 }
 
 void ut_txv_set_visit_slice_lines(ut_txv_ctx* ctx, int lines) {
   ctx->visit_slice_lines = lines;
+}
+
+void ut_txv_set_visit_lag_ns(ut_txv_ctx* ctx, uint64_t lag_ns) {
+  ctx->visit_lag_ns = lag_ns;
+}
+
+void ut_txv_set_visit_lines_ns(ut_txv_ctx* ctx, uint64_t lines_ns) {
+  ctx->lines_ns = lines_ns;
 }
 
 int64_t ut_txv_run_frame_visit(ut_txv_ctx* ctx, int pkt_idx, int64_t ahead_ns) {
@@ -866,6 +879,7 @@ int64_t ut_txv_run_frame_visit_cursor(ut_txv_ctx* ctx, int pkt_idx,
   s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
   s->st20_pkt_idx = pkt_idx;
   s->pacing.tsc_time_cursor = cursor_ns;
+  ctx->mgr.visit_tsc = ctx->mock_tsc_ns - ctx->visit_lag_ns; /* the transmitter call's */
   tvs_tasklet_handler(&ctx->mgr);
   ut_txv_tx_path_uinit(ctx);
   s->st20_frames = NULL;
@@ -2125,6 +2139,7 @@ int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
   s->pacing_way[MTL_SESSION_PORT_P] = (enum st21_tx_pacing_way)way;
   s->pacing.warm_pkts = 0;
   s->pacing.trs = NS_PER_US;
+  st_tx_video_pacing_sync(&s->pacing);
   s->last_burst_succ_time_tsc[MTL_SESSION_PORT_P] = now;
   s->tx_hang_detect_time_thresh = UINT64_MAX;
   ctx->mock_tsc_ns = now;
@@ -2165,10 +2180,12 @@ int ut_txv_run_frame_rl_late_ports(ut_txv_ctx* ctx, uint32_t late_pkt,
                                    const uint64_t* late_ns) {
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st_frame_trans frame = {0};
-  uint8_t frame_data[UT_TXV_FRAME_SIZE] = {0};
+  uint8_t* frame_data = calloc((size_t)late_pkt + 1, UT_TXV_FRAME_SIZE);
   uint64_t flagged = s->stat_rl.vrx_frames;
   int num_port = ctx->r_budget ? 2 : 1;
   int ret = -1;
+
+  if (!frame_data) return -ENOMEM;
 
   for (int port = 0; port < num_port; port++)
     if (ut_txv_tx_leg_init(ctx, port, 0) < 0) goto out;
@@ -2217,6 +2234,7 @@ out:
     s->trs_inflight_num[port] = 0;
   }
   s->st20_frames = NULL;
+  free(frame_data);
   return ret;
 }
 
@@ -2593,6 +2611,7 @@ int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad
   extra->size = normal->size + sizeof(struct st20_rfc4175_extra_rtp_hdr);
   s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
                   s->st20_total_pkts;
+  st_tx_video_pacing_sync(&s->pacing);
   return ut_txv_train_rl(ctx, nb_tx_desc, pad_ns);
 }
 
@@ -2624,6 +2643,7 @@ static int ut_txv_init_frame_at(ut_txv_ctx* ctx, enum st20_packing packing,
   if (ret < 0) return ret;
   s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
                   s->st20_total_pkts;
+  st_tx_video_pacing_sync(&s->pacing);
   return 0;
 }
 
@@ -4191,4 +4211,16 @@ int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx) {
 
 int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg) {
   return ctx->flush_seen[leg] ? ctx->done_at_flush[leg] : -1;
+}
+
+void ut_txv_check_cached_pacing(long double trs, uint32_t warm_pkts, uint64_t* out_warm,
+                                uint64_t* out_near, uint64_t out_tx[5]) {
+  struct st_tx_video_pacing p;
+  memset(&p, 0, sizeof(p));
+  p.trs = trs;
+  p.warm_pkts = warm_pkts;
+  st_tx_video_pacing_sync(&p);
+  *out_warm = st_tx_video_pacing_warmup_ns(&p);
+  *out_near = st_tx_video_pacing_near_lead_ns(&p);
+  for (uint16_t tx = 0; tx <= 4; tx++) out_tx[tx] = st_tx_video_pacing_tx_trs(&p, tx);
 }

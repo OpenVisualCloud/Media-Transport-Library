@@ -831,6 +831,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->warm_pkts = 0; /* no need warmup for wide */
     info("%s[%02d], wide pacing\n", __func__, idx);
   }
+  st_tx_video_pacing_sync(pacing);
   tv_rl_plan_init(impl, s);
   info("%s[%02d], trs %Lf trOffset %Lf vrx %u warm_pkts %u frame time %Lfms fps %f\n",
        __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
@@ -1056,6 +1057,7 @@ static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
   struct st_tx_video_pacing* pacing = &s->pacing;
   /* reset trs */
   pacing->trs = pacing->frame_time * pacing->reactive / pkts_in_frame;
+  st_tx_video_pacing_sync(pacing);
   dbg("%s(%d), trs %Lf\n", __func__, s->idx, pacing->trs);
   return tv_sync_pacing(impl, s, required_tai, second_field);
 }
@@ -1684,11 +1686,10 @@ static int tv_build_st20_redundant_chain(struct st_tx_video_session_impl* s,
   return 0;
 }
 
-/* at a builder visit inside a frame, the lead of the next pkt it builds; compared as a
- * long double, as a cursor saturated to UINT64_MAX overflows int64_t */
-static inline void tv_lead_visit(struct mtl_main_impl* impl,
-                                 struct st_tx_video_session_impl* s) {
-  uint64_t cursor = (uint64_t)s->pacing.tsc_time_cursor, now = mt_get_tsc(impl);
+/* at a builder visit inside a frame, the lead of the next pkt it builds against the start
+ * of the builder call, at most that call old */
+static inline void tv_lead_visit(struct st_tx_video_session_impl* s) {
+  uint64_t cursor = (uint64_t)s->pacing.tsc_time_cursor, now = s->mgr->build_tsc;
   /* a saturated cursor, UINT64_MAX, is no lead below 0 */
   int64_t lead_ns = cursor > now ? (int64_t)RTE_MIN(cursor - now, (uint64_t)INT64_MAX)
                                  : -(int64_t)(now - cursor);
@@ -2230,7 +2231,7 @@ static bool tv_reclaim_poll(struct st_tx_video_session_impl* s, uint64_t now) {
  * transmitters send a target past 1 s at once. */
 static uint64_t tv_next_frame_open_tsc(struct st_tx_video_session_impl* s, uint64_t now) {
   uint64_t target = s->pacing.tsc_time_frame_start;
-  uint64_t warm_ns = (uint64_t)(s->pacing.warm_pkts * s->pacing.trs);
+  uint64_t warm_ns = st_tx_video_pacing_warmup_ns(&s->pacing);
 
   if (now < target && target - now > NS_PER_S) return 0;
   return target > warm_ns ? target - warm_ns : 0;
@@ -2447,7 +2448,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   }
 
   /* pkts of a frame that waited for its lines are due before they are built */
-  if (s->st20_pkt_idx && !s->st20_frame_lines_waited) tv_lead_visit(impl, s);
+  if (s->st20_pkt_idx && !s->st20_frame_lines_waited) tv_lead_visit(s);
   struct rte_mbuf* pkts[bulk];
   struct rte_mbuf* pkts_r[bulk];
   struct rte_mbuf* pkts_chain[bulk];
@@ -3114,6 +3115,7 @@ static int tvs_tasklet_handler(void* priv) {
   uint64_t tsc_s = 0;
   bool time_measure = mt_sessions_time_measure(impl);
 
+  mgr->build_tsc = mt_get_tsc(impl);
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_video_session_dp_get(mgr, sidx);
     if (!s || !s->active) continue;
@@ -3613,6 +3615,7 @@ static void tv_transmitter_port_state_init(struct st_tx_video_session_impl* s, i
   s->trs_rl_tail[i] = false;
   s->trs_rl_drained[i] = 0;
   s->trs_wire_tsc[i] = 0;
+  s->trs_reclaim_batch_ns[i] = 0;
 }
 
 static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {

@@ -400,11 +400,13 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
         nothing. The frame before leaves the ring full of done batches.
         A warm-up pad burst frees one before its doorbell, ~1.4 µs at 720p59.94, which takes
         the first burst past `ST_TX_VIDEO_RL_STALL_NS` (`St20TxRlReclaim`).
-        An idle visit reads the TSC once: the visit that waits for its window times the
-        reclaim by the read that tested the window, and a port that does not reclaim
-        (rs_thresh 0, ST22) reads none for it. The second call of a visit
-        (`video_trs_rl_tasklet()`), behind the first call's burst, reads none for the reclaim
-        unless a batch is due within `ST_TX_VIDEO_RL_TICK_NS` of that burst (`St20TxRlIdleCost`).
+        The visit that waits for its window, the one that opens it too, times the reclaim by
+        the read that tests the window, so a due batch goes ahead of the pre-arm's pads. A
+        visit that finds the builder ring empty reads the TSC for the reclaim only for a
+        batch due when the transmitter call began (`mgr->visit_tsc`), and a port that does
+        not reclaim (rs_thresh 0, ST22) reads none (`St20TxRlIdleCost`); a batch due since
+        goes in the port's next NIC call, a late packet 0's burst included
+        (`St20TxRlReclaim.ABatchDueSinceTheCallStartGoesInTheNextNicCall`).
       - Hang: a hung queue holds the frames too, and with nothing to send the transmitter sees no
         burst fail. A wait past `tx_hang_detect_time_thresh` (at least 2 frame times) flags the
         recovery of every leg idle as long (`tv_frames_out_hang()`); a reclaim gap past half of

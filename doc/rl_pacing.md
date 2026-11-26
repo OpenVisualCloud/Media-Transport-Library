@@ -161,7 +161,8 @@ The departures therefore fall slowly and jump at every pad, like the teeth of a 
 
 Check 1 measures only the first packet of a burst. If that burst finds the shaper idle, a packet behind the next pad can leave up to one tooth, 3.9 µs, later relative to its target than the measured packet. The budget therefore sets 5.9 µs aside for the sawtooth; chapter 20 gives the formula.
 
-**Check 2** runs per scheduler and reports a core that cannot keep up. It has two signs. The **round** is the average time of one loop of the scheduler, and the **round budget** is the longest round in which 4 packets per visit still keep up with the stream, 16.2 µs here. The **lead** is how long before its target a packet was built, and it is negative when the packet was built after it.
+**Check 2** runs per scheduler and reports a core that cannot keep up. It has two signs. The **round** is the average time of one loop of the scheduler, and the **round budget** is the longest round in which 4 packets per visit still keep up with the stream, 16.2 µs here.
+The **lead** is how long before its target a packet was built, and it is negative when the packet was built after it, as told by a clock up to a builder call old.
 
 | Line | Level and time | Meaning | What to do |
 |---|---|---|---|
@@ -171,7 +172,7 @@ Check 1 measures only the first packet of a burst. If that burst finds the shape
 | `port P vrx V leaves no stall limit, frames may be flagged` | warn, at session create | The VRX budget is so small that no stall is kept, and check 1 can report frames that are on time. | use a larger `start_vrx`, or none |
 | `port P rl training fail …, fallback to tsc pacing` | err, at session create | The session paces by TSC for its whole life. | check the ice driver ([E800 Series Driver Guide](e800_series_drivers.md)), then create the session again |
 | `N frames may break VRX >= 0, a pkt up to Xus past its target over the Yus budget: packet 0 A mid-frame B; K frames started up to Zus late` | err, per period | Check 1 reported N frames: A at packet 0, B mid-frame, the worst X late; Y is the VRX budget. K more came late from the application. | capture and verify; look for a busy core (A), a scheduler away too long (B), the application (K) |
-| `round Xus past the Yus budget, lead -Zus, frames fall behind: move sessions off this scheduler` | err, per period | Check 2: the round X is over the round budget Y, or a packet was built Z after its target. Either part can be missing. | put fewer sessions on that scheduler (chapter 10) |
+| `round Xus past the Yus budget, lead -Zus, frames fall behind: move sessions off this scheduler` | err, per period | Check 2: the round X is over the round budget Y, or a packet was built Z after its target, as told by a clock up to a builder call old. Either part can be missing. | put fewer sessions on that scheduler (chapter 10) |
 | `transmitter recalculate warmup N` | notice, per period | N stalls, whatever their outcome, and a few rarer events of the pre-arm. | a few per period are normal; many point to interrupts or ticks on the core (chapter 10) |
 | `transmitter mismatch troffset N` | notice, per period | N frame starts were first visited, or got packet 0 from the builder, 7.8 µs (two packet times) or more after packet 0's target. | the builder or the scheduler ran late; look at check 2 |
 
@@ -353,6 +354,7 @@ A scan takes no lock. It skips a session that a control-plane writer holds and k
 
 **Reclaim.** DPDK frees the buffers of sent packets inside later `tx_burst` calls, one **batch** of 32 descriptors per call. A first pad burst that must free a frame's worth of them is a common stall.
 So a visit that finds its port waiting for the window or to start over, or the builder's ring empty, makes a zero-length `tx_burst`, which frees one batch (`video_trs_rl_reclaim()`). MTL makes that call only when a batch is due by the shaper's rate. It runs only on the 2048-descriptor queues of chapter 10.
+At an empty ring the call goes only for a batch due when the transmitter call began; one due since goes in the port's next NIC call.
 
 **Catch-up.** After the last release scan, `video_trs_rl_catch_up()` tops up the mid-frame ports whose queue holds less than 200 µs of packets, the longest the scheduler may be away (`mt_sch_schedule_ns()`). It goes round those ports and gives each 4 packets per round.
 It starts no round later than two warm-up windows before the nearest target of a packet 0 that still waits, because that packet's window opens within one of them and its pre-arm must not wait for the catch-up.
@@ -372,7 +374,7 @@ The return stands in for the doorbell, which rang earlier, so a preemption betwe
 Check 1 does not judge ports without RL, ST 2110-22, or a frame the builder started later than its budget; the last is counted as K.
 It also does not judge a port whose budget comes out at 0 or below, as with a small user `start_vrx`. Such a port logs `leaves no VRX budget, VRX not judged` at session create. A port with a budget above 0 but no room for the budget bound of chapter 15 logs `leaves no stall limit, frames may be flagged`.
 
-**Check 2** (`tv_lead_visit()`, `tv_behind_err()`) runs per scheduler. At each builder visit inside a frame it takes the lead, the next packet's target minus now, and keeps the smallest. It also compares the round with the tightest round budget of the scheduler's sessions, 4 packets × frame time / packets: 4 × 16.68 ms / 4115 = 16.2 µs.
+**Check 2** (`tv_lead_visit()`, `tv_behind_err()`) runs per scheduler. At each builder visit inside a frame it takes the lead, the next packet's target minus the start of the builder call, and keeps the smallest. It also compares the round with the tightest round budget of the scheduler's sessions, 4 packets × frame time / packets: 4 × 16.68 ms / 4115 = 16.2 µs.
 Either finding prints the `frames fall behind` line. Both checks report overload and do not prevent it: whether a core keeps up depends on all that runs on it. The round is not the load of the core: a thread that may not sleep spins, and its rounds are short while most visits find nothing to send. A round at the budget means that every loop builds a bulk for every session, so no reserve is left.
 
 ### 21. Rules a change must keep
@@ -387,7 +389,7 @@ Either finding prints the `frames fall behind` line. Both checks report overload
 | **No call goes ahead of the retry of refused pads.** | Each such call makes the refused port's packet 0 later (chapter 17). | `LateEntryHoldsBehind…` and `APortBlockedBehindARefusedOne…` in `rl_release_test.cpp` |
 | **No visit blocks.** Waiting is done by returning and being visited again. | The scheduler calls the next tasklet only after this one returns (chapter 3). | review; the tasklet rules in the C coding instructions |
 | **Every frame that may be late is reported.** A new path that sends packet 0 must reach check 1. | The log is the operator's only signal. | `rl_vrx_detect_test.cpp`, `rl_vrx_faults_test.cpp` |
-| **A visit with nothing to send stays cheap.** A waiting port reads the clock once. Behind its own burst in the same visit a port reads none to reclaim, unless a batch is due within a tick (10 µs). It makes a NIC call only for a due batch (chapter 19) or to retry a refused burst. | Most visits find nothing to send, so their cost sets the time of a round (chapter 9). | `rl_idle_cost_test.cpp` |
+| **A visit with nothing to send stays cheap.** A waiting port reads the clock once. A port with an empty builder ring reads it only for a batch due when the transmitter call began. It makes a NIC call only for a due batch (chapter 19) or to retry a refused burst. | Most visits find nothing to send, so their cost sets the time of a round (chapter 9). | `rl_idle_cost_test.cpp` |
 
 ### 22. Code and test map
 
