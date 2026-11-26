@@ -915,7 +915,10 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         rx_worker.receives += [g20.sid, g30.sid]
         common = f"dev-port={tx_ports[2]} dev-ip={ip}"
         pipeline = (
-            "videotestsrc is-live=true pattern=ball "
+            # pattern=black: drawing the ball pattern of 1080p v210 made only ~57 fps
+            # under the full load of VM 140, and each frame was late for its PTS. A
+            # looped file is no answer: multifilesrc starts the PTS again at each loop.
+            "videotestsrc is-live=true pattern=black "
             "! video/x-raw,format=v210,width=1920,height=1080,framerate=60000/1001 "
             f"! mtl_st20p_tx {common} tx-queues=2 ip={g20.dip} udp-port={g20.port} "
             "payload-type=112 use-pts-for-pacing=true pts-pacing-offset=33366667 "
