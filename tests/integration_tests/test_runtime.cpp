@@ -237,6 +237,16 @@ int spawn_child_phase(const std::vector<std::string>& orig_argv,
   args.reserve(orig_argv.size() + 4);
   args.push_back(orig_argv.empty() ? std::string("KahawaiTest") : orig_argv[0]);
 
+  auto suffix_output = [phase_idx](const std::string& out_spec) {
+    const size_t slash = out_spec.rfind('/');
+    const size_t dot = out_spec.rfind('.');
+    const bool has_ext =
+        (dot != std::string::npos) && (slash == std::string::npos || dot > slash);
+    return has_ext ? (out_spec.substr(0, dot) + ".phase" + std::to_string(phase_idx) +
+                      out_spec.substr(dot))
+                   : (out_spec + ".phase" + std::to_string(phase_idx));
+  };
+
   for (size_t i = 1; i < orig_argv.size(); ++i) {
     const std::string& a = orig_argv[i];
     if (a == "--gtest_filter") {
@@ -246,25 +256,13 @@ int spawn_child_phase(const std::vector<std::string>& orig_argv,
     if (a.rfind("--gtest_filter=", 0) == 0 || a == "--single_process") continue;
     if (a == "--gtest_output") {
       if (i + 1 < orig_argv.size() && orig_argv[i + 1].rfind("--", 0) != 0) {
-        const std::string& out_spec = orig_argv[++i];
-        const size_t dot = out_spec.rfind('.');
-        const std::string suffixed =
-            (dot == std::string::npos)
-                ? (out_spec + ".phase" + std::to_string(phase_idx))
-                : (out_spec.substr(0, dot) + ".phase" + std::to_string(phase_idx) +
-                   out_spec.substr(dot));
-        args.push_back("--gtest_output=" + suffixed);
+        args.push_back("--gtest_output=" + suffix_output(orig_argv[++i]));
       }
       continue;
     }
     if (a.rfind("--gtest_output=", 0) == 0) {
-      const std::string out_spec = a.substr(strlen("--gtest_output="));
-      const size_t dot = out_spec.rfind('.');
-      const std::string suffixed =
-          (dot == std::string::npos) ? (out_spec + ".phase" + std::to_string(phase_idx))
-                                     : (out_spec.substr(0, dot) + ".phase" +
-                                        std::to_string(phase_idx) + out_spec.substr(dot));
-      args.push_back("--gtest_output=" + suffixed);
+      args.push_back("--gtest_output=" +
+                     suffix_output(a.substr(strlen("--gtest_output="))));
       continue;
     }
     args.push_back(a);
@@ -274,7 +272,7 @@ int spawn_child_phase(const std::vector<std::string>& orig_argv,
 
   std::vector<char*> c_argv;
   c_argv.reserve(args.size() + 1);
-  for (auto& s : args) c_argv.push_back(s.data());
+  for (auto& s : args) c_argv.push_back(&s[0]);
   c_argv.push_back(nullptr);
 
   std::fflush(stdout);

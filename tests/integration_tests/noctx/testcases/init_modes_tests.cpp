@@ -478,6 +478,268 @@ void verifyModePortIpAndSt20pControl(struct st_tests_context* ctx, uint16_t udp_
   ASSERT_NE(f, nullptr);
   EXPECT_EQ(st20p_tx_put_frame_abort(tx.get(), f), 0);
   EXPECT_LT(st20p_tx_put_frame_abort(tx.get(), f), 0);
+  tx.reset();
+
+  /* Exercise create/free multi-session capacity under the active init mode. */
+  constexpr int kCapSessions = 3;
+  std::vector<ScopedSt20pTx> cap_handles;
+  cap_handles.reserve(kCapSessions);
+  for (int i = 0; i < kCapSessions; i++) {
+    bad_ops.port.udp_port[MTL_SESSION_PORT_P] = static_cast<uint16_t>(udp_port + 10 + i);
+    ScopedSt20pTx h(st20p_tx_create(st, &bad_ops));
+    ASSERT_TRUE(static_cast<bool>(h)) << "mode create/free slot " << i;
+    cap_handles.push_back(std::move(h));
+  }
+  struct st_var_info st_var = {};
+  ASSERT_EQ(st_get_var_info(st, &st_var), 0);
+  EXPECT_EQ(st_var.st20_tx_sessions_cnt, kCapSessions);
+  cap_handles.clear();
+  ASSERT_EQ(st_get_var_info(st, &st_var), 0);
+  EXPECT_EQ(st_var.st20_tx_sessions_cnt, 0);
+}
+
+/* Exercises multi-session (progressive + interlaced -> software RSS) and RTCP 10% loss
+ * ST20p loopback under the active pacing/IOVA/RSS mode (addresses PR #1970 B7). */
+void verifyModeSt20pMultiAndRtcp(struct st_tests_context* ctx, uint16_t base_port) {
+  mtl_handle st = ctx->handle;
+  constexpr uint16_t kFbCnt = 3;
+  constexpr enum st_frame_fmt kFmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+
+  /* 1. Concurrent 2-stream loopback: Stream 0 = 720p59.94 progressive,
+   *    Stream 1 = 1080i50 interlaced (both active simultaneously for software RSS). */
+  struct StreamDef {
+    uint32_t w;
+    uint32_t h;
+    enum st_fps fps;
+    bool interlaced;
+    uint16_t port;
+  };
+  const StreamDef defs[2] = {
+      {1280, 720, ST_FPS_P59_94, false, base_port},
+      {1920, 1080, ST_FPS_P50, true, static_cast<uint16_t>(base_port + 2)},
+  };
+
+  std::vector<ScopedSt20pRx> rxs;
+  std::vector<ScopedSt20pTx> txs;
+  std::vector<size_t> fszs(2);
+  std::vector<std::vector<uint8_t>> pats(2);
+  std::vector<std::array<unsigned char, SHA256_DIGEST_LENGTH>> shas(2);
+  for (int i = 0; i < 2; i++) {
+    fszs[i] = st_frame_size(kFmt, defs[i].w, defs[i].h, defs[i].interlaced);
+    pats[i].resize(fszs[i]);
+    st_test_rand_data(pats[i].data(), fszs[i], 0x41u + static_cast<uint8_t>(i));
+    SHA256(pats[i].data(), fszs[i], shas[i].data());
+
+    struct st20p_rx_ops rops = {};
+    rops.name = i == 0 ? "mode_multi_rx0" : "mode_multi_rx1";
+    mtl_test::fill_rx_port(rops.port, ctx, defs[i].port, kInitModePt);
+    rops.width = defs[i].w;
+    rops.height = defs[i].h;
+    rops.fps = defs[i].fps;
+    rops.interlaced = defs[i].interlaced;
+    rops.output_fmt = kFmt;
+    rops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+    rops.framebuff_cnt = kFbCnt;
+    rops.flags = ST20P_RX_FLAG_BLOCK_GET;
+    ScopedSt20pRx r(st20p_rx_create(st, &rops));
+    ASSERT_TRUE(static_cast<bool>(r)) << "multi rx " << i;
+    EXPECT_EQ(st20p_rx_set_block_timeout(r.get(), 200 * NS_PER_MS), 0);
+    rxs.push_back(std::move(r));
+
+    struct st20p_tx_ops tops = {};
+    tops.name = i == 0 ? "mode_multi_tx0" : "mode_multi_tx1";
+    mtl_test::fill_tx_port(tops.port, ctx, defs[i].port, kInitModePt);
+    tops.width = defs[i].w;
+    tops.height = defs[i].h;
+    tops.fps = defs[i].fps;
+    tops.interlaced = defs[i].interlaced;
+    tops.input_fmt = kFmt;
+    tops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+    tops.framebuff_cnt = kFbCnt;
+    tops.flags = ST20P_TX_FLAG_BLOCK_GET;
+    ScopedSt20pTx t(st20p_tx_create(st, &tops));
+    ASSERT_TRUE(static_cast<bool>(t)) << "multi tx " << i;
+    EXPECT_EQ(st20p_tx_set_block_timeout(t.get(), 200 * NS_PER_MS), 0);
+    for (uint16_t b = 0; b < kFbCnt; b++) {
+      void* fb = st20p_tx_get_fb_addr(t.get(), b);
+      ASSERT_NE(fb, nullptr);
+      memcpy(fb, pats[i].data(), fszs[i]);
+    }
+    txs.push_back(std::move(t));
+  }
+
+  std::atomic<bool> stop{false};
+  std::array<std::atomic<int>, 2> sha_ok{{{0}, {0}}};
+  std::array<std::atomic<int>, 2> sha_fail{{{0}, {0}}};
+  std::atomic<int> first_field{0}, second_field{0};
+  std::vector<std::unique_ptr<mtl_test::ScopedWorker>> workers;
+  for (int i = 0; i < 2; i++) {
+    workers.push_back(std::make_unique<mtl_test::ScopedWorker>(
+        nullptr, std::thread([&, i]() {
+          unsigned char got[SHA256_DIGEST_LENGTH];
+          while (!stop.load(std::memory_order_acquire)) {
+            struct st_frame* f = st20p_rx_get_frame(rxs[i].get());
+            if (!f) continue;
+            if (defs[i].interlaced) {
+              if (f->second_field)
+                second_field.fetch_add(1, std::memory_order_relaxed);
+              else
+                first_field.fetch_add(1, std::memory_order_relaxed);
+            }
+            if (f->addr[0] && f->data_size >= fszs[i]) {
+              SHA256(static_cast<const unsigned char*>(f->addr[0]), fszs[i], got);
+              if (memcmp(got, shas[i].data(), SHA256_DIGEST_LENGTH) == 0)
+                sha_ok[i].fetch_add(1, std::memory_order_relaxed);
+              else
+                sha_fail[i].fetch_add(1, std::memory_order_relaxed);
+            } else {
+              sha_fail[i].fetch_add(1, std::memory_order_relaxed);
+            }
+            EXPECT_GE(st20p_rx_put_frame(rxs[i].get(), f), 0);
+          }
+        }),
+        [&, i]() {
+          stop.store(true, std::memory_order_release);
+          st20p_rx_wake_block(rxs[i].get());
+        }));
+    workers.push_back(std::make_unique<mtl_test::ScopedWorker>(
+        nullptr, std::thread([&, i]() {
+          int n = 0;
+          while (!stop.load(std::memory_order_acquire)) {
+            struct st_frame* f = st20p_tx_get_frame(txs[i].get());
+            if (!f) continue;
+            if (defs[i].interlaced) f->second_field = (n % 2) != 0;
+            f->data_size = fszs[i];
+            EXPECT_GE(st20p_tx_put_frame(txs[i].get(), f), 0);
+            n++;
+          }
+        }),
+        [&, i]() {
+          stop.store(true, std::memory_order_release);
+          st20p_tx_wake_block(txs[i].get());
+        }));
+  }
+
+  ASSERT_GE(mtl_start(st), 0);
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() {
+        return sha_ok[0].load(std::memory_order_relaxed) >= 12 &&
+               sha_ok[1].load(std::memory_order_relaxed) >= 12;
+      },
+      kInitModeTimeoutMs));
+  for (auto& w : workers) w->stop();
+  workers.clear();
+  EXPECT_GE(mtl_stop(st), 0);
+  rxs.clear();
+  txs.clear();
+
+  for (int i = 0; i < 2; i++) {
+    EXPECT_GE(sha_ok[i].load(std::memory_order_relaxed), 12) << "stream " << i;
+    EXPECT_EQ(sha_fail[i].load(std::memory_order_relaxed), 0) << "stream " << i;
+  }
+  EXPECT_GT(first_field.load(std::memory_order_relaxed), 0);
+  EXPECT_GT(second_field.load(std::memory_order_relaxed), 0);
+
+  /* 2. RTCP 10% simulated loss recovery under the active mode. */
+  const size_t rtcp_sz = st_frame_size(kFmt, 1280, 720, false);
+  std::vector<uint8_t> rtcp_pat(rtcp_sz);
+  unsigned char rtcp_sha[SHA256_DIGEST_LENGTH];
+  st_test_rand_data(rtcp_pat.data(), rtcp_sz, 0x63u);
+  SHA256(rtcp_pat.data(), rtcp_sz, rtcp_sha);
+
+  struct st20p_rx_ops rtcp_rx_ops = {};
+  rtcp_rx_ops.name = "mode_rtcp_rx";
+  mtl_test::fill_rx_port(rtcp_rx_ops.port, ctx, static_cast<uint16_t>(base_port + 4),
+                         kInitModePt);
+  rtcp_rx_ops.width = 1280;
+  rtcp_rx_ops.height = 720;
+  rtcp_rx_ops.fps = ST_FPS_P59_94;
+  rtcp_rx_ops.output_fmt = kFmt;
+  rtcp_rx_ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  rtcp_rx_ops.framebuff_cnt = kFbCnt;
+  rtcp_rx_ops.flags = ST20P_RX_FLAG_BLOCK_GET | ST20P_RX_FLAG_ENABLE_RTCP |
+                      ST20P_RX_FLAG_SIMULATE_PKT_LOSS;
+  rtcp_rx_ops.rtcp.nack_interval_us = 250;
+  rtcp_rx_ops.rtcp.seq_bitmap_size = 64;
+  rtcp_rx_ops.rtcp.seq_skip_window = 0;
+  rtcp_rx_ops.rtcp.burst_loss_max = 1;
+  rtcp_rx_ops.rtcp.sim_loss_rate = 0.1f;
+
+  struct st20p_tx_ops rtcp_tx_ops = {};
+  rtcp_tx_ops.name = "mode_rtcp_tx";
+  mtl_test::fill_tx_port(rtcp_tx_ops.port, ctx, static_cast<uint16_t>(base_port + 4),
+                         kInitModePt);
+  rtcp_tx_ops.width = 1280;
+  rtcp_tx_ops.height = 720;
+  rtcp_tx_ops.fps = ST_FPS_P59_94;
+  rtcp_tx_ops.input_fmt = kFmt;
+  rtcp_tx_ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  rtcp_tx_ops.framebuff_cnt = kFbCnt;
+  rtcp_tx_ops.flags = ST20P_TX_FLAG_BLOCK_GET | ST20P_TX_FLAG_ENABLE_RTCP;
+  rtcp_tx_ops.rtcp.buffer_size = 1024;
+
+  ScopedSt20pRx rtcp_rx(st20p_rx_create(st, &rtcp_rx_ops));
+  ScopedSt20pTx rtcp_tx(st20p_tx_create(st, &rtcp_tx_ops));
+  ASSERT_TRUE(static_cast<bool>(rtcp_rx));
+  ASSERT_TRUE(static_cast<bool>(rtcp_tx));
+  EXPECT_EQ(st20p_rx_set_block_timeout(rtcp_rx.get(), 200 * NS_PER_MS), 0);
+  EXPECT_EQ(st20p_tx_set_block_timeout(rtcp_tx.get(), 200 * NS_PER_MS), 0);
+  for (uint16_t b = 0; b < kFbCnt; b++) {
+    void* fb = st20p_tx_get_fb_addr(rtcp_tx.get(), b);
+    ASSERT_NE(fb, nullptr);
+    memcpy(fb, rtcp_pat.data(), rtcp_sz);
+  }
+
+  std::atomic<bool> rtcp_stop{false};
+  std::atomic<int> rtcp_ok{0}, rtcp_fail{0};
+  mtl_test::ScopedWorker rtcp_rx_w(
+      nullptr, std::thread([&]() {
+        unsigned char got[SHA256_DIGEST_LENGTH];
+        while (!rtcp_stop.load(std::memory_order_acquire)) {
+          struct st_frame* f = st20p_rx_get_frame(rtcp_rx.get());
+          if (!f) continue;
+          if (st_is_frame_complete(f->status) && f->addr[0] && f->data_size >= rtcp_sz) {
+            SHA256(static_cast<const unsigned char*>(f->addr[0]), rtcp_sz, got);
+            if (memcmp(got, rtcp_sha, SHA256_DIGEST_LENGTH) == 0)
+              rtcp_ok.fetch_add(1, std::memory_order_relaxed);
+            else
+              rtcp_fail.fetch_add(1, std::memory_order_relaxed);
+          }
+          EXPECT_GE(st20p_rx_put_frame(rtcp_rx.get(), f), 0);
+        }
+      }),
+      [&]() {
+        rtcp_stop.store(true, std::memory_order_release);
+        st20p_rx_wake_block(rtcp_rx.get());
+      });
+  mtl_test::ScopedWorker rtcp_tx_w(nullptr, std::thread([&]() {
+                                     while (!rtcp_stop.load(std::memory_order_acquire)) {
+                                       struct st_frame* f =
+                                           st20p_tx_get_frame(rtcp_tx.get());
+                                       if (!f) continue;
+                                       f->data_size = rtcp_sz;
+                                       EXPECT_GE(st20p_tx_put_frame(rtcp_tx.get(), f), 0);
+                                     }
+                                   }),
+                                   [&]() {
+                                     rtcp_stop.store(true, std::memory_order_release);
+                                     st20p_tx_wake_block(rtcp_tx.get());
+                                   });
+
+  ASSERT_GE(mtl_start(st), 0);
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return rtcp_ok.load(std::memory_order_relaxed) >= 12; },
+      kInitModeTimeoutMs));
+  struct st20_rx_user_stats rx_stats = {};
+  EXPECT_EQ(st20p_rx_get_session_stats(rtcp_rx.get(), &rx_stats), 0);
+  rtcp_tx_w.stop();
+  rtcp_rx_w.stop();
+  EXPECT_GE(mtl_stop(st), 0);
+
+  EXPECT_GE(rtcp_ok.load(std::memory_order_relaxed), 12);
+  EXPECT_EQ(rtcp_fail.load(std::memory_order_relaxed), 0);
+  EXPECT_GT(rx_stats.stat_pkts_simulate_loss, 0u);
+  EXPECT_GT(rx_stats.stat_pkts_retransmit, 0u);
 }
 
 struct st20_tx_ops makeBasicSt20TxOps(struct st_tests_context* ctx,
@@ -579,7 +841,7 @@ TEST_F(NoCtxTest, init_mode_pacing_tsc_va_rss_l3_l4_multi_src) {
   ctx->para.pacing = ST21_TX_PACING_WAY_TSC;
   ctx->para.iova_mode = MTL_IOVA_MODE_VA;
   ctx->para.rss_mode = MTL_RSS_MODE_L3_L4;
-  ctx->para.flags |= MTL_FLAG_MULTI_SRC_PORT;
+  ctx->para.flags |= MTL_FLAG_MULTI_SRC_PORT | MTL_FLAG_CNI_TASKLET;
   initDefaultContext();
   if (HasFatalFailure()) return;
 
@@ -597,6 +859,7 @@ TEST_F(NoCtxTest, init_mode_pacing_tsc_va_rss_l3_l4_multi_src) {
   EXPECT_EQ(res.vrx_pkts, 6u);
   EXPECT_EQ(res.distinct_src_ports, 8u)
       << "MTL_FLAG_MULTI_SRC_PORT must rotate across 8 distinct UDP source ports";
+  verifyModeSt20pMultiAndRtcp(ctx, kInitModeUdpPort + 60);
   verifyModePortIpAndSt20pControl(ctx, kInitModeUdpPort + 50, expected_p_ip);
 }
 
@@ -608,10 +871,12 @@ TEST_F(NoCtxTest, init_mode_pacing_rl_va_rss_l3_l4_multi_src) {
 
   ModeLogTap log_tap;
   setCompactQueues(ctx);
+  uint8_t expected_p_ip[MTL_IP_ADDR_LEN];
+  memcpy(expected_p_ip, ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
   ctx->para.pacing = ST21_TX_PACING_WAY_RL;
   ctx->para.iova_mode = MTL_IOVA_MODE_VA;
   ctx->para.rss_mode = MTL_RSS_MODE_L3_L4;
-  ctx->para.flags |= MTL_FLAG_MULTI_SRC_PORT;
+  ctx->para.flags |= MTL_FLAG_MULTI_SRC_PORT | MTL_FLAG_CNI_TASKLET;
   initDefaultContext();
   if (HasFatalFailure()) return;
 
@@ -630,6 +895,8 @@ TEST_F(NoCtxTest, init_mode_pacing_rl_va_rss_l3_l4_multi_src) {
   EXPECT_EQ(res.vrx_pkts, 5u);
   EXPECT_EQ(res.distinct_src_ports, 8u)
       << "MTL_FLAG_MULTI_SRC_PORT must rotate across 8 distinct UDP source ports";
+  verifyModeSt20pMultiAndRtcp(ctx, kInitModeUdpPort + 70);
+  verifyModePortIpAndSt20pControl(ctx, kInitModeUdpPort + 56, expected_p_ip);
 }
 
 /* Replaces --pacing_way be + --rss_mode l3. */
@@ -669,7 +936,7 @@ TEST_F(NoCtxTest, init_mode_iova_pa_dma_reject_and_st20p) {
   ctx->para.iova_mode = MTL_IOVA_MODE_PA;
   ctx->para.rss_mode = MTL_RSS_MODE_L3_L4;
   /* Exercise MTL_FLAG_DMA_AUTO under IOVA PA mode (library must safely reject DMA). */
-  ctx->para.flags |= MTL_FLAG_MULTI_SRC_PORT | MTL_FLAG_DMA_AUTO;
+  ctx->para.flags |= MTL_FLAG_MULTI_SRC_PORT | MTL_FLAG_DMA_AUTO | MTL_FLAG_CNI_TASKLET;
   ctx->para.num_dma_dev_port = 0;
   initDefaultContext();
   if (HasFatalFailure()) return;
@@ -701,9 +968,11 @@ TEST_F(NoCtxTest, init_mode_iova_pa_dma_reject_and_st20p) {
   EXPECT_NE(hp.iova(), MTL_BAD_IOVA);
   EXPECT_NE(hp.iova(), static_cast<mtl_iova_t>(0));
 
-  /* Real ST20p data plane must pass SHA256 digest verification in IOVA PA mode. */
+  /* Real ST20p data plane must pass SHA256 digest + multi-session/interlaced/RTCP in PA
+   * mode. */
   auto res = runSt20pDigestLoopback(ctx, kInitModeUdpPort + 6);
   expectDigestLoopbackOk(res);
+  verifyModeSt20pMultiAndRtcp(ctx, kInitModeUdpPort + 80);
 }
 
 /* Verifies both MTL_FLAG_DEV_AUTO_START_STOP polarities (OFF in child, ON in parent). */
@@ -739,6 +1008,7 @@ TEST_F(NoCtxTest, init_mode_auto_start_stop_polarity) {
     if (res.rx_before_start != 0 || res.sha_ok < kInitModeMinRxFrames ||
         res.sha_fail != 0 || uninit_rc != 0)
       _exit(16);
+    if (::testing::Test::HasFailure()) _exit(17);
     _exit(0);
   }
   int status = 0;

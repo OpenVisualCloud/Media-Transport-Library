@@ -129,9 +129,10 @@ static int st22_rx_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
   auto ctx = (tests_context*)priv;
   void* h = get_handle(ctx);
   if (!h) return -EIO;
-  check_st22_rx_meta(ctx, meta);
   if (!meta || meta->status != ST_FRAME_STATUS_COMPLETE) {
     atomic_inc(&ctx->incomplete_frame_cnt);
+  } else {
+    check_st22_rx_meta(ctx, meta);
   }
   atomic_inc(&ctx->fb_rec);
   st22_rx_put_framebuff((st22_rx_handle)h, frame);
@@ -611,6 +612,9 @@ TEST(St22_rx, fps_1080p_s2) {
 
   St22LoopbackConfig cfg;
   cfg.start_rtp_workers = true;
+  cfg.on_rx_ops = [](size_t, tests_context*, struct st22_rx_ops* ops) {
+    ops->flags |= ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+  };
   create_st22_loopback(ctx, specs, specs, tx, rx, &workers, cfg);
   if (::testing::Test::HasFatalFailure()) return;
 
@@ -625,7 +629,8 @@ TEST(St22_rx, fps_1080p_s2) {
   EXPECT_GE(mtl_guard.stop(), 0);
   assert_rx_rates(rx, specs, rate_res);
   for (size_t i = 0; i < specs.size(); i++) {
-    EXPECT_EQ(mtl_test::relaxed_load(&rx[i].ctx->incomplete_frame_cnt), 0);
+    /* Allow at most 1 startup mid-frame join; sustained incomplete frames must fail. */
+    EXPECT_LE(mtl_test::relaxed_load(&rx[i].ctx->incomplete_frame_cnt), 1);
   }
   EXPECT_GT(mtl_test::relaxed_load(&rx[1].ctx->packet_rec), 0);
 }

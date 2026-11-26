@@ -23,13 +23,17 @@ struct St20UserPacingStream {
 struct UserTsRing {
   static constexpr size_t kCap = 256;
   std::atomic<uint32_t> write_idx{0};
-  uint32_t rtp_ts[kCap] = {};
+  std::atomic<uint32_t> rtp_ts[kCap];
   std::atomic<int> rx_checked_cnt{0};
   std::atomic<int> rx_mismatch_cnt{0};
 
+  UserTsRing() {
+    for (size_t i = 0; i < kCap; i++) rtp_ts[i].store(0, std::memory_order_relaxed);
+  }
+
   void push(uint32_t ts) {
     const uint32_t idx = write_idx.load(std::memory_order_relaxed);
-    rtp_ts[idx % kCap] = ts;
+    rtp_ts[idx % kCap].store(ts, std::memory_order_relaxed);
     write_idx.store(idx + 1, std::memory_order_release);
   }
 
@@ -38,7 +42,7 @@ struct UserTsRing {
     const uint32_t count = std::min<uint32_t>(n, static_cast<uint32_t>(kCap));
     const uint32_t start = n - count;
     for (uint32_t i = start; i < n; i++) {
-      if (rtp_ts[i % kCap] == ts) return true;
+      if (rtp_ts[i % kCap].load(std::memory_order_relaxed) == ts) return true;
     }
     return false;
   }

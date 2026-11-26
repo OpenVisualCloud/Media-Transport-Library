@@ -71,7 +71,7 @@ runs:
         path: |
           gtest-results/results.jsonl
           gtest-results/gtest.log
-          gtest-results/last.log
+          gtest-results/last*.log
         if-no-files-found: warn
 
     - name: Upload the system info

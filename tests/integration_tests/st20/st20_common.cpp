@@ -222,12 +222,19 @@ int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
 }
 
 int tx_notify_ext_frame_done(void* priv, uint16_t frame_idx,
-                             struct st20_tx_frame_meta* /*meta*/) {
+                             struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
   auto handle = (st20_tx_handle)st20_get_handle(ctx);
   if (!handle) return -EIO; /* not ready */
   if (!ctx->ext_frames) return -EIO;
+
+  if (meta) {
+    if (ctx->pre_timestamp && meta->timestamp == ctx->pre_timestamp) {
+      __atomic_fetch_add(&ctx->tx_tmstamp_delta_fail_cnt, 1, __ATOMIC_RELAXED);
+    }
+    ctx->pre_timestamp = meta->timestamp;
+  }
 
   constexpr int max_slots =
       static_cast<int>(sizeof(ctx->ext_fb_in_use) / sizeof(ctx->ext_fb_in_use[0]));

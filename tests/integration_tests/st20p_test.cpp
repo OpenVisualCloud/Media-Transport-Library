@@ -1781,15 +1781,23 @@ static void st20p_tx_epoch_drop_test(bool user_pacing, bool near_deadline = fals
   if (user_pacing) {
     EXPECT_GE(stats.common.port[MTL_SESSION_PORT_P].frames, static_cast<uint64_t>(15));
     EXPECT_EQ(pacing_ctx.bad_meta_cnt.load(std::memory_order_acquire), 0);
-    if (!near_deadline) {
+    EXPECT_NE(pacing_ctx.first_rtp_ts.load(std::memory_order_acquire),
+              pacing_ctx.last_rtp_ts.load(std::memory_order_acquire));
+    const uint64_t t0 = pacing_ctx.first_done_ptp.load(std::memory_order_acquire);
+    const uint64_t t1 = pacing_ctx.last_done_ptp.load(std::memory_order_acquire);
+    ASSERT_GT(t0, static_cast<uint64_t>(0));
+    ASSERT_GT(t1, t0);
+    const uint64_t elapsed_ns = t1 - t0;
+    if (near_deadline) {
+      /* Near-deadline schedule (now + 20 ms) can hit at most 1 startup timestamp error;
+       * steady-state completions must still span real frame epochs (not zero-ms burst).
+       */
+      EXPECT_LE(stats.common.stat_error_user_timestamp, static_cast<uint64_t>(1));
+      EXPECT_GE(elapsed_ns, static_cast<uint64_t>(14) * 12 * NS_PER_MS)
+          << "Elapsed PTP time " << elapsed_ns
+          << " ns too short for 16 near-deadline paced frames";
+    } else {
       EXPECT_EQ(stats.common.stat_error_user_timestamp, static_cast<uint64_t>(0));
-      EXPECT_NE(pacing_ctx.first_rtp_ts.load(std::memory_order_acquire),
-                pacing_ctx.last_rtp_ts.load(std::memory_order_acquire));
-      const uint64_t t0 = pacing_ctx.first_done_ptp.load(std::memory_order_acquire);
-      const uint64_t t1 = pacing_ctx.last_done_ptp.load(std::memory_order_acquire);
-      ASSERT_GT(t0, static_cast<uint64_t>(0));
-      ASSERT_GT(t1, t0);
-      const uint64_t elapsed_ns = t1 - t0;
       EXPECT_GE(elapsed_ns, static_cast<uint64_t>(14) * 28 * NS_PER_MS)
           << "Elapsed PTP time " << elapsed_ns
           << " ns too short for 16 frames paced at 35 ms";
@@ -1842,14 +1850,16 @@ TEST(St20p, query_params) {
   /* ST 2110-21:2022 §6.3.2 (p7): 1080p59.94 BPM T_FRAME = 1001/60000 s,
    * R_ACTIVE = 1080/1125, N_PACKETS = ceil(5184000/1260) = 4115,
    * T_R_OFFSET = (43/1125) * T_FRAME = 637674.07 ns,
-   * T_RS = T_FRAME * R_ACTIVE / 4115 = 3892.10 ns. */
+   * T_RS = T_FRAME * R_ACTIVE / 4115 = 3892.10 ns.
+   * ST 2110-21:2022 §7.1.2 (p12): VRX_FULL = MAX(8, INT(4115 / (27000 * T_FRAME))) = 9.
+   */
   const double frame_ns = static_cast<double>(NS_PER_S) * 1001.0 / 60000.0;
   const double expect_tr_offset_ns = frame_ns * (43.0 / 1125.0);
   const double expect_trs_ns = frame_ns * (1080.0 / 1125.0) / 4115.0;
   EXPECT_NEAR(tr_offset_ns, expect_tr_offset_ns, 1.0);
   EXPECT_NEAR(trs_ns, expect_trs_ns, 1.0);
   EXPECT_GE(vrx_pkts, 4u);
-  EXPECT_LE(vrx_pkts, 8u);
+  EXPECT_LE(vrx_pkts, 9u);
   EXPECT_EQ(st20p_tx_get_pacing_params(tx_handle.get(), &tr_offset_ns, nullptr, nullptr),
             0);
   EXPECT_LT(st20p_tx_get_pacing_params(nullptr, &tr_offset_ns, &trs_ns, &vrx_pkts), 0);

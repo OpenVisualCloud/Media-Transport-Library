@@ -273,6 +273,7 @@ unit_sources = [
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,
+  override_options : ['cpp_std=c++17'],
   link_args : unit_link_args,
   build_rpath : unit_build_rpath,
   include_directories : unit_include_dirs,

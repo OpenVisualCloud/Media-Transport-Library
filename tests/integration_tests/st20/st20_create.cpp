@@ -110,14 +110,16 @@ TEST(St20_tx, query_params) {
   /* ST 2110-21:2022 §6.3.2 (p7): 1080p59.94 BPM T_FRAME = 1001/60000 s,
    * R_ACTIVE = 1080/1125, N_PACKETS = ceil(5184000/1260) = 4115,
    * T_R_OFFSET = (43/1125) * T_FRAME = 637674.07 ns,
-   * T_RS = T_FRAME * R_ACTIVE / 4115 = 3892.10 ns. */
+   * T_RS = T_FRAME * R_ACTIVE / 4115 = 3892.10 ns.
+   * ST 2110-21:2022 §7.1.2 (p12): VRX_FULL = MAX(8, INT(4115 / (27000 * T_FRAME))) = 9.
+   */
   const double frame_ns = static_cast<double>(NS_PER_S) * 1001.0 / 60000.0;
   const double expect_tr_offset_ns = frame_ns * (43.0 / 1125.0);
   const double expect_trs_ns = frame_ns * (1080.0 / 1125.0) / 4115.0;
   EXPECT_NEAR(tr_offset_ns, expect_tr_offset_ns, 1.0);
   EXPECT_NEAR(trs_ns, expect_trs_ns, 1.0);
   EXPECT_GE(vrx_pkts, 4u);
-  EXPECT_LE(vrx_pkts, 8u);
+  EXPECT_LE(vrx_pkts, 9u);
   const double expected_tr_offset_ns = tr_offset_ns;
   tr_offset_ns = -1.0;
   EXPECT_EQ(st20_tx_get_pacing_params(handle.get(), &tr_offset_ns, nullptr, nullptr), 0);

@@ -24,7 +24,9 @@ enum test_args_cmd {
   TEST_ARG_DMA_DEV,
   TEST_ARG_AF_XDP_ZC_DISABLE,
   TEST_ARG_DHCP,
-  TEST_ARG_SINGLE_PROCESS
+  TEST_ARG_SINGLE_PROCESS,
+  TEST_ARG_DEPRECATED_NOARG,
+  TEST_ARG_DEPRECATED_ARG,
 };
 
 static struct option test_args_options[] = {
@@ -38,6 +40,35 @@ static struct option test_args_options[] = {
     {"afxdp_zc_disable", no_argument, 0, TEST_ARG_AF_XDP_ZC_DISABLE},
     {"dhcp", no_argument, 0, TEST_ARG_DHCP},
     {"single_process", no_argument, 0, TEST_ARG_SINGLE_PROCESS},
+    /* Legacy flags accepted as deprecated no-ops so existing callers keep working. */
+    {"auto_start_stop", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"no_ctx_tests", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"tsc", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"multi_src_port", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"hdr_split", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"ptp", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"rx_mono_pool", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"tx_mono_pool", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"mono_pool", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"tx_no_chain", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"rx_separate_lcore", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"cni_thread", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"tasklet_thread", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"migrate_enable", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"migrate_disable", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"allow_across_numa_core", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"rxtx_simd_512", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"dma_auto", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"mcast_only", no_argument, 0, TEST_ARG_DEPRECATED_NOARG},
+    {"level", required_argument, 0, TEST_ARG_DEPRECATED_ARG},
+    {"iova_mode", required_argument, 0, TEST_ARG_DEPRECATED_ARG},
+    {"pacing_way", required_argument, 0, TEST_ARG_DEPRECATED_ARG},
+    {"rss_mode", required_argument, 0, TEST_ARG_DEPRECATED_ARG},
+    {"queue_cnt", required_argument, 0, TEST_ARG_DEPRECATED_ARG},
+    {"nb_tx_desc", required_argument, 0, TEST_ARG_DEPRECATED_ARG},
+    {"nb_rx_desc", required_argument, 0, TEST_ARG_DEPRECATED_ARG},
+    {"sch_session_quota", required_argument, 0, TEST_ARG_DEPRECATED_ARG},
+    {"audio_tx_pacing", required_argument, 0, TEST_ARG_DEPRECATED_ARG},
     {0, 0, 0, 0}};
 
 static struct st_tests_context* g_test_ctx;
@@ -144,6 +175,11 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         break;
       case TEST_ARG_SINGLE_PROCESS:
         ctx->single_process = true;
+        break;
+      case TEST_ARG_DEPRECATED_NOARG:
+      case TEST_ARG_DEPRECATED_ARG:
+        warn("%s, deprecated option --%s ignored\n", __func__,
+             test_args_options[opt_idx].name);
         break;
       case '?':
       default:
@@ -284,7 +320,7 @@ GTEST_API_ int main(int argc, char** argv) {
   std::vector<char*> norm_argv;
   norm_argv.reserve(norm_args.size() + 1);
   for (auto& arg : norm_args) {
-    norm_argv.push_back(arg.data());
+    norm_argv.push_back(&arg[0]);
   }
   norm_argv.push_back(nullptr);
   int norm_argc = static_cast<int>(norm_args.size());

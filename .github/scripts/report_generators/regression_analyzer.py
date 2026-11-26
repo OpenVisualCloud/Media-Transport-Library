@@ -135,15 +135,19 @@ def analyze_regressions(current_pytest, current_gtest, baseline_pytest, baseline
     changed_failures.sort(key=_sort_key)
     lost_coverage.sort(key=_sort_key)
 
-    # Coverage comparison: count keys that match either directly or via legacy fallback
+    # Coverage comparison: match directly or via legacy unprofiled baseline key
+    # without double-counting shared legacy baseline rows.
     current_keys = set(current)
     baseline_keys = set(baseline)
-    common = sum(
-        1
-        for k in current_keys
-        if k in baseline_keys
-        or (k[3] and (k[0], k[1], k[2], "", k[4]) in baseline_keys)
-    )
+    matched_current = set()
+    matched_baseline = set()
+    for k in current_keys:
+        if k in baseline_keys:
+            matched_current.add(k)
+            matched_baseline.add(k)
+        elif k[3] and (k[0], k[1], k[2], "", k[4]) in baseline_keys:
+            matched_current.add(k)
+            matched_baseline.add((k[0], k[1], k[2], "", k[4]))
 
     return {
         "regressions": regressions,
@@ -155,9 +159,9 @@ def analyze_regressions(current_pytest, current_gtest, baseline_pytest, baseline
         "coverage": {
             "current_total": len(current_keys),
             "baseline_total": len(baseline_keys),
-            "common": common,
-            "only_in_current": len(current_keys) - common,
-            "only_in_baseline": len(baseline_keys) - common,
+            "common": len(matched_current),
+            "only_in_current": len(current_keys) - len(matched_current),
+            "only_in_baseline": len(baseline_keys) - len(matched_baseline),
         },
     }
 

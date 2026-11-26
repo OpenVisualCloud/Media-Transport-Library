@@ -20,15 +20,15 @@ twice in one process, selecting multiple `NoCtxTest` cases or mixing shared and
 `NoCtxTest` suites automatically spawns one clean child process per phase and
 merges JUnit XML output when `--gtest_output=xml:...` is set.
 
-| Runner | Selects | Ports | Pause |
-|---|---|---|---|
-| `tests/integration_tests/runner/gtest_runner.py --profile '^noctx$'` | `NoCtxTest.*`, excluding `*_pf_*` | 4 VF ports (`--tvf-pf` or `--ports`) | `--noctx-sleep` (default 0 s) |
-| `tests/integration_tests/runner/gtest_runner.py --profile '^noctx_pf$'` | `NoCtxTest.*_pf_*` | 2 PF ports (`--bind-pvf` or `--pf-ports`) | `--noctx-sleep` (default 0 s) |
+| Runner | Selects | Ports |
+|---|---|---|
+| `tests/integration_tests/runner/gtest_runner.py --profile '^noctx$'` | `NoCtxTest.*`, excluding `*_pf_*` and `init_mode_*` | 4 VF ports (`--ports` or auto-discovered) |
+| `tests/integration_tests/runner/gtest_runner.py --profile '^noctx_pf$'` | `NoCtxTest.*_pf_*` | 2 PF ports (`BIND_PVFS=...`) |
 
 ```bash
-python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx$' --tvf-pf 0000:4b:00.0
-python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx$' --filter 'NoCtxTest.st20p_*'
-python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx_pf$' --bind-pvf 0000:31:00.0,0000:31:00.1
+python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx$'
+python3 tests/integration_tests/runner/gtest_runner.py --group init_modes --ports 0000:4b:01.0,0000:4b:01.1
+BIND_PVFS=0000:31:00.0,0000:31:00.1 python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx_pf$'
 ```
 
 `gtest_runner.py` enumerates cases with `--gtest_list_tests`, wraps strict
@@ -36,7 +36,7 @@ timing cases in `tests/tools/isolate/isolate.sh`, and writes JUnit XML plus
 structured `results.jsonl`. One case or multiple cases by hand:
 
 ```bash
-sudo ./build/tests/KahawaiTest --auto_start_stop \
+sudo ./build/tests/KahawaiTest \
   --port_list=0000:xx:xx.x,0000:yy:yy.y --gtest_filter=NoCtxTest.st20p_user_pacing
 ```
 

@@ -56,9 +56,15 @@ class RegressionSectionTest(unittest.TestCase):
             ],
         }
         detail_html = _detail_section(data, "gtest-detail-0", 7)
-        self.assertIn("st2110_20.&lt;process&gt;", detail_html)
+        self.assertIn("[p1] st2110_20.&lt;process&gt;", detail_html)
+        self.assertIn("[p2] st2110_20.&lt;process&gt;", detail_html)
         self.assertNotIn("<process>", detail_html)
-        self.assertIn("<th>Profile</th>", detail_html)
+        # Keep 3-column order (Test Name, Result, Duration) for lab-portal parsing.
+        self.assertNotIn("<th>Profile</th>", detail_html)
+        self.assertRegex(
+            detail_html,
+            r'<tr><td>\[p1\] st2110_20\.&lt;process&gt;.*?</td><td class="[^"]*">FAILED</td>',
+        )
         ids = re.findall(r'id="(gtest-detail-0-log-[^"]+)"', detail_html)
         self.assertEqual(len(ids), 2)
         self.assertEqual(len(set(ids)), 2)

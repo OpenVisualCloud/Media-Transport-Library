@@ -306,6 +306,117 @@ class TestGtestRunnerHelpers(unittest.TestCase):
             self.assertEqual(by_case["Main.crash_later"]["result"], "failed")
             self.assertNotIn("host_fault", by_case["Main.crash_later"]["message"])
 
+    def test_shared_profile_zero_tests_fails_with_empty_record(self):
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            fake_bin = td_p / "KahawaiTest"
+            fake_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+            fake_bin.chmod(0o755)
+            out_dir = td_p / "out"
+            with (
+                mock.patch.object(
+                    gr,
+                    "_setup_ports",
+                    return_value=(["0000:4b:01.0", "0000:4b:01.1"], [], [], "E810"),
+                ),
+                mock.patch.object(gr, "_run_cmd", return_value=(0, "")),
+            ):
+                rc = gr.main(
+                    [
+                        "--binary",
+                        str(fake_bin),
+                        "--tier",
+                        "pr",
+                        "--profile",
+                        "^st2110_22$",
+                        "--out-dir",
+                        str(out_dir),
+                        "--retries",
+                        "1",
+                        "--jobs",
+                        "1",
+                    ]
+                )
+            self.assertEqual(rc, 1)
+            recs = [
+                json.loads(line)
+                for line in (out_dir / "results.jsonl").read_text().splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(len(recs), 1)
+            self.assertEqual(recs[0]["case"], "st2110_22.__empty__")
+            self.assertEqual(recs[0]["result"], "failed")
+
+    def test_setup_ports_recreates_vfs_when_each_pf_has_only_two_vfs(self):
+        with tempfile.TemporaryDirectory() as td:
+            sysfs = Path(td) / "devices"
+            pf0 = sysfs / "0000:4b:00.0"
+            (pf0 / "net" / "eth0").mkdir(parents=True)
+            (pf0 / "class").write_text("0x020000\n", encoding="utf-8")
+            (pf0 / "device").write_text("0x1592\n", encoding="utf-8")
+            (pf0 / "net" / "eth0" / "operstate").write_text("up\n", encoding="utf-8")
+            drv_ice = Path(td) / "drv_ice" / "ice"
+            drv_ice.mkdir(parents=True)
+            (pf0 / "driver").symlink_to(drv_ice)
+            drv_vfio = Path(td) / "drv_vfio" / "vfio-pci"
+            drv_vfio.mkdir(parents=True)
+
+            def make_vfs(count: int) -> None:
+                for p in list(sysfs.glob("0000:4b:01.*")):
+                    for sub in sorted(p.rglob("*"), reverse=True):
+                        sub.unlink()
+                    p.rmdir()
+                for i in range(count):
+                    vf = sysfs / f"0000:4b:01.{i}"
+                    vf.mkdir(parents=True)
+                    (vf / "class").write_text("0x020000\n", encoding="utf-8")
+                    (vf / "device").write_text("0x1889\n", encoding="utf-8")
+                    (vf / "driver").symlink_to(drv_vfio)
+                    (vf / "physfn").symlink_to(pf0)
+
+            make_vfs(2)
+            nicctl_calls: list[tuple] = []
+
+            def fake_nicctl(sub: str, *args: str) -> None:
+                nicctl_calls.append((sub, *args))
+                if sub == "disable_vf":
+                    make_vfs(0)
+                elif sub == "create_tvf":
+                    make_vfs(int(args[1]))
+
+            hp_dir = Path(td) / "hugepages" / "hugepages-2048kB"
+            hp_dir.mkdir(parents=True)
+            (hp_dir / "free_hugepages").write_text("1024\n", encoding="utf-8")
+
+            orig_path = gr.Path
+
+            def fake_path(p):
+                s = str(p)
+                if s == "/sys/bus/pci/devices":
+                    return sysfs
+                if s == "/sys/kernel/mm/hugepages":
+                    return Path(td) / "hugepages"
+                return orig_path(p)
+
+            created, bound = [], []
+            selected = [("redundant_stats", "St20p.redundant*", "vf_quad", "")]
+            with (
+                mock.patch.object(gr, "Path", side_effect=fake_path),
+                mock.patch.object(gr, "_nicctl", side_effect=fake_nicctl),
+            ):
+                vf_p, _, _, nic = gr._setup_ports(None, selected, created, bound)
+            self.assertEqual(len(vf_p), 6)
+            self.assertEqual(nic, "E810")
+            self.assertIn(("disable_vf", "0000:4b:00.0"), nicctl_calls)
+            self.assertIn(("create_tvf", "0000:4b:00.0", "6"), nicctl_calls)
+
+    def test_tx_queue_cnt_is_in_pr_tier_and_serial(self):
+        by_name = {r[0]: r for r in gr.RUNS}
+        self.assertIn("tx_queue_cnt", by_name)
+        flags = set(by_name["tx_queue_cnt"][3].split(","))
+        self.assertIn("pr", flags)
+        self.assertNotIn("par", flags)
+
 
 if __name__ == "__main__":
     unittest.main()

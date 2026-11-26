@@ -1400,11 +1400,13 @@ TEST(St30_tx, audio_pacing_ways) {
     struct st30_tx_user_stats tx_stats;
     memset(&tx_stats, 0, sizeof(tx_stats));
     EXPECT_EQ(st30_tx_get_session_stats(tx_handle.get(), &tx_stats), 0);
+    EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
     if (pc.way == ST30_TX_PACING_WAY_RL) {
       EXPECT_GT(tx_stats.stat_pkts_burst, 0u);
       EXPECT_GT(tx_stats.stat_pad_pkts_burst, 0u);
       EXPECT_GT(tx_stats.stat_warmup_pkts_burst, 0u);
     } else {
+      EXPECT_EQ(tx_stats.common.stat_epoch_drop, 0u);
       EXPECT_EQ(tx_stats.stat_pkts_burst, 0u);
       EXPECT_EQ(tx_stats.stat_pad_pkts_burst, 0u);
       EXPECT_EQ(tx_stats.stat_warmup_pkts_burst, 0u);
@@ -1415,6 +1417,6 @@ TEST(St30_tx, audio_pacing_ways) {
 
     EXPECT_GT(mtl_test::rx_frames(rx_ctx.get()), 0);
     EXPECT_EQ(payload_mismatch.load(std::memory_order_relaxed), 0);
-    EXPECT_NEAR(rate_res.rate[0], expect_fps, expect_fps * 0.15);
+    EXPECT_NEAR(rate_res.rate[0], expect_fps, expect_fps * 0.10);
   }
 }

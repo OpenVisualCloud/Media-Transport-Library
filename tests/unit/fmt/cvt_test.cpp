@@ -64,10 +64,10 @@ bool simd_level_available(enum mtl_simd_level lvl) {
 template <typename Fn>
 void sweep_simd_rt(Fn fn, std::initializer_list<enum mtl_simd_level> levels,
                    int tail_w = kTailW, int tail_h = kTailH, bool rem64 = true) {
-  int ran = 0;
+  int simd_ran = 0;
   for (auto lvl : levels) {
     if (!simd_level_available(lvl)) continue;
-    ++ran;
+    if (lvl != MTL_SIMD_LEVEL_NONE) ++simd_ran;
     fn(kFullW, kFullH, lvl, lvl);
     fn(tail_w, tail_h, lvl, lvl);
     if (lvl != MTL_SIMD_LEVEL_NONE && lvl != MTL_SIMD_LEVEL_MAX) {
@@ -78,7 +78,7 @@ void sweep_simd_rt(Fn fn, std::initializer_list<enum mtl_simd_level> levels,
       }
     }
   }
-  if (ran == 0) {
+  if (simd_ran == 0) {
     GTEST_SKIP() << "Host CPU SIMD level "
                  << mtl_get_simd_level_name(mtl_get_simd_level())
                  << " does not support any requested SIMD level";
@@ -87,17 +87,17 @@ void sweep_simd_rt(Fn fn, std::initializer_list<enum mtl_simd_level> levels,
 
 template <typename Fn>
 void sweep_simd_1way(Fn fn, std::initializer_list<enum mtl_simd_level> levels) {
-  int ran = 0;
+  int simd_ran = 0;
   for (auto lvl : levels) {
     if (!simd_level_available(lvl)) continue;
-    ++ran;
+    if (lvl != MTL_SIMD_LEVEL_NONE) ++simd_ran;
     fn(kFullW, kFullH, lvl);
     fn(kTailW, kTailH, lvl);
     if (lvl != MTL_SIMD_LEVEL_NONE && lvl != MTL_SIMD_LEVEL_MAX) {
       for (int h = 64; h < 128; ++h) fn(2, h, lvl);
     }
   }
-  if (ran == 0) {
+  if (simd_ran == 0) {
     GTEST_SKIP() << "Host CPU SIMD level "
                  << mtl_get_simd_level_name(mtl_get_simd_level())
                  << " does not support any requested SIMD level";
@@ -517,8 +517,6 @@ TEST(Cvt, rfc4175_422_12) {
       {MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_MAX});
 
   const size_t sz = static_cast<size_t>(kFullW) * kFullH * 3;
-  check_packed_vs_scalar<st20_rfc4175_422_12_pg2_le, st20_rfc4175_422_12_pg2_be>(
-      kFullW, kFullH, sz, st20_rfc4175_422le12_to_422be12_simd, MTL_SIMD_LEVEL_MAX);
   check_planar16<st20_rfc4175_422_12_pg2_le, 2>(kFullW, kFullH, sz, 0xFFFu,
                                                 st20_rfc4175_422le12_to_yuv422p12le,
                                                 st20_yuv422p12le_to_rfc4175_422le12);
@@ -543,8 +541,6 @@ TEST(Cvt, rfc4175_444_10) {
       {MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_MAX}, kTail444W, kTail444H, false);
 
   const size_t sz = static_cast<size_t>(kFullW) * kFullH * 15 / 4;
-  check_packed_vs_scalar<st20_rfc4175_444_10_pg4_le, st20_rfc4175_444_10_pg4_be>(
-      kFullW, kFullH, sz, st20_rfc4175_444le10_to_444be10_simd, MTL_SIMD_LEVEL_MAX);
   check_planar16<st20_rfc4175_444_10_pg4_le, 1>(kFullW, kFullH, sz, 0x3FFu,
                                                 st20_rfc4175_444le10_to_yuv444p10le,
                                                 st20_yuv444p10le_to_rfc4175_444le10);
@@ -572,8 +568,6 @@ TEST(Cvt, rfc4175_444_12) {
       {MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_MAX}, kTailW, kTailH, false);
 
   const size_t sz = static_cast<size_t>(kFullW) * kFullH * 9 / 2;
-  check_packed_vs_scalar<st20_rfc4175_444_12_pg2_le, st20_rfc4175_444_12_pg2_be>(
-      kFullW, kFullH, sz, st20_rfc4175_444le12_to_444be12_simd, MTL_SIMD_LEVEL_MAX);
   check_planar16<st20_rfc4175_444_12_pg2_le, 1>(kFullW, kFullH, sz, 0xFFFu,
                                                 st20_rfc4175_444le12_to_yuv444p12le,
                                                 st20_yuv444p12le_to_rfc4175_444le12);

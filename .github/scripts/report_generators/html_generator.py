@@ -752,38 +752,31 @@ def _detail_section(d, detail_id, col_count, title_prefix=""):
     if not test_cases:
         return ""
 
-    has_profile = any(tc.get("profile") for tc in test_cases)
-    hdr_cols = (
-        "<th>Profile</th><th>Test Name</th><th>Result</th><th>Duration</th>"
-        if has_profile
-        else "<th>Test Name</th><th>Result</th><th>Duration</th>"
-    )
-    detail_colspan = 4 if has_profile else 3
+    # Keep 3-column order (Test Name, Result, Duration) so lab-portal's TOKEN
+    # regex parses every gtest row; embed [profile] in the Test Name cell.
     html = (
         f'<tr><td colspan="{col_count}">'
         f'<div id="{detail_id}" class="details">'
         f"<h4>{title_prefix}{_escape_html(str(d['nic']))} &mdash; "
         f"{_escape_html(str(d['category']))} &mdash; Detailed Results</h4>"
-        f"<table><thead><tr>{hdr_cols}</tr></thead><tbody>"
+        "<table><thead><tr>"
+        "<th>Test Name</th><th>Result</th><th>Duration</th>"
+        "</tr></thead><tbody>"
     )
     for tc_idx, tc in enumerate(
         sorted(test_cases, key=lambda x: (x.get("profile", ""), x["test_name"]))
     ):
         log_id = f"{detail_id}-log-{tc_idx}"
         log_cell = _log_toggle_span(tc, log_id)
-        prof_cell = (
-            f"<td>{_escape_html(str(tc.get('profile', '')))}</td>"
-            if has_profile
-            else ""
-        )
+        prof = tc.get("profile", "")
+        disp_name = f"[{prof}] {tc['test_name']}" if prof else tc["test_name"]
         html += (
-            f"<tr>{prof_cell}"
-            f'<td>{_escape_html(str(tc["test_name"]))}{log_cell}</td>'
+            f"<tr><td>{_escape_html(str(disp_name))}{log_cell}</td>"
             f'<td class="{_result_class(tc["result"])}">'
             f'{_escape_html(str(tc["result"]))}</td>'
             f'<td>{_escape_html(str(tc["duration"]))}</td></tr>'
         )
-        html += _log_row(tc, log_id, colspan=detail_colspan)
+        html += _log_row(tc, log_id, colspan=3)
     html += "</tbody></table></div></td></tr>"
     return html
 

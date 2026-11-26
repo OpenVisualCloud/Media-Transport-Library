@@ -95,23 +95,24 @@ void verify_switch_phase(const std::vector<tests_context*>& test_ctx_rx,
   EXPECT_TRUE(res.warmed_up);
   EXPECT_TRUE(res.complete);
   const int min_hits = (type == ST20_TYPE_FRAME_LEVEL) ? 5 : 20;
+  const char* safe_label = label ? label : "(null)";
   for (int i = 0; i < rx_sessions; i++) {
     int rec = mtl_test::rx_frames(test_ctx_rx[i]);
     EXPECT_GT(rec, base_rec[i]);
     info("%s, session %d fb_rec %d framerate %f for %s\n", __func__, i, rec - base_rec[i],
-         res.rate[i], label);
+         res.rate[i], safe_label);
     EXPECT_NEAR(res.rate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     EXPECT_GT(rx_states[i].src_hits[expected_src].load(std::memory_order_relaxed),
               min_hits)
-        << "expected hits from source " << expected_src << " (" << label << ")";
+        << "expected hits from source " << expected_src << " (" << safe_label << ")";
     for (int other = 0; other < kMaxUpdateSrcs; other++) {
       if (other == expected_src) continue;
       EXPECT_EQ(rx_states[i].src_hits[other].load(std::memory_order_relaxed), 0)
           << "unexpected hits from source " << other << " while expecting "
-          << expected_src << " (" << label << ")";
+          << expected_src << " (" << safe_label << ")";
     }
     EXPECT_EQ(rx_states[i].src_unknown.load(std::memory_order_relaxed), 0)
-        << "unexpected untagged frames/packets (" << label << ")";
+        << "unexpected untagged frames/packets (" << safe_label << ")";
     if (type == ST20_TYPE_FRAME_LEVEL) {
       /* Acquire load on start_time pairs with release store after rtp_delta update. */
       EXPECT_NE(__atomic_load_n(&test_ctx_rx[i]->start_time, __ATOMIC_ACQUIRE), 0u);

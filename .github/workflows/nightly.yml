@@ -576,10 +576,14 @@ jobs:
           TEST_REF: ${{ github.ref_name }}
         run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
 
-      - name: Build and run Cvt SIMD unit tests on Xeon
+      - name: Install DPDK and run unit tests on Xeon
+        uses: ./.github/actions/unit-tests
+
+      - name: Verify Cvt AVX-512 SIMD unit tests on Xeon
         run: |
-          ./build.sh unit
-          ./build_unit/tests/unit/UnitTest --gtest_filter='Cvt.*'
+          out=$(./build_unit/tests/unit/UnitTest --gtest_filter='Cvt.*')
+          echo "$out"
+          echo "$out" | grep -q 'CPU SIMD level: avx512'
 
   # The Clang Static Analyzer results of main, which code scanning compares the
   # alerts of a pull request with. It configures MTL against the DPDK of the

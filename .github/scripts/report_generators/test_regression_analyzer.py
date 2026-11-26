@@ -163,6 +163,53 @@ class AnalyzeRegressionsTest(unittest.TestCase):
         )
         self.assertEqual(rep["coverage"]["common"], 1)
 
+    def test_legacy_unprofiled_baseline_coverage_does_not_underflow(self):
+        base = [
+            {
+                "test_cases": [
+                    {
+                        "platform": "gtest",
+                        "nic": "E810",
+                        "category": "St20p",
+                        "test_name": "St20p.digest_1080p_s1",
+                        "result": "PASSED",
+                        "log": "",
+                    }
+                ]
+            }
+        ]
+        cur = [
+            {
+                "test_cases": [
+                    {
+                        "platform": "gtest",
+                        "nic": "E810",
+                        "category": "St20p",
+                        "profile": "st2110_20p",
+                        "test_name": "St20p.digest_1080p_s1",
+                        "result": "PASSED",
+                        "log": "",
+                    },
+                    {
+                        "platform": "gtest",
+                        "nic": "E810",
+                        "category": "St20p",
+                        "profile": "st20p_kernel_loopback",
+                        "test_name": "St20p.digest_1080p_s1",
+                        "result": "PASSED",
+                        "log": "",
+                    },
+                ]
+            }
+        ]
+        rep = analyze_regressions([], cur, [], base)
+        cov = rep["coverage"]
+        self.assertEqual(cov["baseline_total"], 1)
+        self.assertEqual(cov["current_total"], 2)
+        self.assertEqual(cov["common"], 2)
+        self.assertEqual(cov["only_in_current"], 0)
+        self.assertEqual(cov["only_in_baseline"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

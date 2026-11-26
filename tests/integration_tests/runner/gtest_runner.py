@@ -44,17 +44,16 @@ NOCTX_ENV = {
 _KL = "St20p*-St20p.redundant*"
 _F34 = "St3*:St4*-St30p.redundant*:St40p.redundant*"
 _FRD = "St20p.redundant*:St30p.redundant*:St40p.redundant*"
-_F_MODES = "NoCtxTest.init_mode_*:NoCtxTest.tx_queue_cnt_24"
+_F_MODES = "NoCtxTest.init_mode_*"
 _F_NOCTX = (
     "NoCtxTest.*-NoCtxTest.*_pf_*:NoCtxTest.init_mode_*:NoCtxTest.tx_queue_cnt_24"
 )
 
 GROUPS = {
-    "pr_core": "st2110_20 st2110_20p st2110_22 st2110_3x_4x",
+    "pr_core": "st2110_20 st2110_20p st2110_22 st2110_3x_4x tx_queue_cnt",
     "core_misc": "core_misc dma_cvt st20p_kernel_loopback redundant_stats",
-    "init_modes": "init_modes",
+    "init_modes": "init_modes tx_queue_cnt",
     "noctx": "noctx noctx_pf",
-    "pacing_dma": "dma_cvt init_modes",
 }
 # (name, filter, topo, flags)
 # Execution modes (IOVA, pacing, RSS, queues, PTP, hdr_split, init flags) live
@@ -64,6 +63,7 @@ RUNS = (
     ("st2110_20p", "St20p*-St20p.redundant*", "vf_pair", "pr,par,bw"),
     ("st2110_22", "St22*", "vf_pair", "pr,par,bw"),
     ("st2110_3x_4x", _F34, "vf_pair", "pr,par"),
+    ("tx_queue_cnt", "NoCtxTest.tx_queue_cnt_24", "vf_pair", "pr,noctx"),
     ("core_misc", "Main*:Misc*:Sch*:TxUserTimestampSync*", "vf_pair", "par"),
     ("dma_cvt", "Dma*:Cvt*", "vf_pair", "dma,par"),
     ("st20p_kernel_loopback", _KL, "kernel_lo", "noroot,par"),
@@ -234,9 +234,17 @@ def _setup_ports(
         found = next((v for v in cands if len(v) >= need), [])
         vf_p = pvf if len(pvf) >= need else found
         avail_ice = [p for p in up_ice if p not in created and p not in pf_vfs]
+        if len(vf_p) < need and not avail_ice:
+            # Fall back to an up ice PF with fewer than `need` VFs (e.g. 2 VFs/PF).
+            avail_ice = [
+                p for p in up_ice if p not in created and len(pf_vfs.get(p, [])) < need
+            ]
         if len(vf_p) < need and avail_ice:
-            created.append(avail_ice[0])
-            _nicctl("create_tvf", avail_ice[0], "6")
+            pf = avail_ice[0]
+            if pf in pf_vfs:
+                _nicctl("disable_vf", pf)
+            created.append(pf)
+            _nicctl("create_tvf", pf, "6")
             by, pf_vfs, _ = scan()
             vf_p = pf_vfs.get(created[-1], [])
         if len(vf_p) < need:
@@ -297,10 +305,10 @@ def _run_cmd(
         assert proc.stdout is not None
         with last_log.open("w", encoding="utf-8", errors="replace") as lf:
             while True:
-                data = proc.stdout.read(4096)
-                if not data:
+                raw = proc.stdout.readline()
+                if not raw:
                     break
-                text = data.decode("utf-8", errors="replace")
+                text = raw.decode("utf-8", errors="replace")
                 chunks.append(text)
                 lf.write(text)
                 lf.flush()
@@ -308,6 +316,7 @@ def _run_cmd(
                     sys.stdout.write(text)
                     sys.stdout.flush()
                     log_fh.write(text)
+                    log_fh.flush()
                     log_fh.flush()
 
     reader = threading.Thread(target=_drain, daemon=True)
@@ -488,6 +497,12 @@ def main(argv: list[str] | None = None) -> int:
     add("--retries", type=int, default=int(e.get("MAX_RETRIES", "2")))
     add("--timeout", type=int, default=int(e.get("TEST_CASE_TIMEOUT", "1800")))
     add(
+        "--job-timeout",
+        type=int,
+        default=int(e.get("GTEST_JOB_TIMEOUT", "10800")),
+        help="Overall wall-clock budget in seconds across all profiles and retries.",
+    )
+    add(
         "--jobs",
         type=int,
         default=int(e.get("GTEST_JOBS", "0")),
@@ -543,8 +558,11 @@ def main(argv: list[str] | None = None) -> int:
     active_procs: set[subprocess.Popen] = set()
     sig_rc = [0]
 
-    def last_log_path() -> Path:
-        return out / "last.log"
+    def last_log_path(tag: str = "") -> Path:
+        if not tag:
+            return out / "last.log"
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", tag)
+        return out / f"last_{safe}.log"
 
     def kill_active(sig: int) -> None:
         with state_lock:
@@ -572,7 +590,16 @@ def main(argv: list[str] | None = None) -> int:
 
     pi, pt = signal.signal(signal.SIGINT, _sig), signal.signal(signal.SIGTERM, _sig)
     host, t0, fault, failed = socket.gethostname(), time.monotonic(), "", False
+    deadline = t0 + max(1, a.job_timeout)
     nic = e.get("MTL_NIC_LABEL") or "unknown"
+
+    def rem_timeout(want_s: int) -> int:
+        rem = int(deadline - time.monotonic())
+        if rem <= 0:
+            stop_ev.set()
+            return 1
+        return min(want_s, rem)
+
     noctx_to, delay = int(e.get("NOCTX_CASE_TIMEOUT", "2100")), int(
         e.get("RETRY_DELAY", "5")
     )
@@ -625,8 +652,8 @@ def main(argv: list[str] | None = None) -> int:
                 rc, txt = _run_cmd(
                     cmd,
                     env,
-                    to_s,
-                    last_log_path(),
+                    rem_timeout(to_s),
+                    last_log_path(f"{ctx['profile']}_{safe}"),
                     log_fh,
                     io_lock,
                     active_procs,
@@ -635,6 +662,8 @@ def main(argv: list[str] | None = None) -> int:
                 if iso:
                     post_rc = subprocess.run(sweep, capture_output=True).returncode
                     sweep_rc = sweep_rc or post_rc
+                if stop_ev.is_set() and rc != 0:
+                    return {**fin, "result": "not_run", "message": "aborted"}
                 preamble = txt.split("[==========] Running", 1)[0]
                 if rc != 0 and (m := CFG_ERR.search(preamble)):
                     raise HostFault(f"Config error in {case}: {m.group(0)}")
@@ -698,8 +727,8 @@ def main(argv: list[str] | None = None) -> int:
             rc, txt = _run_cmd(
                 cmd,
                 {**e, **penv},
-                a.timeout,
-                last_log_path(),
+                rem_timeout(a.timeout),
+                last_log_path(name),
                 log_fh,
                 io_lock,
                 active_procs,
@@ -707,7 +736,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             case_logs = _extract_case_logs(txt)
             parsed = _parse_xml(xml, ctx, case_logs)
+            if stop_ev.is_set() and rc != 0 and not parsed:
+                emit(ctx, f"{name}.*", "not_run", msg="aborted")
+                return False
             prof_failed = False
+            if rc == 0 and not parsed:
+                emit(
+                    ctx,
+                    f"{name}.__empty__",
+                    "failed",
+                    msg=f"filter '{flt}' matched 0 tests",
+                )
+                return True
             if rc != 0 and not parsed:
                 preamble = txt.split("[==========] Running", 1)[0]
                 if m := CFG_ERR.search(preamble):
@@ -811,7 +851,8 @@ def main(argv: list[str] | None = None) -> int:
                         )
                         noctx_par_names.add(name)
                         for c in cases:
-                            tasks.append(("noctx_case", name, c, topo, flags))
+                            c_flags = flags | ({"dma"} if "dma" in c else set())
+                            tasks.append(("noctx_case", name, c, topo, c_flags))
                     else:
                         tasks.append(("shared", name, flt, topo, flags))
 
@@ -826,7 +867,7 @@ def main(argv: list[str] | None = None) -> int:
 
                 has_klo = any(t[3] == "kernel_lo" for t in tasks)
                 klo_lcores = ""
-                if has_klo and vf_pairs and max_dpdk > 1:
+                if has_klo and vf_pairs and len(tasks) > 1:
                     klo_slices = _partition_lcores(vf_pairs[0][0], max_dpdk + 1)
                     if len(klo_slices) >= max_dpdk + 1:
                         lcore_slices = klo_slices[:max_dpdk]
@@ -844,6 +885,8 @@ def main(argv: list[str] | None = None) -> int:
                         f"{' + kernel:lo' if has_klo else ''}\n"
                     )
 
+                emitted_noctx_cases: set[tuple[str, str]] = set()
+
                 def _exec_task(task: tuple) -> tuple[str, bool]:
                     kind, name, arg, topo, flags = task
                     if stop_ev.is_set():
@@ -852,19 +895,21 @@ def main(argv: list[str] | None = None) -> int:
                     need_dma = "dma" in flags
                     need_bw = "bw" in flags
                     slot_item = None
-                    with contextlib.ExitStack() as stack:
-                        if need_bw:
-                            stack.enter_context(bw_lock)
-                        if need_dma:
-                            stack.enter_context(dma_lock)
-                        try:
-                            if need_pair:
-                                slot_item = pair_pool.get()
-                                slot_id, pair, lc = slot_item
-                                sip = _slot_sip(a.p_sip, slot_id)
-                            else:
-                                pair, lc = ("kernel:lo", "kernel:lo"), klo_lcores
-                                sip = _slot_sip(a.p_sip, 100)
+                    try:
+                        if need_pair:
+                            slot_item = pair_pool.get()
+                            slot_id, pair, lc = slot_item
+                            sip = _slot_sip(a.p_sip, slot_id)
+                        else:
+                            pair, lc = ("kernel:lo", "kernel:lo"), klo_lcores
+                            sip = _slot_sip(a.p_sip, 100)
+                        if stop_ev.is_set():
+                            return name, False
+                        with contextlib.ExitStack() as stack:
+                            if need_bw:
+                                stack.enter_context(bw_lock)
+                            if need_dma:
+                                stack.enter_context(dma_lock)
                             if stop_ev.is_set():
                                 return name, False
                             if kind == "shared":
@@ -891,17 +936,22 @@ def main(argv: list[str] | None = None) -> int:
                                 r["duration_ms"],
                                 r["message"],
                             )
+                            with state_lock:
+                                emitted_noctx_cases.add((name, arg))
                             return name, r["result"] in ("failed", "not_run")
-                        finally:
-                            if slot_item is not None:
-                                pair_pool.put(slot_item)
+                    finally:
+                        if slot_item is not None:
+                            pair_pool.put(slot_item)
 
-                # Run TSC noctx_case tasks in a barrier wave before RL/AUTO tasks so PF
-                # RL shaper commits never perturb TSC pacing on sibling VFs.
-                tsc_wave = [t for t in tasks if t[0] == "noctx_case" and "tsc" in t[2]]
-                main_wave = [
-                    t for t in tasks if not (t[0] == "noctx_case" and "tsc" in t[2])
-                ]
+                # Run non-RL pacing (TSC and BE) noctx_case tasks in a barrier wave before
+                # RL/AUTO tasks so PF RL shapers never throttle non-RL queues on sibling VFs.
+                def _is_non_rl_pacing(t: tuple) -> bool:
+                    return t[0] == "noctx_case" and (
+                        "tsc" in t[2] or "pacing_be" in t[2]
+                    )
+
+                tsc_wave = [t for t in tasks if _is_non_rl_pacing(t)]
+                main_wave = [t for t in tasks if not _is_non_rl_pacing(t)]
                 main_wave.sort(key=lambda t: (0 if t[3] == "kernel_lo" else 1))
                 waves = [w for w in (tsc_wave, main_wave) if w]
 
@@ -922,6 +972,19 @@ def main(argv: list[str] | None = None) -> int:
                             kill_active(signal.SIGTERM)
                             for fut in futs:
                                 fut.cancel()
+                            # Record unstarted parallel noctx cases as not_run.
+                            for k, nm, arg, *_ in tasks:
+                                if (
+                                    k == "noctx_case"
+                                    and (nm, arg) not in emitted_noctx_cases
+                                ):
+                                    emit(
+                                        {"profile": nm, "nic": nic, "host": host},
+                                        arg,
+                                        "not_run",
+                                        msg="aborted",
+                                    )
+                                    emitted_noctx_cases.add((nm, arg))
                             raise
                 for n in noctx_par_names:
                     done.add(n)
@@ -939,7 +1002,9 @@ def main(argv: list[str] | None = None) -> int:
                         failed = True
                 else:
                     ports, need = (
-                        (pf_p[:2], 2) if topo == "pf_pair" else (noctx_p[:4], 4)
+                        (pf_p[:2], 2)
+                        if topo == "pf_pair"
+                        else (vf_p[:2], 2) if topo == "vf_pair" else (noctx_p[:4], 4)
                     )
                     if len(ports) < need:
                         if topo == "pf_pair":
@@ -966,6 +1031,17 @@ def main(argv: list[str] | None = None) -> int:
                         wants_iso = any(sub in c for sub in NOCTX_ISO)
                         iso = wants_iso and ISOLATE.is_file()
                         if wants_iso and not iso:
+                            if penv.get("MTL_ISOLATE") == "require":
+                                emit(
+                                    ctx,
+                                    c,
+                                    "failed",
+                                    msg=f"{ISOLATE} missing with MTL_ISOLATE=require",
+                                )
+                                failed = True
+                                if a.exit_on_failure:
+                                    break
+                                continue
                             tee(
                                 f"Warning: {ISOLATE} not found; running {c} unconfined\n"
                             )
