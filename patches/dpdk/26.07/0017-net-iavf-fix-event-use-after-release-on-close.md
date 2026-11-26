@@ -64,7 +64,7 @@ A delay between close and `rte_eal_cleanup()` does not help: the release is in `
 - The series applies to a clean v26.07 with `git am --3way` and with `patch -p1` (as `script/build_dpdk.sh` does), and the iavf driver builds with `-Dwerror=true`. `devtools/checkpatches.sh` and `devtools/check-git-log.sh` pass.
 - Seen in the field: an FFmpeg MTL RX process on an E830 VF (ice 2.7.6 PF) ended with `dpdk-iavf-event: segfault at 60 ... in librte_net_iavf.so.26.2` after `dev_close_port(0), succ`, in a 10-minute stability run.
 - Hardware, 2026-11-26, E830 VF on a Proxmox VM, 20 open/close runs each with the recipe below (`IAVF_DBG_EVENT_AT_CLOSE=1 IAVF_DBG_EVENT_DELAY_US=20000`): the series without 0017 ended 20 of 20 runs with SIGSEGV (exit 139) and the same kernel line; with 0017, 20 of 20 exit 0 with `clean exit`.
-  That 0017 is the first revision, with the discard at the end of close only; the revision with the wait at the start of close is not measured yet.
+  That run used the first revision of 0017, with the discard at the end of close only. The second revision, with the wait at the start of close too, gave the same counts on an E810 VF (ice 2.7.6 PF) of the same VM: without 0017 20 of 20 exit 139 with the same kernel line, with 0017 20 of 20 exit 0.
 
 ## Unit fingerprint
 
@@ -230,12 +230,12 @@ run patched 20
 sudo dmesg | grep -c 'dpdk-iavf-event.*segfault'
 ```
 
-Results. The first two rows were measured on 2026-11-26 on one E830 VF (ice 2.7.6 PF) of a Proxmox VM, with `UP_MS=300 AFTER_MS=200`. The last two rows are not measured:
+Results. The first two rows were measured on 2026-11-26 with `UP_MS=300 AFTER_MS=200`, on one E830 VF and on one E810 VF (each with an ice 2.7.6 PF) of a Proxmox VM. The last two rows are not measured:
 
 | Build | Widening | Result |
 | --- | --- | --- |
-| stock (0001-0014) | `AT_CLOSE` + `DELAY_US=20000` | measured: 20 of 20 `exit 139`; 20 `dpdk-iavf-event[...]: segfault at 60 ... in librte_net_iavf.so.26.2` lines in the kernel log |
-| patched (0001-0017) | `AT_CLOSE` + `DELAY_US=20000` | measured on the first revision of 0017 (no wait at the start of close): 20 of 20 `exit 0` and `clean exit`; no kernel line |
+| stock (0001-0014) | `AT_CLOSE` + `DELAY_US=20000` | measured on each VF: 20 of 20 `exit 139`; 20 `dpdk-iavf-event[...]: segfault at 60 ... in librte_net_iavf.so.26.2` lines in the kernel log |
+| patched (0001-0017) | `AT_CLOSE` + `DELAY_US=20000` | measured on both revisions of 0017 (E830 VF: first revision; E810 VF: this revision): 20 of 20 `exit 0` and `clean exit`; no kernel line |
 | stock | `DELAY_US=200000`, no `AT_CLOSE`, `UP_MS=0` | not measured: a crash only when the PF sends an event of a port in the 200 ms before its close; the rate depends on the PF |
 | patched | the same | not measured: 0 crashes expected |
 
