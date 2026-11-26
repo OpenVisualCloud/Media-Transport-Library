@@ -30,7 +30,10 @@ int st20_rx_detected(void* priv, const struct st20_detect_meta* meta,
       __atomic_fetch_add(&expect->detect_fail_cnt, 1, __ATOMIC_RELAXED);
     }
   }
-  int slice_lines = meta->height / kSt20SlicesPerFrame;
+  /* Use 16 slices/frame (distinct from MTL's /32 fallback) so reply.slice_lines is
+   * actually exercised. */
+  constexpr int kSt20DetectSlicesPerFrame = 16;
+  int slice_lines = meta->height / kSt20DetectSlicesPerFrame;
   __atomic_store_n(&ctx->lines_per_slice, slice_lines, __ATOMIC_RELEASE);
   if (expect && expect->slice_mode) reply->slice_lines = slice_lines;
   if (ctx->uframe_size != 0) {
@@ -170,7 +173,8 @@ void st20_rx_detect_test(const St20DetectScenario& s) {
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          res.rate[i]);
     if (st.rx_type == ST20_TYPE_SLICE_LEVEL) {
-      int expect_slice_cnt = test_ctx_rx[i]->fb_rec * kSt20SlicesPerFrame;
+      constexpr int kSt20DetectSlicesPerFrame = 16;
+      int expect_slice_cnt = test_ctx_rx[i]->fb_rec * kSt20DetectSlicesPerFrame;
       if (st.interlaced) expect_slice_cnt /= 2;
       EXPECT_NEAR(test_ctx_rx[i]->slice_cnt, expect_slice_cnt, expect_slice_cnt * 0.1);
     }

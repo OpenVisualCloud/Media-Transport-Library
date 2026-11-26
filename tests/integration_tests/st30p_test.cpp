@@ -99,17 +99,31 @@ static void test_st30p_rx_frame_thread(void* args) {
     timestamp = frame->timestamp;
 
     if (s->check_sha) {
-      /* ST 2110-30 RTP packets carry no frame-boundary marker bit, so hash every
-       * packet slice across the 10ms frame regardless of packet-phase offset. */
+      /* ST 2110-30 RTP packets carry no frame-boundary marker bit, so each packet slice
+       * starts with a uint16_t slice index (0..pkts_per_frame-1) followed by the hashed
+       * body. Verify both per-packet integrity and monotonic slice ordering within the
+       * 10ms frame regardless of packet-phase start offset. */
       const size_t pkt_len = static_cast<size_t>(s->pkt_data_len);
-      bool frame_ok = (pkt_len > 0) && (s->frame_size % pkt_len == 0);
+      bool frame_ok = (pkt_len > sizeof(uint16_t)) && (s->frame_size % pkt_len == 0);
       if (frame_ok) {
         const auto* base = static_cast<const unsigned char*>(frame->addr);
         const int hist_cnt = std::min(s->fb_cnt > 0 ? s->fb_cnt : TEST_MAX_SHA_HIST_NUM,
                                       TEST_MAX_SHA_HIST_NUM);
+        const uint16_t pkts_per_frame = static_cast<uint16_t>(s->frame_size / pkt_len);
+        bool has_prev_slice = false;
+        uint16_t prev_slice = 0;
         for (size_t off = 0; off < s->frame_size; off += pkt_len) {
+          uint16_t slice_idx = 0;
+          memcpy(&slice_idx, base + off, sizeof(slice_idx));
+          if (slice_idx >= pkts_per_frame ||
+              (has_prev_slice && slice_idx != (prev_slice + 1) % pkts_per_frame)) {
+            frame_ok = false;
+            break;
+          }
+          prev_slice = slice_idx;
+          has_prev_slice = true;
           unsigned char result[SHA256_DIGEST_LENGTH];
-          SHA256(base + off, pkt_len, result);
+          SHA256(base + off + sizeof(uint16_t), pkt_len - sizeof(uint16_t), result);
           int i = 0;
           for (i = 0; i < hist_cnt; i++) {
             if (!memcmp(result, s->shas[i], SHA256_DIGEST_LENGTH)) break;
@@ -398,11 +412,16 @@ static void st30p_rx_digest_test(const std::vector<St30pStreamSpec>& specs,
       ASSERT_NE(fb, nullptr);
       EXPECT_EQ(std::find(seen_fb.begin(), seen_fb.end(), fb), seen_fb.end());
       seen_fb.push_back(fb);
-      st_test_rand_data(fb, pkt_len, frame);
-      for (size_t off = pkt_len; off < frame_size; off += pkt_len) {
-        memcpy(fb + off, fb, pkt_len);
+      ASSERT_GT(pkt_len, sizeof(uint16_t));
+      const size_t body_len = pkt_len - sizeof(uint16_t);
+      st_test_rand_data(fb + sizeof(uint16_t), body_len, frame);
+      SHA256(fb + sizeof(uint16_t), body_len, raw_tx[i]->shas[frame]);
+      const uint16_t pkts_per_frame = static_cast<uint16_t>(frame_size / pkt_len);
+      for (uint16_t j = 0; j < pkts_per_frame; j++) {
+        uint8_t* slice = fb + static_cast<size_t>(j) * pkt_len;
+        if (j > 0) memcpy(slice + sizeof(uint16_t), fb + sizeof(uint16_t), body_len);
+        memcpy(slice, &j, sizeof(j));
       }
-      SHA256(fb, pkt_len, raw_tx[i]->shas[frame]);
       test_sha_dump("st30p_tx", raw_tx[i]->shas[frame]);
     }
     EXPECT_EQ(st30p_tx_get_fb_addr(handle.get(), raw_tx[i]->fb_cnt), nullptr);
@@ -793,36 +812,36 @@ TEST(St30p, session_stats_reset) {
       [&]() { return mtl_test::rx_frames(lb.rx_ctx.get()) >= kSt30pPhaseTargetFrames; },
       kSt30pPhaseTimeoutMs));
   lb.stop_all();
+  /* Wait briefly for queued TX audio frames to drain under DEV_AUTO_START_STOP. */
+  st_usleep(50 * 1000);
 
-  auto check_stats = [&](bool expect_nonzero) {
-    EXPECT_EQ(st30p_tx_get_session_stats(lb.tx.get(), &tx_stats), 0);
-    EXPECT_EQ(st30p_rx_get_session_stats(lb.rx.get(), &rx_stats), 0);
-    const auto& txp = tx_stats.common.port[MTL_SESSION_PORT_P];
-    const auto& rxp = rx_stats.common.port[MTL_SESSION_PORT_P];
-    if (expect_nonzero) {
-      EXPECT_GT(tx_stats.common.stat_frames_sent, 0u);
-      EXPECT_GT(txp.packets, 0u);
-      EXPECT_GT(txp.bytes, 0u);
-      EXPECT_GT(txp.frames, 0u);
-      EXPECT_GT(rx_stats.common.stat_frames_received, 0u);
-      EXPECT_GT(rxp.packets, 0u);
-      EXPECT_GT(rxp.bytes, 0u);
-      EXPECT_GT(rxp.frames, 0u);
-    } else {
-      EXPECT_EQ(tx_stats.common.stat_frames_sent, 0u);
-      EXPECT_EQ(txp.packets, 0u);
-      EXPECT_EQ(txp.bytes, 0u);
-      EXPECT_EQ(txp.frames, 0u);
-      EXPECT_EQ(rx_stats.common.stat_frames_received, 0u);
-      EXPECT_EQ(rxp.packets, 0u);
-      EXPECT_EQ(rxp.bytes, 0u);
-      EXPECT_EQ(rxp.frames, 0u);
-    }
-  };
-  check_stats(/*expect_nonzero=*/true);
+  EXPECT_EQ(st30p_tx_get_session_stats(lb.tx.get(), &tx_stats), 0);
+  EXPECT_GT(tx_stats.common.stat_frames_sent, 0u);
+  EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
   EXPECT_EQ(st30p_tx_reset_session_stats(lb.tx.get()), 0);
+  EXPECT_EQ(st30p_tx_get_session_stats(lb.tx.get(), &tx_stats), 0);
+  EXPECT_EQ(tx_stats.common.stat_frames_sent, 0u);
+  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
+
+  /* Free TX before resetting RX stats so no in-flight packet arrives after reset. */
+  lb.tx.reset();
+  st_usleep(20 * 1000);
+
+  EXPECT_EQ(st30p_rx_get_session_stats(lb.rx.get(), &rx_stats), 0);
+  EXPECT_GT(rx_stats.common.stat_frames_received, 0u);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
   EXPECT_EQ(st30p_rx_reset_session_stats(lb.rx.get()), 0);
-  check_stats(/*expect_nonzero=*/false);
+  EXPECT_EQ(st30p_rx_get_session_stats(lb.rx.get(), &rx_stats), 0);
+  EXPECT_EQ(rx_stats.common.stat_frames_received, 0u);
+  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
 }
 
 TEST(St30p, update_source_and_destination) {
@@ -844,10 +863,6 @@ TEST(St30p, update_source_and_destination) {
   init_st30p_tx_ops(&ops_tx0, lb.tx_ctx.get(), spec, "st30p_update_tx0", base_port,
                     ST30P_TEST_PAYLOAD_TYPE, 0, /*block_get=*/true, /*redundant=*/false,
                     /*tx_only_mcast=*/false, &expect_fps);
-  if (ctx->mcast_only) {
-    memcpy(ops_tx0.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-           MTL_IP_ADDR_LEN);
-  }
   lb.tx.reset(st30p_tx_create(st, &ops_tx0));
   ASSERT_TRUE(static_cast<bool>(lb.tx));
   EXPECT_EQ(st30p_tx_set_block_timeout(lb.tx.get(), NS_PER_S), 0);
@@ -866,10 +881,6 @@ TEST(St30p, update_source_and_destination) {
   struct st30p_rx_ops ops_rx;
   init_st30p_rx_ops(&ops_rx, lb.rx_ctx.get(), spec, "st30p_update_rx", base_port,
                     ST30P_TEST_PAYLOAD_TYPE, 0, /*block_get=*/true);
-  if (ctx->mcast_only) {
-    memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-           MTL_IP_ADDR_LEN);
-  }
   lb.rx.reset(st30p_rx_create(st, &ops_rx));
   ASSERT_TRUE(static_cast<bool>(lb.rx));
   EXPECT_EQ(st30p_rx_set_block_timeout(lb.rx.get(), NS_PER_S), 0);
@@ -917,13 +928,8 @@ TEST(St30p, update_source_and_destination) {
   update_tx0(ctx->mcast_ip_addr[MTL_PORT_R], base_port + 4);
   verify_switch("tx_dst_mcast2", ctx->mcast_ip_addr[MTL_PORT_R], base_port + 4);
 
-  update_tx0(
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R],
-      base_port);
-  verify_switch(
-      "back_to_init",
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P],
-      base_port);
+  update_tx0(ctx->para.sip_addr[MTL_PORT_R], base_port);
+  verify_switch("back_to_init", ctx->para.sip_addr[MTL_PORT_P], base_port);
 
   tx1_worker.stop();
   lb.stop_all();

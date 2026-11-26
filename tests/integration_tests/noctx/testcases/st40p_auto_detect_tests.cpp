@@ -8,15 +8,27 @@ namespace {
 /* Records whether RX auto-detect observed interlaced F bits and both field polarities. */
 class St40pInterlaceFlagRecorder : public FrameTestStrategy {
  public:
-  St40pInterlaceFlagRecorder() : FrameTestStrategy(nullptr, false, true) {
+  St40pInterlaceFlagRecorder() : FrameTestStrategy(nullptr, true, true) {
+  }
+
+  void txTestFrameModifier(void* frame, size_t /*frame_size*/) override {
+    auto* info = static_cast<st40_frame_info*>(frame);
+    ASSERT_NE(info, nullptr);
+    ASSERT_NE(info->udw_buff_addr, nullptr);
+    ASSERT_GT(info->udw_buffer_fill, 0u);
+    info->udw_buff_addr[0] = static_cast<uint8_t>(tx_seq_++ & 1u);
   }
 
   void rxTestFrameModifier(void* frame, size_t /*frame_size*/) override {
     auto* info = static_cast<st40_frame_info*>(frame);
     ASSERT_NE(info, nullptr);
+    ASSERT_NE(info->udw_buff_addr, nullptr);
+    ASSERT_GT(info->udw_buffer_fill, 0u);
 
     if (info->interlaced) {
       saw_interlaced = true;
+      EXPECT_EQ(info->second_field, (info->udw_buff_addr[0] & 1u) != 0u)
+          << "Auto-detect inverted second_field polarity relative to TX field index";
       if (info->second_field)
         saw_second_field = true;
       else
@@ -24,6 +36,7 @@ class St40pInterlaceFlagRecorder : public FrameTestStrategy {
     }
   }
 
+  uint32_t tx_seq_ = 0;
   bool saw_interlaced = false;
   bool saw_first_field = false;
   bool saw_second_field = false;

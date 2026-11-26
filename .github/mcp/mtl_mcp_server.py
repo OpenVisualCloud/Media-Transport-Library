@@ -1185,8 +1185,6 @@ def run_gtest(
 
     # Build command as list for safe execution
     cmd_parts: list[str] = [str(binary), "--p_port", p_port, "--r_port", r_port]
-    if auto_start_stop:
-        cmd_parts.append("--auto_start_stop")
     if dma_dev:
         cmd_parts.extend(["--dma_dev", dma_dev])
     cmd_parts.append(f"--gtest_filter={_exclude_noctx_tests(gtest_filter)}")
@@ -1331,7 +1329,6 @@ def _run_noctx_suite(
         out = _run_output(
             [
                 str(binary),
-                "--auto_start_stop",
                 f"--port_list={port_list}",
                 f"--gtest_filter={full}",
             ],

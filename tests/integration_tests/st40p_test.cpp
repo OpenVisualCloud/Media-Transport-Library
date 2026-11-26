@@ -212,6 +212,8 @@ void st40p_tx_worker(tests_context* s, St40pWorkerCfg cfg) {
 void st40p_rx_worker(tests_context* s, St40pWorkerCfg cfg) {
   auto handle = (st40p_rx_handle)__atomic_load_n(&s->handle, __ATOMIC_ACQUIRE);
   if (!handle) return;
+  bool has_prev_rtp_ts = false;
+  uint32_t prev_rtp_ts = 0;
   while (!s->stop) {
     auto* fi = st40p_rx_get_frame(handle);
     if (!fi) {
@@ -231,8 +233,15 @@ void st40p_rx_worker(tests_context* s, St40pWorkerCfg cfg) {
           fi->meta[0].sdid == cfg.sdid && fi->meta[0].line_number == cfg.line_number &&
           fi->meta[0].hori_offset == cfg.hori_offset &&
           fi->meta[0].udw_size == cfg.udw_len && fi->udw_buff_addr != nullptr &&
+          fi->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK &&
+          fi->timestamp == fi->rtp_timestamp && fi->rtp_marker && fi->pkts_total >= 1u &&
           (!cfg.expect_rx_udw_buf_size ||
            fi->udw_buffer_size == cfg.expect_rx_udw_buf_size);
+      if (has_prev_rtp_ts && static_cast<int32_t>(fi->rtp_timestamp - prev_rtp_ts) <= 0) {
+        meta_ok = false;
+      }
+      prev_rtp_ts = fi->rtp_timestamp;
+      has_prev_rtp_ts = true;
       if (!meta_ok) __atomic_fetch_add(&s->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
 
       if (cfg.rx_slot_addr_matched && !cfg.rx_slot_addr_matched->load()) {
@@ -351,16 +360,40 @@ void st40p_tx_epoch_drop_test(bool user_pacing) {
   auto st = ctx->handle;
   auto test_ctx = mtl_test::make_context(ctx, 0, 3);
 
+  struct UserTsDoneCtx {
+    uint64_t base_tai = 0;
+    uint64_t step_ns = 35ULL * NS_PER_MS;
+    std::atomic<uint64_t> done_seq{0};
+    std::atomic<int> rtp_ts_mismatch{0};
+  } done_ctx;
+
   uint32_t extra_flags =
       user_pacing ? (ST40P_TX_FLAG_USER_PACING | ST40P_TX_FLAG_USER_TIMESTAMP) : 0;
   auto ops_tx =
       make_st40p_tx_ops(ctx, test_ctx.get(), "st40p_epoch_drop_test",
                         EPOCH_DROP_TEST_UDP_PORT, /*block_get=*/true,
                         /*redundant=*/false, /*mcast_single_port=*/true, extra_flags);
+  if (user_pacing) {
+    ops_tx.priv = &done_ctx;
+    ops_tx.notify_frame_done = [](void* priv, struct st40_frame_info* fi) -> int {
+      auto* p = static_cast<UserTsDoneCtx*>(priv);
+      const uint64_t seq = p->done_seq.fetch_add(1, std::memory_order_acq_rel);
+      const uint64_t expect_tai = p->base_tai + seq * p->step_ns;
+      const uint32_t expect_rtp = st10_tai_to_media_clk(expect_tai, 90000);
+      if (!fi || fi->rtp_timestamp != expect_rtp) {
+        p->rtp_ts_mismatch.fetch_add(1, std::memory_order_relaxed);
+      }
+      return 0;
+    };
+  }
 
   ScopedSt40pTx tx_handle;
   mtl_test::ScopedMtlStart mtl_run(st);
   EXPECT_GE(mtl_run.start(), 0);
+
+  if (user_pacing) {
+    done_ctx.base_tai = mtl_ptp_read_time(st) + 60ULL * NS_PER_MS;
+  }
 
   tx_handle.reset(st40p_tx_create(st, &ops_tx));
   ASSERT_TRUE(tx_handle);
@@ -370,8 +403,8 @@ void st40p_tx_epoch_drop_test(bool user_pacing) {
   St40pWorkerCfg cfg;
   cfg.user_pacing = user_pacing;
   if (user_pacing) {
-    cfg.user_pacing_base_tai = mtl_ptp_read_time(st) + 60ULL * NS_PER_MS;
-    cfg.user_pacing_step_ns = 35ULL * NS_PER_MS;
+    cfg.user_pacing_base_tai = done_ctx.base_tai;
+    cfg.user_pacing_step_ns = done_ctx.step_ns;
   }
   const uint64_t t_start = st_test_get_monotonic_time();
   mtl_test::ScopedWorker tx_worker(test_ctx.get(),
@@ -383,7 +416,8 @@ void st40p_tx_epoch_drop_test(bool user_pacing) {
         [&]() {
           struct st40_tx_user_stats st_now;
           return st40p_tx_get_session_stats(tx_handle.get(), &st_now) >= 0 &&
-                 st_now.common.stat_frames_sent >= 15u;
+                 st_now.common.stat_frames_sent >= 15u &&
+                 done_ctx.done_seq.load(std::memory_order_acquire) >= 15u;
         },
         6000));
   } else {
@@ -402,6 +436,8 @@ void st40p_tx_epoch_drop_test(bool user_pacing) {
   EXPECT_EQ(stats.common.stat_epoch_drop, 0u);
   if (user_pacing) {
     EXPECT_GE(stats.common.stat_frames_sent, 15u);
+    EXPECT_GE(done_ctx.done_seq.load(std::memory_order_acquire), 15u);
+    EXPECT_EQ(done_ctx.rtp_ts_mismatch.load(std::memory_order_relaxed), 0);
     EXPECT_EQ(stats.common.stat_error_user_timestamp, 0u);
     EXPECT_EQ(stats.common.stat_epoch_mismatch, 0u);
     EXPECT_GE(elapsed_ms, 420u)

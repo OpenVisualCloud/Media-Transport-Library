@@ -29,7 +29,7 @@ on:
         type: boolean
         default: true
       gtest_cases:
-        description: 'Regex of gtest_runner.py run names to run, for example ^dma_cvt_va (empty = all)'
+        description: 'Regex of gtest_runner.py run names to run, for example ^dma_cvt (empty = all)'
         required: false
         type: string
       pytest:
@@ -128,7 +128,7 @@ jobs:
           - e830
           - e835
         group: >-
-          ${{ fromJSON(inputs.gtest_cases != '' && '[""]' || '["pr_core", "core_misc", "pacing_dma", "noctx"]') }}
+          ${{ fromJSON(inputs.gtest_cases != '' && '[""]' || '["pr_core", "core_misc", "init_modes", "noctx"]') }}
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 180

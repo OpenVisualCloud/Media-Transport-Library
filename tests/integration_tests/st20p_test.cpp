@@ -902,7 +902,10 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
             : nullptr);
 
     struct st_queue_meta meta;
-    EXPECT_GE(st20p_rx_get_queue_meta(rx_handles[i].get(), &meta), 0);
+    memset(&meta, 0xff, sizeof(meta));
+    EXPECT_EQ(st20p_rx_get_queue_meta(rx_handles[i].get(), &meta), 0);
+    EXPECT_EQ(meta.num_port, ops_rx.port.num_port);
+    EXPECT_NE(meta.queue_id[MTL_SESSION_PORT_P], 0xffu);
   }
 
   EXPECT_GE(mtl_run.start(), 0);
@@ -1547,7 +1550,9 @@ static void st20p_rx_stats_concurrent_free_test(bool reset, int reader_threads =
         if (ret == 0) {
           ok_calls.fetch_add(1, std::memory_order_relaxed);
         } else if (ret < 0) {
-          if (ret != -EIO) unexpected_err_calls.fetch_add(1, std::memory_order_relaxed);
+          if (ret != -EIO && ret != -EINVAL) {
+            unexpected_err_calls.fetch_add(1, std::memory_order_relaxed);
+          }
           live.compare_exchange_strong(h, nullptr);
           break;
         }
@@ -1604,19 +1609,28 @@ struct TxUserPacingCtx {
   mtl_handle st = nullptr;
   int target_frames = 0;
   std::atomic<int> done_cnt{0};
+  std::atomic<int> bad_meta_cnt{0};
   std::atomic<uint64_t> first_done_ptp{0};
   std::atomic<uint64_t> last_done_ptp{0};
+  std::atomic<uint32_t> first_rtp_ts{0};
+  std::atomic<uint32_t> last_rtp_ts{0};
 };
 
-static int test_st20p_tx_user_pacing_done(void* priv, struct st_frame* /*frame*/) {
+static int test_st20p_tx_user_pacing_done(void* priv, struct st_frame* frame) {
   auto* p = static_cast<TxUserPacingCtx*>(priv);
   const uint64_t now = mtl_ptp_read_time(p->st);
   const int idx = p->done_cnt.fetch_add(1, std::memory_order_acq_rel);
+  if (!frame || frame->status != ST_FRAME_STATUS_COMPLETE || frame->epoch == 0 ||
+      frame->tfmt != ST10_TIMESTAMP_FMT_TAI || frame->timestamp == 0) {
+    p->bad_meta_cnt.fetch_add(1, std::memory_order_relaxed);
+  }
   if (idx == 0) {
     p->first_done_ptp.store(now, std::memory_order_release);
+    if (frame) p->first_rtp_ts.store(frame->rtp_timestamp, std::memory_order_release);
   }
   if (idx == p->target_frames - 1) {
     p->last_done_ptp.store(now, std::memory_order_release);
+    if (frame) p->last_rtp_ts.store(frame->rtp_timestamp, std::memory_order_release);
   }
   return 0;
 }
@@ -1716,6 +1730,9 @@ static void st20p_tx_epoch_drop_test(bool user_pacing) {
   if (user_pacing) {
     EXPECT_EQ(stats.common.stat_error_user_timestamp, static_cast<uint64_t>(0));
     EXPECT_GE(stats.common.port[MTL_SESSION_PORT_P].frames, static_cast<uint64_t>(15));
+    EXPECT_EQ(pacing_ctx.bad_meta_cnt.load(std::memory_order_acquire), 0);
+    EXPECT_NE(pacing_ctx.first_rtp_ts.load(std::memory_order_acquire),
+              pacing_ctx.last_rtp_ts.load(std::memory_order_acquire));
     const uint64_t t0 = pacing_ctx.first_done_ptp.load(std::memory_order_acquire);
     const uint64_t t1 = pacing_ctx.last_done_ptp.load(std::memory_order_acquire);
     ASSERT_GT(t0, static_cast<uint64_t>(0));
@@ -1861,7 +1878,7 @@ TEST(St20p, update_source_and_destination) {
 
   const uint16_t udp_port_1 = ST20P_TEST_UDP_PORT + 120;
   const uint16_t udp_port_2 = ST20P_TEST_UDP_PORT + 122;
-  const bool use_mcast_phase2 = ctx->mcast_only || !mtl_test::is_kernel_loopback(ctx);
+  const bool use_mcast_phase2 = !mtl_test::is_kernel_loopback(ctx);
 
   St20pLoopbackPair pair(ctx->handle);
   pair.init(ctx, udp_port_1);
@@ -1898,7 +1915,7 @@ TEST(St20p, update_source_and_destination) {
   };
 
   switch_and_wait(udp_port_2, use_mcast_phase2);
-  switch_and_wait(udp_port_1, ctx->mcast_only);
+  switch_and_wait(udp_port_1, false);
   pair.stop_all();
 }
 

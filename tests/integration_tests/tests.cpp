@@ -21,35 +21,9 @@ enum test_args_cmd {
   TEST_ARG_PORT_LIST,
   TEST_ARG_LCORES,
   TEST_ARG_LOG_LEVEL,
-  TEST_ARG_SCH_SESSION_QUOTA,
   TEST_ARG_DMA_DEV,
-  TEST_ARG_DMA_AUTO,
-  TEST_ARG_CNI_THREAD,
-  TEST_ARG_LIB_PTP,
-  TEST_ARG_RX_MONO_POOL,
-  TEST_ARG_TX_MONO_POOL,
-  TEST_ARG_MONO_POOL,
-  TEST_ARG_RX_SEPARATE_VIDEO_LCORE,
-  TEST_ARG_MIGRATE_ENABLE,
-  TEST_ARG_MIGRATE_DISABLE,
-  TEST_ARG_NB_TX_DESC,
-  TEST_ARG_NB_RX_DESC,
-  TEST_ARG_AUTO_START_STOP,
   TEST_ARG_AF_XDP_ZC_DISABLE,
-  TEST_ARG_QUEUE_CNT,
-  TEST_ARG_HDR_SPLIT,
-  TEST_ARG_TASKLET_THREAD,
-  TEST_ARG_TSC_PACING,
-  TEST_ARG_RXTX_SIMD_512,
-  TEST_ARG_PACING_WAY,
-  TEST_ARG_RSS_MODE,
-  TEST_ARG_TX_NO_CHAIN,
-  TEST_ARG_IOVA_MODE,
-  TEST_ARG_MULTI_SRC_PORT,
   TEST_ARG_DHCP,
-  TEST_ARG_MCAST_ONLY,
-  TEST_ARG_ALLOW_ACROSS_NUMA_CORE,
-  TEST_ARG_AUDIO_TX_PACING,
   TEST_ARG_SINGLE_PROCESS
 };
 
@@ -58,40 +32,12 @@ static struct option test_args_options[] = {
     {"r_port", required_argument, 0, TEST_ARG_R_PORT},
     {"p_sip", required_argument, 0, TEST_ARG_P_SIP},
     {"port_list", required_argument, 0, TEST_ARG_PORT_LIST},
-
     {"lcores", required_argument, 0, TEST_ARG_LCORES},
     {"log_level", required_argument, 0, TEST_ARG_LOG_LEVEL},
-    {"sch_session_quota", required_argument, 0, TEST_ARG_SCH_SESSION_QUOTA},
     {"dma_dev", required_argument, 0, TEST_ARG_DMA_DEV},
-    {"dma_auto", no_argument, nullptr, TEST_ARG_DMA_AUTO},
-    {"cni_thread", no_argument, 0, TEST_ARG_CNI_THREAD},
-    {"ptp", no_argument, 0, TEST_ARG_LIB_PTP},
-    {"rx_mono_pool", no_argument, 0, TEST_ARG_RX_MONO_POOL},
-    {"tx_mono_pool", no_argument, 0, TEST_ARG_TX_MONO_POOL},
-    {"mono_pool", no_argument, 0, TEST_ARG_MONO_POOL},
-    {"rx_separate_lcore", no_argument, 0, TEST_ARG_RX_SEPARATE_VIDEO_LCORE},
-    {"migrate_enable", no_argument, 0, TEST_ARG_MIGRATE_ENABLE},
-    {"migrate_disable", no_argument, 0, TEST_ARG_MIGRATE_DISABLE},
-    {"nb_tx_desc", required_argument, 0, TEST_ARG_NB_TX_DESC},
-    {"nb_rx_desc", required_argument, 0, TEST_ARG_NB_RX_DESC},
-    {"auto_start_stop", no_argument, 0, TEST_ARG_AUTO_START_STOP},
     {"afxdp_zc_disable", no_argument, 0, TEST_ARG_AF_XDP_ZC_DISABLE},
-    {"queue_cnt", required_argument, 0, TEST_ARG_QUEUE_CNT},
-    {"hdr_split", no_argument, 0, TEST_ARG_HDR_SPLIT},
-    {"tasklet_thread", no_argument, 0, TEST_ARG_TASKLET_THREAD},
-    {"tsc", no_argument, 0, TEST_ARG_TSC_PACING},
-    {"rxtx_simd_512", no_argument, 0, TEST_ARG_RXTX_SIMD_512},
-    {"pacing_way", required_argument, 0, TEST_ARG_PACING_WAY},
-    {"rss_mode", required_argument, 0, TEST_ARG_RSS_MODE},
-    {"tx_no_chain", no_argument, 0, TEST_ARG_TX_NO_CHAIN},
-    {"iova_mode", required_argument, 0, TEST_ARG_IOVA_MODE},
-    {"multi_src_port", no_argument, 0, TEST_ARG_MULTI_SRC_PORT},
     {"dhcp", no_argument, 0, TEST_ARG_DHCP},
-    {"mcast_only", no_argument, 0, TEST_ARG_MCAST_ONLY},
-    {"allow_across_numa_core", no_argument, 0, TEST_ARG_ALLOW_ACROSS_NUMA_CORE},
-    {"audio_tx_pacing", required_argument, 0, TEST_ARG_AUDIO_TX_PACING},
     {"single_process", no_argument, 0, TEST_ARG_SINGLE_PROCESS},
-
     {0, 0, 0, 0}};
 
 static struct st_tests_context* g_test_ctx;
@@ -136,12 +82,11 @@ static void test_parse_port_list(struct mtl_init_params* p, const char* in_list)
 static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params* p,
                            int argc, char** argv) {
   int cmd = -1, opt_idx = 0;
-  int nb;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", test_args_options, &opt_idx);
     if (cmd == -1) break;
-    dbg("%s, cmd %d %s\n", __func__, cmd, optarg);
+    dbg("%s, cmd %d %s\n", __func__, cmd, optarg ? optarg : "");
 
     switch (cmd) {
       case TEST_ARG_P_PORT:
@@ -153,7 +98,10 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         if (p->num_ports < MTL_PORT_R + 1) p->num_ports = MTL_PORT_R + 1;
         break;
       case TEST_ARG_P_SIP:
-        inet_pton(AF_INET, optarg, mtl_p_sip_addr(p));
+        if (inet_pton(AF_INET, optarg, mtl_p_sip_addr(p)) != 1) {
+          err("%s, invalid --p_sip IPv4 address '%s'\n", __func__, optarg);
+          return -EINVAL;
+        }
         ctx->user_p_sip = true;
         break;
       case TEST_ARG_PORT_LIST:
@@ -162,17 +110,8 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
       case TEST_ARG_LCORES:
         p->lcores = optarg;
         break;
-      case TEST_ARG_SCH_SESSION_QUOTA: /* unit: 1080p tx */
-        nb = atoi(optarg);
-        if (nb > 0 && nb < 100) {
-          p->data_quota_mbs_per_sch = nb * st20_1080p59_yuv422_10bit_bandwidth_mps();
-        }
-        break;
       case TEST_ARG_DMA_DEV:
         test_args_dma_dev(p, optarg);
-        break;
-      case TEST_ARG_DMA_AUTO:
-        p->flags |= MTL_FLAG_DMA_AUTO;
         break;
       case TEST_ARG_LOG_LEVEL:
         if (!strcmp(optarg, "debug")) {
@@ -191,137 +130,32 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
           p->log_level = MTL_LOG_LEVEL_ERR;
           ctx->user_log_level = true;
         } else {
-          err("%s, unknow log level %s\n", __func__, optarg);
+          err("%s, unknown log level %s\n", __func__, optarg);
+          return -EINVAL;
         }
-        break;
-      case TEST_ARG_CNI_THREAD:
-        p->flags |= MTL_FLAG_CNI_THREAD;
-        break;
-      case TEST_ARG_RX_MONO_POOL:
-        p->flags |= MTL_FLAG_RX_MONO_POOL;
-        break;
-      case TEST_ARG_TX_MONO_POOL:
-        p->flags |= MTL_FLAG_TX_MONO_POOL;
-        break;
-      case TEST_ARG_MONO_POOL:
-        p->flags |= MTL_FLAG_RX_MONO_POOL;
-        p->flags |= MTL_FLAG_TX_MONO_POOL;
-        break;
-      case TEST_ARG_RX_SEPARATE_VIDEO_LCORE:
-        p->flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
-        break;
-      case TEST_ARG_MIGRATE_ENABLE:
-        p->flags |= MTL_FLAG_RX_VIDEO_MIGRATE;
-        p->flags |= MTL_FLAG_TX_VIDEO_MIGRATE;
-        break;
-      case TEST_ARG_MIGRATE_DISABLE:
-        p->flags &= ~MTL_FLAG_RX_VIDEO_MIGRATE;
-        p->flags &= ~MTL_FLAG_TX_VIDEO_MIGRATE;
-        break;
-      case TEST_ARG_LIB_PTP:
-        p->flags |= MTL_FLAG_PTP_ENABLE;
-        p->ptp_get_time_fn = NULL; /* clear the user ptp func */
-        break;
-      case TEST_ARG_NB_TX_DESC:
-        p->nb_tx_desc = atoi(optarg);
-        break;
-      case TEST_ARG_NB_RX_DESC:
-        p->nb_rx_desc = atoi(optarg);
-        break;
-      case TEST_ARG_AUTO_START_STOP:
-        p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
         break;
       case TEST_ARG_AF_XDP_ZC_DISABLE:
         p->flags |= MTL_FLAG_AF_XDP_ZC_DISABLE;
-        break;
-      case TEST_ARG_QUEUE_CNT: {
-        uint16_t cnt = atoi(optarg);
-        p->tx_queues_cnt[MTL_PORT_P] = cnt;
-        p->tx_queues_cnt[MTL_PORT_R] = cnt;
-        p->rx_queues_cnt[MTL_PORT_P] = cnt;
-        p->rx_queues_cnt[MTL_PORT_R] = cnt;
-        break;
-      }
-      case TEST_ARG_HDR_SPLIT:
-        ctx->hdr_split = true;
-        break;
-      case TEST_ARG_TASKLET_THREAD:
-        p->flags |= MTL_FLAG_TASKLET_THREAD;
-        break;
-      case TEST_ARG_TSC_PACING:
-        p->pacing = ST21_TX_PACING_WAY_TSC;
-        break;
-      case TEST_ARG_RXTX_SIMD_512:
-        p->flags |= MTL_FLAG_RXTX_SIMD_512;
-        break;
-      case TEST_ARG_PACING_WAY:
-        if (!strcmp(optarg, "auto"))
-          p->pacing = ST21_TX_PACING_WAY_AUTO;
-        else if (!strcmp(optarg, "rl"))
-          p->pacing = ST21_TX_PACING_WAY_RL;
-        else if (!strcmp(optarg, "tsn"))
-          p->pacing = ST21_TX_PACING_WAY_TSN;
-        else if (!strcmp(optarg, "tsc"))
-          p->pacing = ST21_TX_PACING_WAY_TSC;
-        else if (!strcmp(optarg, "ptp"))
-          p->pacing = ST21_TX_PACING_WAY_PTP;
-        else if (!strcmp(optarg, "be"))
-          p->pacing = ST21_TX_PACING_WAY_BE;
-        else
-          err("%s, unknow pacing way %s\n", __func__, optarg);
-        break;
-      case TEST_ARG_RSS_MODE:
-        if (!strcmp(optarg, "l3"))
-          p->rss_mode = MTL_RSS_MODE_L3;
-        else if (!strcmp(optarg, "l3_l4"))
-          p->rss_mode = MTL_RSS_MODE_L3_L4;
-        else if (!strcmp(optarg, "none"))
-          p->rss_mode = MTL_RSS_MODE_NONE;
-        else
-          err("%s, unknow rss mode %s\n", __func__, optarg);
-        break;
-      case TEST_ARG_TX_NO_CHAIN:
-        p->flags |= MTL_FLAG_TX_NO_CHAIN;
-        break;
-      case TEST_ARG_IOVA_MODE:
-        if (!strcmp(optarg, "va"))
-          p->iova_mode = MTL_IOVA_MODE_VA;
-        else if (!strcmp(optarg, "pa"))
-          p->iova_mode = MTL_IOVA_MODE_PA;
-        else
-          err("%s, unknow iova mode %s\n", __func__, optarg);
-        break;
-      case TEST_ARG_MULTI_SRC_PORT:
-        p->flags |= MTL_FLAG_MULTI_SRC_PORT;
         break;
       case TEST_ARG_DHCP:
         for (int port = 0; port < MTL_PORT_MAX; ++port)
           p->net_proto[port] = MTL_PROTO_DHCP;
         ctx->dhcp = true;
         break;
-      case TEST_ARG_MCAST_ONLY:
-        ctx->mcast_only = true;
-        break;
-      case TEST_ARG_ALLOW_ACROSS_NUMA_CORE:
-        p->flags |= MTL_FLAG_ALLOW_ACROSS_NUMA_CORE;
-        break;
-      case TEST_ARG_AUDIO_TX_PACING:
-        if (!strcmp(optarg, "auto"))
-          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_AUTO;
-        else if (!strcmp(optarg, "rl"))
-          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_RL;
-        else if (!strcmp(optarg, "tsc"))
-          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_TSC;
-        else
-          err("%s, unknow audio tx pacing %s\n", __func__, optarg);
-        break;
       case TEST_ARG_SINGLE_PROCESS:
         ctx->single_process = true;
         break;
+      case '?':
       default:
-        break;
+        err("%s, invalid or unknown option\n", __func__);
+        return -EINVAL;
     }
   };
+
+  if (optind < argc) {
+    err("%s, unexpected argument '%s'\n", __func__, argv[optind]);
+    return -EINVAL;
+  }
 
   return 0;
 }
@@ -367,14 +201,6 @@ static void test_random_ip(struct st_tests_context* ctx) {
   r_ip_multicast[1] = p_ip_multicast[1];
   r_ip_multicast[2] = p_ip_multicast[2];
   r_ip_multicast[3] = static_cast<uint8_t>(((base + 253 + 1) % 254) + 1);
-
-  if (ctx->mcast_only) {
-    r_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_2];
-    r_ip_multicast[0] = p_ip_multicast[0];
-    r_ip_multicast[1] = p_ip_multicast[1];
-    r_ip_multicast[2] = p_ip_multicast[2];
-    r_ip_multicast[3] = static_cast<uint8_t>(((base + 253 + 2) % 254) + 1);
-  }
 }
 
 static uint64_t test_ptp_from_real_time(void* priv) {
@@ -391,6 +217,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
   p->flags |= MTL_FLAG_CNI_TASKLET; /* for rtcp test */
+  p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   p->log_level = MTL_LOG_LEVEL_ERR;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
@@ -418,13 +245,17 @@ static void print_usage(const char* prog) {
       "  --r_port <bdf|kernel:lo>   Secondary port (default RX / port 1)\n"
       "  --port_list <p0,p1,...>    Comma-separated port list\n"
       "  --p_sip <ip>               Primary port source IPv4 address\n"
-      "  --auto_start_stop          Enable MTL_FLAG_DEV_AUTO_START_STOP\n"
-      "  --dma_auto                 Auto-probe DMA devices per port NUMA node\n"
+      "  --dma_dev <bdf,...>        Explicit DMA device BDF(s) (auto-probed when "
+      "needed)\n"
+      "  --lcores <list>            Explicit CPU lcore list\n"
       "  --log_level <level>        debug|info|notice|warning|error\n"
+      "  --dhcp                     Use DHCP for port IP addresses\n"
+      "  --afxdp_zc_disable         Disable AF_XDP zero-copy mode\n"
       "  --help                     Show GoogleTest and KahawaiTest options\n"
-      "\nMode selection is automatic: shared suites share one mtl_init(); NoCtxTest\n"
-      "cases run in their own clean process (multi-case and mixed filters dispatch\n"
-      "automatically).\n",
+      "\nExecution modes (IOVA, pacing, RSS, queues, PTP, hdr_split, init flags) are\n"
+      "tested directly by self-contained NoCtxTest cases. Mode selection is automatic:\n"
+      "shared suites share one mtl_init(); NoCtxTest cases run in their own clean\n"
+      "process.\n",
       prog ? prog : "KahawaiTest");
 }
 
@@ -443,7 +274,7 @@ GTEST_API_ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     if ((strcmp(argv[i], "--gtest_filter") == 0 ||
          strcmp(argv[i], "--gtest_output") == 0) &&
-        i + 1 < argc && argv[i + 1][0] != '-') {
+        i + 1 < argc && strncmp(argv[i + 1], "--", 2) != 0) {
       norm_args.emplace_back(std::string(argv[i]) + "=" + argv[i + 1]);
       ++i;
     } else {
@@ -483,7 +314,10 @@ GTEST_API_ int main(int argc, char** argv) {
   }
 
   test_ctx_init(ctx);
-  test_parse_args(ctx, &ctx->para, norm_argc, norm_argv.data());
+  if (test_parse_args(ctx, &ctx->para, norm_argc, norm_argv.data()) < 0) {
+    test_ctx_uinit(ctx);
+    return 2;
+  }
   test_random_ip(ctx);
   g_test_ctx = ctx;
 

@@ -652,10 +652,8 @@ static void st40_rx_loopback_ops_init(tests_context* st40, struct st40_rx_ops* o
   auto ctx = st40->ctx;
   st40_rx_ops_init(st40, ops);
   ops->num_port = 1;
-  memcpy(
-      ops->ip_addr[MTL_SESSION_PORT_P],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_P],
-      MTL_IP_ADDR_LEN);
+  memcpy(ops->ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_R]);
   ops->udp_port[MTL_SESSION_PORT_P] = udp_port;
@@ -1293,9 +1291,6 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     else if (1 == i)
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
              MTL_IP_ADDR_LEN);
-    else if (ctx->mcast_only)
-      memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-             MTL_IP_ADDR_LEN);
 
     tx_handles.emplace_back(st40_tx_create(m_handle, &ops_tx));
     ASSERT_TRUE(tx_handles[i]);
@@ -1313,9 +1308,6 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
 
     struct st40_rx_ops ops_rx;
     st40_rx_loopback_ops_init(raw_rx[i], &ops_rx, static_cast<uint16_t>(30000 + i * 2));
-    if (ctx->mcast_only)
-      memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-             MTL_IP_ADDR_LEN);
     ssrc_tracker.ctx = raw_rx[i];
     ops_rx.priv = &ssrc_tracker;
     ops_rx.notify_rtp_ready = rx_rtp_ready_ssrc;
@@ -1369,19 +1361,15 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
   /* Phase 3: switch to unicast (tx_session:0) */
   memset(&src, 0, sizeof(src));
   src.udp_port[MTL_SESSION_PORT_P] = 30000;
-  memcpy(
-      src.ip_addr[MTL_SESSION_PORT_P],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P],
-      MTL_IP_ADDR_LEN);
+  memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   __atomic_store_n(&raw_tx[0]->seq_id, rand(), __ATOMIC_RELAXED);
   if (tx_update_dst) {
     struct st_tx_dest_info dst;
     memset(&dst, 0, sizeof(dst));
     dst.udp_port[MTL_SESSION_PORT_P] = 30000;
-    memcpy(
-        dst.dip_addr[MTL_SESSION_PORT_P],
-        ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R],
-        MTL_IP_ADDR_LEN);
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
     EXPECT_GE(st40_tx_update_destination(tx_handles[0].get(), &dst), 0);
   }
   st40_verify_rx_switch_phase(rx_handles, raw_rx, expect_framerate, src, &ssrc_tracker, 0,
@@ -1471,6 +1459,9 @@ struct St40RxFrameLevelState {
   size_t expected_udw_size = 0;
   std::atomic<int> put_ok{0};
   std::atomic<int> put_fail{0};
+  bool has_prev_rtp_ts = false;
+  uint32_t prev_rtp_ts = 0;
+  std::atomic<int> ts_advance_cnt{0};
   std::queue<void*> pending_frames;
 };
 
@@ -1485,7 +1476,19 @@ int rx_anc_frame_ready(void* priv, void* frame, struct st40_rx_frame_meta* meta)
                  meta->meta[0].did == 0x43 && meta->meta[0].sdid == 0x02 &&
                  meta->meta[0].udw_size == st->expected_udw_size &&
                  meta->status == ST_FRAME_STATUS_COMPLETE && meta->rtp_marker &&
-                 meta->pkts_total == 1u;
+                 meta->pkts_total == 1u && meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK &&
+                 meta->timestamp == meta->rtp_timestamp;
+  if (meta) {
+    if (st->has_prev_rtp_ts) {
+      if (static_cast<int32_t>(meta->rtp_timestamp - st->prev_rtp_ts) > 0) {
+        st->ts_advance_cnt.fetch_add(1, std::memory_order_relaxed);
+      } else {
+        meta_ok = false;
+      }
+    }
+    st->prev_rtp_ts = meta->rtp_timestamp;
+    st->has_prev_rtp_ts = true;
+  }
   if (!meta_ok) __atomic_fetch_add(&ctx->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
 
   {
@@ -1597,6 +1600,7 @@ TEST(St40_rx, frame_level_put_framebuff) {
   EXPECT_EQ(state.put_ok.load(), rec);
   EXPECT_EQ(state.put_fail.load(), 0);
   EXPECT_EQ(mtl_test::relaxed_load(&rx->rx_meta_fail_cnt), 0);
+  EXPECT_GT(state.ts_advance_cnt.load(), 0);
   EXPECT_EQ(mtl_test::relaxed_load(&rx->sha_fail_cnt), 0);
   EXPECT_GE(mtl_test::sha_checked_frames(rx.get()), 20);
 

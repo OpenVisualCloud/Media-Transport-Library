@@ -88,6 +88,7 @@ bool gtest_filter_matches(const std::string& filter, const std::string& full_nam
 
 struct RunPlan {
   bool has_shared = false;
+  bool needs_dma = false;
   std::vector<std::string> own_cases;
 };
 
@@ -110,6 +111,9 @@ RunPlan build_run_plan() {
         plan.own_cases.push_back(full);
       } else {
         plan.has_shared = true;
+        if (suite == "Dma" || suite == "Cvt" || suite == "St20_rx") {
+          plan.needs_dma = true;
+        }
       }
     }
   }
@@ -124,18 +128,25 @@ bool validate_ports(const struct st_tests_context* ctx) {
   return true;
 }
 
-bool prepare_common_params(struct st_tests_context* ctx) {
+bool prepare_common_params(struct st_tests_context* ctx, bool enable_auto_dma) {
   bool link_flap_wa = false;
+  bool has_dpdk_port = false;
   for (int i = 0; i < ctx->para.num_ports && i < MTL_PORT_MAX; i++) {
     ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
     if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
       ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
-    } else if (!test_port_is_vf(ctx->para.port[i])) {
-      /* Only physical functions flap the physical switch port on DPDK close. */
-      link_flap_wa = true;
+    } else {
+      has_dpdk_port = true;
+      if (!test_port_is_vf(ctx->para.port[i])) {
+        /* Only physical functions flap the physical switch port on DPDK close. */
+        link_flap_wa = true;
+      }
     }
   }
-  if (ctx->hdr_split) ctx->para.nb_rx_hdr_split_queues = 1;
+  if (enable_auto_dma && has_dpdk_port && ctx->para.num_dma_dev_port == 0 &&
+      ctx->para.iova_mode != MTL_IOVA_MODE_PA) {
+    ctx->para.flags |= MTL_FLAG_DMA_AUTO;
+  }
   if (ctx->para.num_ports > 1 &&
       strcmp(ctx->para.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R]) == 0) {
     ctx->same_dual_port = true;
@@ -143,9 +154,9 @@ bool prepare_common_params(struct st_tests_context* ctx) {
   return link_flap_wa;
 }
 
-int run_shared_phase(struct st_tests_context* ctx) {
+int run_shared_phase(struct st_tests_context* ctx, bool needs_dma) {
   if (!validate_ports(ctx)) return 1;
-  const bool link_flap_wa = prepare_common_params(ctx);
+  const bool link_flap_wa = prepare_common_params(ctx, needs_dma);
 
   ctx->handle = mtl_init(&ctx->para);
   if (!ctx->handle) {
@@ -192,7 +203,7 @@ int run_shared_phase(struct st_tests_context* ctx) {
 
 int run_own_phase(struct st_tests_context* ctx) {
   if (!validate_ports(ctx)) return 1;
-  prepare_common_params(ctx);
+  prepare_common_params(ctx, /*enable_auto_dma=*/false);
   ctx->handle = nullptr;
   return RUN_ALL_TESTS();
 }
@@ -216,18 +227,42 @@ std::string build_shared_filter() {
 }
 
 int spawn_child_phase(const std::vector<std::string>& orig_argv,
-                      const std::string& phase_filter, const std::string& label) {
+                      const std::string& phase_filter, const std::string& label,
+                      size_t phase_idx) {
   std::vector<std::string> args;
-  args.reserve(orig_argv.size() + 3);
+  args.reserve(orig_argv.size() + 4);
   args.push_back(orig_argv.empty() ? std::string("KahawaiTest") : orig_argv[0]);
 
   for (size_t i = 1; i < orig_argv.size(); ++i) {
     const std::string& a = orig_argv[i];
     if (a == "--gtest_filter") {
-      if (i + 1 < orig_argv.size() && orig_argv[i + 1].rfind("-", 0) != 0) ++i;
+      if (i + 1 < orig_argv.size() && orig_argv[i + 1].rfind("--", 0) != 0) ++i;
       continue;
     }
     if (a.rfind("--gtest_filter=", 0) == 0 || a == "--single_process") continue;
+    if (a == "--gtest_output") {
+      if (i + 1 < orig_argv.size() && orig_argv[i + 1].rfind("--", 0) != 0) {
+        const std::string& out_spec = orig_argv[++i];
+        const size_t dot = out_spec.rfind('.');
+        const std::string suffixed =
+            (dot == std::string::npos)
+                ? (out_spec + ".phase" + std::to_string(phase_idx))
+                : (out_spec.substr(0, dot) + ".phase" + std::to_string(phase_idx) +
+                   out_spec.substr(dot));
+        args.push_back("--gtest_output=" + suffixed);
+      }
+      continue;
+    }
+    if (a.rfind("--gtest_output=", 0) == 0) {
+      const std::string out_spec = a.substr(strlen("--gtest_output="));
+      const size_t dot = out_spec.rfind('.');
+      const std::string suffixed =
+          (dot == std::string::npos) ? (out_spec + ".phase" + std::to_string(phase_idx))
+                                     : (out_spec.substr(0, dot) + ".phase" +
+                                        std::to_string(phase_idx) + out_spec.substr(dot));
+      args.push_back("--gtest_output=" + suffixed);
+      continue;
+    }
     args.push_back(a);
   }
   args.push_back("--single_process");
@@ -240,14 +275,23 @@ int spawn_child_phase(const std::vector<std::string>& orig_argv,
 
   std::fflush(stdout);
   std::fflush(stderr);
+
+  sigset_t block_set, prev_set;
+  sigemptyset(&block_set);
+  sigaddset(&block_set, SIGINT);
+  sigaddset(&block_set, SIGTERM);
+  sigprocmask(SIG_BLOCK, &block_set, &prev_set);
+
   const pid_t pid = fork();
   if (pid < 0) {
+    sigprocmask(SIG_SETMASK, &prev_set, nullptr);
     err("fork() failed for phase '%s': %s\n", label.c_str(), std::strerror(errno));
     return 1;
   }
   if (pid == 0) {
     signal(SIGINT, SIG_DFL);
     signal(SIGTERM, SIG_DFL);
+    sigprocmask(SIG_SETMASK, &prev_set, nullptr);
     unsetenv("GTEST_FILTER");
     execv("/proc/self/exe", c_argv.data());
     if (!orig_argv.empty()) execvp(orig_argv[0].c_str(), c_argv.data());
@@ -255,6 +299,7 @@ int spawn_child_phase(const std::vector<std::string>& orig_argv,
   }
 
   g_active_child_pid = pid;
+  sigprocmask(SIG_SETMASK, &prev_set, nullptr);
   if (g_caught_signal != 0) kill(pid, static_cast<int>(g_caught_signal));
 
   int status = 0;
@@ -295,7 +340,7 @@ int run_multi_phase(const RunPlan& plan, const std::vector<std::string>& orig_ar
 
   auto run_one = [&](const std::string& label, const std::string& flt) {
     info("=== KahawaiTest phase %zu: %s ===\n", ++phase_idx, label.c_str());
-    const int rc = spawn_child_phase(orig_argv, flt, label);
+    const int rc = spawn_child_phase(orig_argv, flt, label, phase_idx);
     if (rc != 0) overall_rc = rc;
     return rc == 0;
   };
@@ -325,7 +370,7 @@ int run_unified_tests(struct st_tests_context* ctx,
   if (!plan.has_shared && plan.own_cases.empty()) return RUN_ALL_TESTS();
 
   /* Single-process fast path: shared suites only or one NoCtxTest case. */
-  if (plan.own_cases.empty()) return run_shared_phase(ctx);
+  if (plan.own_cases.empty()) return run_shared_phase(ctx, plan.needs_dma);
   if (!plan.has_shared && plan.own_cases.size() == 1) return run_own_phase(ctx);
 
   /* Multiple own-ctx tests or mixed suites require separate processes because

@@ -164,6 +164,7 @@ void st20_rx_digest_test(const St20DigestScenario& s) {
       EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
     }
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
+    EXPECT_EQ(mtl_test::relaxed_load(&test_ctx_rx[i]->rx_meta_fail_cnt), 0);
     EXPECT_EQ(mtl_test::relaxed_load(&test_ctx_rx[i]->rx_field_fail_cnt), 0);
     if (st.rx_type == ST20_TYPE_FRAME_LEVEL)
       EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
@@ -318,17 +319,6 @@ TEST(St20_rx, digest_ooo_slice_4320p) {
   sc.streams = {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P25,
                  1920 * 4, 1080 * 4, false}};
   sc.out_of_order = true;
-  st20_rx_digest_test(sc);
-}
-
-TEST(St20_rx, digest_hdr_split) {
-  if (!st_test_ctx()->hdr_split) {
-    GTEST_SKIP() << "Header split is not enabled";
-  }
-  St20DigestScenario sc;
-  sc.streams = {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM,
-                 ST_FPS_P59_94, 1920, 1080, false}};
-  sc.hdr_split = true;
   st20_rx_digest_test(sc);
 }
 

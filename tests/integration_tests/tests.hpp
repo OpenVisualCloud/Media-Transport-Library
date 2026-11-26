@@ -27,14 +27,10 @@ struct st_tests_context {
   uint8_t mcast_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   uint64_t ptp_time;
   bool user_p_sip;
-  bool hdr_split;
   bool dhcp;
-  bool mcast_only;
   enum mtl_iova_mode iova;
   enum mtl_rss_mode rss_mode;
   bool same_dual_port;
-
-  enum st30_tx_pacing_way tx_audio_pacing_way;
 
   st22_encoder_dev_handle encoder_dev_handle;
   st22_decoder_dev_handle decoder_dev_handle;

@@ -62,6 +62,9 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
 
       offset += udw_size;
     }
+    if (interlaced_ && offset > 0) {
+      info->udw_buff_addr[0] = static_cast<uint8_t>(tx_seq_++ & 1u);
+    }
     ASSERT_LE(offset, info->udw_buffer_size);
     info->udw_buffer_fill = offset;
   }
@@ -77,6 +80,9 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
     EXPECT_EQ(info->pkts_total, anc_sizes_.size());
     if (interlaced_) {
       EXPECT_TRUE(info->interlaced);
+      ASSERT_GT(info->udw_buffer_fill, 0u);
+      EXPECT_EQ(info->second_field, (info->udw_buff_addr[0] & 1u) != 0u)
+          << "RX second_field polarity inverted relative to TX field index";
       if (info->second_field)
         saw_second_field_ = true;
       else
@@ -90,6 +96,7 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
       EXPECT_EQ(meta.udw_size, udw_size);
       EXPECT_EQ(meta.udw_offset, offset);
       for (uint16_t j = 0; j < udw_size; j++) {
+        if (interlaced_ && i == 0 && j == 0) continue;
         EXPECT_EQ(info->udw_buff_addr[offset + j], static_cast<uint8_t>((i + 1) * 7 + j));
       }
       offset += udw_size;
@@ -100,25 +107,39 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
  private:
   std::vector<uint16_t> anc_sizes_;
   bool interlaced_ = false;
+  uint32_t tx_seq_ = 0;
   bool saw_first_field_ = false;
   bool saw_second_field_ = false;
 };
 
 class InterlacedFieldOracle : public FrameTestStrategy {
  public:
-  InterlacedFieldOracle() : FrameTestStrategy(nullptr, false, true) {
+  InterlacedFieldOracle() : FrameTestStrategy(nullptr, true, true) {
+  }
+
+  void txTestFrameModifier(void* frame, size_t /*frame_size*/) override {
+    auto* info = static_cast<st40_frame_info*>(frame);
+    ASSERT_NE(info, nullptr);
+    ASSERT_NE(info->udw_buff_addr, nullptr);
+    ASSERT_GT(info->udw_buffer_fill, 0u);
+    info->udw_buff_addr[0] = static_cast<uint8_t>(tx_seq_++ & 1u);
   }
 
   void rxTestFrameModifier(void* frame, size_t /*frame_size*/) override {
     auto* info = static_cast<st40_frame_info*>(frame);
     ASSERT_NE(info, nullptr);
+    ASSERT_NE(info->udw_buff_addr, nullptr);
+    ASSERT_GT(info->udw_buffer_fill, 0u);
     EXPECT_TRUE(info->interlaced);
+    EXPECT_EQ(info->second_field, (info->udw_buff_addr[0] & 1u) != 0u)
+        << "RX second_field polarity inverted relative to TX field index";
     if (info->second_field)
       saw_second_field = true;
     else
       saw_first_field = true;
   }
 
+  uint32_t tx_seq_ = 0;
   bool saw_first_field = false;
   bool saw_second_field = false;
 };

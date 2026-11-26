@@ -125,7 +125,7 @@ void st20_tx_user_pacing_test(const std::vector<St20UserPacingStream>& streams) 
     struct st20_tx_ops ops_tx;
     st20_fill_loopback_tx_ops(ops_tx, test_ctx_tx[i], spec, "st20_timestamp_test",
                               udp_port_for_idx(i));
-    if (st.user_pacing && st.user_timestamp) {
+    if (st.user_pacing) {
       tx_ts_priv[i] = {test_ctx_tx[i], &user_ts_rings[i]};
       ops_tx.priv = &tx_ts_priv[i];
       ops_tx.get_next_frame = tx_next_video_frame_user_ts;
@@ -161,7 +161,7 @@ void st20_tx_user_pacing_test(const std::vector<St20UserPacingStream>& streams) 
     struct st20_rx_ops ops_rx;
     st20_fill_loopback_rx_ops(ops_rx, test_ctx_rx[i], spec, "st20_timestamp_test",
                               udp_port_for_idx(i));
-    if (st.user_pacing && st.user_timestamp) {
+    if (st.user_pacing) {
       rx_ts_priv[i] = {test_ctx_rx[i], &user_ts_rings[i]};
       ops_rx.priv = &rx_ts_priv[i];
       ops_rx.notify_frame_ready = rx_digest_frame_ready_user_ts;
@@ -211,9 +211,17 @@ void st20_tx_user_pacing_test(const std::vector<St20UserPacingStream>& streams) 
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_EQ(tx_stats[i].common.stat_error_user_timestamp, 0u);
-    if (streams[i].user_pacing && streams[i].user_timestamp) {
-      EXPECT_GT(user_ts_rings[i].rx_checked_cnt.load(std::memory_order_relaxed), 0);
-      EXPECT_EQ(user_ts_rings[i].rx_mismatch_cnt.load(std::memory_order_relaxed), 0);
+    if (streams[i].user_pacing) {
+      const int checked = user_ts_rings[i].rx_checked_cnt.load(std::memory_order_relaxed);
+      const int mismatch =
+          user_ts_rings[i].rx_mismatch_cnt.load(std::memory_order_relaxed);
+      EXPECT_GT(checked, 0);
+      if (streams[i].user_timestamp) {
+        EXPECT_EQ(mismatch, 0);
+      } else {
+        /* USER_PACING alone must emit epoch-aligned pacing RTP TS, not +5 ms user TAI. */
+        EXPECT_EQ(mismatch, checked);
+      }
     }
 
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,

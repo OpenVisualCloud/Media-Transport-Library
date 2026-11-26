@@ -325,8 +325,8 @@ inline void fill_raw_tx_port(TxOps& ops, const struct st_tests_context* ctx,
                              uint16_t udp_port, uint8_t pt, uint32_t ssrc = 0,
                              bool redundant = false) {
   ops.num_port = redundant ? 2 : 1;
-  const uint8_t* dip = (redundant || ctx->mcast_only) ? ctx->mcast_ip_addr[MTL_PORT_P]
-                                                      : ctx->para.sip_addr[MTL_PORT_R];
+  const uint8_t* dip =
+      redundant ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_R];
   memcpy(ops.dip_addr[MTL_SESSION_PORT_P], dip, MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
@@ -365,9 +365,8 @@ inline void fill_raw_rx_port(RxOps& ops, const struct st_tests_context* ctx,
              ctx->para.port[MTL_PORT_3]);
     ops.udp_port[MTL_SESSION_PORT_R] = udp_port;
   } else {
-    const uint8_t* src_ip =
-        ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_P];
-    memcpy(ops.ip_addr[MTL_SESSION_PORT_P], src_ip, MTL_IP_ADDR_LEN);
+    memcpy(ops.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
     ops.udp_port[MTL_SESSION_PORT_P] = udp_port;

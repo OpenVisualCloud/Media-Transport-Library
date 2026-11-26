@@ -25,6 +25,7 @@ struct TaskletTestCtx {
   std::atomic<int> start_cnt{0};
   std::atomic<int> stop_cnt{0};
   std::atomic<int> job{0};
+  std::atomic<int> handler_ret{MTL_TASKLET_ALL_DONE};
 };
 
 int test_tasklet_start(void* priv) {
@@ -44,7 +45,7 @@ int test_tasklet_stop(void* priv) {
 int test_tasklet_handler(void* priv) {
   auto* ctx = static_cast<TaskletTestCtx*>(priv);
   ctx->job.fetch_add(1, std::memory_order_release);
-  return 0;
+  return ctx->handler_ret.load(std::memory_order_relaxed);
 }
 
 void sch_tasklet_digest_test(mtl_handle mt, const SchDigestScenario& para) {
@@ -368,6 +369,80 @@ TEST(Sch, create_invalid_and_defaults) {
 
   EXPECT_EQ(mtl_sch_set_sleep_us(mt, 1000), 0);
   EXPECT_EQ(mtl_sch_set_sleep_us(mt, 0), 0);
+}
+
+TEST(Sch, sleep_control) {
+  auto* global_ctx = st_test_ctx();
+  mtl_handle mt = global_ctx->handle;
+
+  /* Find the first inactive scheduler slot (the next mtl_sch_create() acquires it). */
+  int sch_idx = -1;
+  for (int idx = 0; idx < 64; idx++) {
+    if (mtl_sch_enable_sleep(mt, idx, false) < 0) {
+      sch_idx = idx;
+      break;
+    }
+  }
+  ASSERT_GE(sch_idx, 0);
+
+  struct SleepResetGuard {
+    mtl_handle h;
+    ~SleepResetGuard() {
+      (void)mtl_sch_set_sleep_us(h, 0);
+    }
+  } sleep_guard{mt};
+
+  TaskletTestCtx tctx;
+  struct mtl_sch_ops ops = {};
+  ops.name = "sch_sleep_ctrl";
+  ops.nb_tasklets = 1;
+  mtl_test::ScopedSch sch(mtl_sch_create(mt, &ops));
+  ASSERT_TRUE(sch);
+
+  struct mtl_tasklet_ops t_ops = {};
+  t_ops.name = "t_sleep_ctrl";
+  t_ops.priv = &tctx;
+  t_ops.start = test_tasklet_start;
+  t_ops.stop = test_tasklet_stop;
+  t_ops.handler = test_tasklet_handler;
+  mtl_test::ScopedTasklet tasklet(mtl_sch_register_tasklet(sch.get(), &t_ops));
+  ASSERT_TRUE(tasklet);
+
+  ASSERT_EQ(mtl_sch_set_sleep_us(mt, 5000), 0);
+  ASSERT_GE(sch.start(), 0);
+  ASSERT_TRUE(mtl_test::wait_until(
+      [&]() { return tctx.job.load(std::memory_order_acquire) > 0; }, 2000, 2));
+
+  /* Idle + sleep enabled: 5 ms forced sleep limits 30 ms window to ~6 iterations. */
+  tctx.handler_ret.store(MTL_TASKLET_ALL_DONE, std::memory_order_release);
+  ASSERT_EQ(mtl_sch_enable_sleep(mt, sch_idx, true), 0);
+  mtl_sleep_us(6000);
+  const int j0 = tctx.job.load(std::memory_order_acquire);
+  mtl_sleep_us(30000);
+  const int delta_idle = tctx.job.load(std::memory_order_acquire) - j0;
+  EXPECT_GE(delta_idle, 2);
+  EXPECT_LE(delta_idle, 15);
+
+  /* Pending work + sleep enabled: scheduler must busy-poll without sleeping. */
+  tctx.handler_ret.store(MTL_TASKLET_HAS_PENDING, std::memory_order_release);
+  mtl_sleep_us(8000);
+  const int j1 = tctx.job.load(std::memory_order_acquire);
+  mtl_sleep_us(20000);
+  const int delta_busy = tctx.job.load(std::memory_order_acquire) - j1;
+  EXPECT_GT(delta_busy, 100);
+
+  /* Idle + sleep disabled: disabling sleep restores busy-poll. */
+  ASSERT_EQ(mtl_sch_enable_sleep(mt, sch_idx, false), 0);
+  tctx.handler_ret.store(MTL_TASKLET_ALL_DONE, std::memory_order_release);
+  mtl_sleep_us(2000);
+  const int j2 = tctx.job.load(std::memory_order_acquire);
+  mtl_sleep_us(20000);
+  const int delta_nosleep = tctx.job.load(std::memory_order_acquire) - j2;
+  EXPECT_GT(delta_nosleep, 100);
+
+  tasklet.reset();
+  sch.reset();
+  EXPECT_LT(mtl_sch_enable_sleep(mt, sch_idx, true), 0);
 }
 
 TEST(Sch, tasklet_limits_and_lifecycle) {

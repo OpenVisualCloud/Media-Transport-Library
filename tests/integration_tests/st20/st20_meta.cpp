@@ -24,7 +24,13 @@ int st20_rx_meta_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta*
   if (meta->rtp_timestamp != meta->timestamp) ctx->rx_meta_fail_cnt++;
   if (meta->pkts_total == 0) ctx->rx_meta_fail_cnt++;
   if (meta->pkts_recv[MTL_SESSION_PORT_P] != meta->pkts_total) ctx->rx_meta_fail_cnt++;
-  if (meta->timestamp_last_pkt < meta->timestamp_first_pkt) ctx->rx_meta_fail_cnt++;
+  if (meta->timestamp_first_pkt == 0) ctx->rx_meta_fail_cnt++;
+  if (meta->pkts_total > 1 && meta->timestamp_last_pkt <= meta->timestamp_first_pkt)
+    ctx->rx_meta_fail_cnt++;
+  if (expect_meta->timestamp_first_pkt &&
+      meta->timestamp_first_pkt <= expect_meta->timestamp_first_pkt)
+    ctx->rx_meta_fail_cnt++;
+  expect_meta->timestamp_first_pkt = meta->timestamp_first_pkt;
   if (expect_meta->timestamp == meta->timestamp) ctx->rx_meta_fail_cnt++;
   expect_meta->timestamp = meta->timestamp;
   if (!st_is_frame_complete(meta->status)) {

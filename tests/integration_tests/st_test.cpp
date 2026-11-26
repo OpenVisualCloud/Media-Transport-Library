@@ -434,7 +434,6 @@ TEST(Main, port_stats_and_reset) {
   tx_ops.ptime = ST30_PTIME_1MS;
   tx_ops.framebuff_cnt = static_cast<uint16_t>(tx_ctx->fb_cnt);
   tx_ops.framebuff_size = static_cast<uint32_t>(pkt_size);
-  tx_ops.pacing_way = ctx->tx_audio_pacing_way;
   tx_ops.get_next_frame = port_stats_tx_next_frame;
 
   mtl_test::ScopedHandle<st30_tx_handle, st30_tx_free> tx(
@@ -534,8 +533,22 @@ TEST(Main, mode_and_port_info_queries) {
     memset(netmask, 0xFF, sizeof(netmask));
     memset(gateway, 0xFF, sizeof(gateway));
     EXPECT_EQ(mtl_port_ip_info(handle, p, ip, netmask, gateway), 0);
+    const uint32_t mask = (static_cast<uint32_t>(netmask[0]) << 24) |
+                          (static_cast<uint32_t>(netmask[1]) << 16) |
+                          (static_cast<uint32_t>(netmask[2]) << 8) | netmask[3];
+    EXPECT_NE(mask, 0u);
+    EXPECT_NE(mask, 0xFFFFFFFFu);
+    EXPECT_EQ((~mask + 1u) & (~mask), 0u);
+    const uint8_t kSentinel[MTL_IP_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF};
+    EXPECT_NE(memcmp(gateway, kSentinel, MTL_IP_ADDR_LEN), 0);
     if (!ctx->dhcp) {
       EXPECT_EQ(memcmp(ip, ctx->para.sip_addr[port], MTL_IP_ADDR_LEN), 0);
+      if (ctx->para.pmd[port] == MTL_PMD_DPDK_USER) {
+        const uint8_t kDefaultMask[MTL_IP_ADDR_LEN] = {255, 255, 255, 0};
+        const uint8_t kZeroGw[MTL_IP_ADDR_LEN] = {0, 0, 0, 0};
+        EXPECT_EQ(memcmp(netmask, kDefaultMask, MTL_IP_ADDR_LEN), 0);
+        EXPECT_EQ(memcmp(gateway, kZeroGw, MTL_IP_ADDR_LEN), 0);
+      }
     }
     const bool expected_dpdk = (ctx->para.pmd[port] == MTL_PMD_DPDK_USER) ||
                                (ctx->para.pmd[port] == MTL_PMD_DPDK_AF_XDP) ||
@@ -672,12 +685,15 @@ TEST(Misc, ptp) {
   if (user_ptp) {
     const uint64_t cb_before_raw = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
     st_usleep(100);
+    const uint64_t rt_before = st_test_get_realtime_ns();
     const uint64_t ptp_raw = mtl_ptp_read_time_raw(handle);
+    const uint64_t rt_after = st_test_get_realtime_ns();
     const uint64_t cb_after_raw = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
     EXPECT_GT(ptp_raw, 0u);
     EXPECT_GT(cb_after_raw, cb_before_raw);
-    EXPECT_GE(ptp_raw, cb_before_raw);
-    EXPECT_LE(ptp_raw, cb_after_raw);
+    EXPECT_GE(ptp_raw, rt_before);
+    EXPECT_LE(ptp_raw, rt_after);
+    EXPECT_GT(ptp_raw, prev);
   } else {
     const uint64_t ptp_raw = mtl_ptp_read_time_raw(handle);
     EXPECT_GT(ptp_raw, 0u);

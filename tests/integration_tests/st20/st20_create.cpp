@@ -21,41 +21,6 @@ TEST(St20_tx, create_free_max) {
                                    st20_tx_free>(st20_tx_ops_init, st20_tx_assert_cnt,
                                                  TEST_CREATE_FREE_MAX);
 }
-TEST(St20_tx, create_queue_cnt) {
-  auto ctx = st_test_ctx();
-  if (ctx->para.pmd[MTL_PORT_P] != MTL_PMD_DPDK_USER ||
-      (ctx->para.flags & MTL_FLAG_SHARED_TX_QUEUE))
-    GTEST_SKIP() << "needs one dedicated DPDK tx queue per session";
-
-  /* the port holds queue_cnt session queues plus the system queue */
-  const int want = ctx->para.tx_queues_cnt[MTL_PORT_P];
-  auto sch_cnt = st_test_sch_cnt(ctx);
-  auto test_ctx = mtl_test::make_context(ctx, 0, 2);
-  struct st20_tx_ops ops;
-  st20_tx_ops_init(test_ctx.get(), &ops);
-
-  std::vector<ScopedSt20Tx> handles;
-  for (int i = 0; i < want; i++) {
-    st20_tx_handle h = st20_tx_create(ctx->handle, &ops);
-    if (!h) break;
-    handles.emplace_back(h);
-    ops.udp_port[MTL_SESSION_PORT_P]++;
-    ops.udp_port[MTL_SESSION_PORT_R]++;
-  }
-  const int created = static_cast<int>(handles.size());
-  EXPECT_EQ(created, want) << "a port with fewer tx queues than --queue_cnt is the "
-                              "usual cause, see the MTL log";
-  if (created == want) {
-    ScopedSt20Tx overflow(st20_tx_create(ctx->handle, &ops));
-    EXPECT_FALSE(static_cast<bool>(overflow));
-  }
-  handles.clear();
-  st20_tx_assert_cnt(0);
-  EXPECT_EQ(sch_cnt, st_test_sch_cnt(ctx));
-
-  ScopedSt20Tx reused(st20_tx_create(ctx->handle, &ops));
-  EXPECT_TRUE(static_cast<bool>(reused));
-}
 TEST(St20_tx, create_expect_fail) {
   mtl_test::verify_invalid_ports<struct st20_tx_ops, st20_tx_handle, st20_tx_create,
                                  st20_tx_free>(st20_tx_ops_init);
@@ -154,6 +119,35 @@ TEST(St20_tx, query_params) {
   EXPECT_EQ(st20_tx_get_pacing_params(handle.get(), &tr_offset_ns, nullptr, nullptr), 0);
   EXPECT_DOUBLE_EQ(tr_offset_ns, expected_tr_offset_ns);
   EXPECT_LT(st20_tx_get_pacing_params(nullptr, &tr_offset_ns, &trs_ns, &vrx_pkts), 0);
+}
+
+TEST(St20_tx, set_ext_frame_expect_fail) {
+  auto* ctx = st_test_ctx();
+  const uint16_t fb_cnt = 3;
+  auto test_ctx = mtl_test::make_context(ctx, 0, fb_cnt);
+  struct st20_tx_ops ops;
+  st20_tx_ops_init(test_ctx.get(), &ops);
+  ops.num_port = 1;
+  ops.flags |= ST20_TX_FLAG_EXT_FRAME;
+  ScopedSt20Tx handle(st20_tx_create(ctx->handle, &ops));
+  ASSERT_TRUE(static_cast<bool>(handle));
+
+  const size_t fb_sz = st20_tx_get_framebuffer_size(handle.get());
+  uint8_t dummy = 0;
+  struct st20_ext_frame ext = {};
+  ext.buf_addr = &dummy;
+  ext.buf_iova = 0x1000;
+  ext.buf_len = fb_sz - 1;
+  EXPECT_LT(st20_tx_set_ext_frame(handle.get(), 0, &ext), 0);
+
+  ext.buf_len = fb_sz;
+  EXPECT_LT(st20_tx_set_ext_frame(handle.get(), fb_cnt, &ext), 0);
+  ext.buf_iova = MTL_BAD_IOVA;
+  EXPECT_LT(st20_tx_set_ext_frame(handle.get(), 0, &ext), 0);
+  ext.buf_iova = 0x1000;
+  ext.buf_addr = nullptr;
+  EXPECT_LT(st20_tx_set_ext_frame(handle.get(), 0, &ext), 0);
+  EXPECT_LT(st20_tx_set_ext_frame(handle.get(), 0, nullptr), 0);
 }
 
 TEST(St20_rx, create_free_mix) {

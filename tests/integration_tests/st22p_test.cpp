@@ -413,6 +413,9 @@ void verify_codec_plugin_reg(mtl_handle st, Dev dev, CreateFn noop_create,
   }
 }
 
+static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx);
+static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx);
+
 TEST(St22p, codec_plugin_register_unregister) {
   auto st = st_test_ctx()->handle;
 
@@ -437,6 +440,58 @@ TEST(St22p, codec_plugin_register_unregister) {
       +[](void*, st22p_decode_session,
           struct st22_decoder_create_req*) -> st22_decode_priv { return nullptr; },
       +[](void*, st22_decode_priv) -> int { return 0; }, st22_decoder_register);
+
+  /* Active session must hold a plugin ref_cnt so unregister fails with -EBUSY. */
+  auto* ctx = st_test_ctx();
+  {
+    struct st22_encoder_dev busy_edev = edev;
+    busy_edev.name = "st22_test_enc_busy";
+    busy_edev.create_session = +[](void*, st22p_encode_session,
+                                   struct st22_encoder_create_req*) -> st22_encode_priv {
+      return reinterpret_cast<st22_encode_priv>(static_cast<uintptr_t>(0x1));
+    };
+    busy_edev.free_session = +[](void*, st22_encode_priv) -> int { return 0; };
+    ScopedSt22EncoderDev enc_dev(st22_encoder_register(st, &busy_edev));
+    ASSERT_TRUE(static_cast<bool>(enc_dev));
+
+    auto tx_ctx = make_st22p_context(ctx, 0, 2);
+    struct st22p_tx_ops ops_tx;
+    st22p_tx_ops_init(tx_ctx.get(), &ops_tx);
+    ops_tx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+    ScopedSt22pTx tx_h(st22p_tx_create(st, &ops_tx));
+    ASSERT_TRUE(static_cast<bool>(tx_h));
+    const int unreg_ret = st22_encoder_unregister(enc_dev.get());
+    EXPECT_EQ(unreg_ret, -EBUSY);
+    if (unreg_ret == 0) {
+      /* Avoid double-free if a broken implementation ignored ref_cnt. */
+      (void)enc_dev.release();
+    }
+    tx_h.reset();
+  }
+  {
+    struct st22_decoder_dev busy_ddev = ddev;
+    busy_ddev.name = "st22_test_dec_busy";
+    busy_ddev.create_session = +[](void*, st22p_decode_session,
+                                   struct st22_decoder_create_req*) -> st22_decode_priv {
+      return reinterpret_cast<st22_decode_priv>(static_cast<uintptr_t>(0x1));
+    };
+    busy_ddev.free_session = +[](void*, st22_decode_priv) -> int { return 0; };
+    ScopedSt22DecoderDev dec_dev(st22_decoder_register(st, &busy_ddev));
+    ASSERT_TRUE(static_cast<bool>(dec_dev));
+
+    auto rx_ctx = make_st22p_context(ctx, 0, 2);
+    struct st22p_rx_ops ops_rx;
+    st22p_rx_ops_init(rx_ctx.get(), &ops_rx);
+    ops_rx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+    ScopedSt22pRx rx_h(st22p_rx_create(st, &ops_rx));
+    ASSERT_TRUE(static_cast<bool>(rx_h));
+    const int unreg_ret = st22_decoder_unregister(dec_dev.get());
+    EXPECT_EQ(unreg_ret, -EBUSY);
+    if (unreg_ret == 0) {
+      (void)dec_dev.release();
+    }
+    rx_h.reset();
+  }
 }
 
 static int test_st22p_frame_available(void* priv) {
@@ -1160,14 +1215,9 @@ struct St22pLoopback {
       mtl_test::fill_tx_port(ops_tx.port, ctx,
                              ST22P_TEST_UDP_PORT + static_cast<uint16_t>(i * 2),
                              ST22P_TEST_PAYLOAD_TYPE);
-      if (opts.custom_mcast_tx) {
-        if (i == 1) {
-          memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-                 MTL_IP_ADDR_LEN);
-        } else if (ctx->mcast_only) {
-          memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-                 MTL_IP_ADDR_LEN);
-        }
+      if (opts.custom_mcast_tx && i == 1) {
+        memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+               MTL_IP_ADDR_LEN);
       }
       ops_tx.codestream_size = s.ctx->frame_size / stream.compress_ratio;
       if (opts.block_get) {
@@ -1217,10 +1267,6 @@ struct St22pLoopback {
     st22p_rx_ops_init(r.ctx.get(), &ops_rx);
     mtl_test::fill_rx_port(ops_rx.port, ctx, ST22P_TEST_UDP_PORT,
                            ST22P_TEST_PAYLOAD_TYPE);
-    if (opts.custom_mcast_tx && ctx->mcast_only) {
-      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-             MTL_IP_ADDR_LEN);
-    }
     if (opts.block_get) {
       ops_rx.notify_frame_available = nullptr;
       ops_rx.notify_event = nullptr;
@@ -1354,11 +1400,8 @@ static void st22p_update_src_dst_test(bool tx_update_dst) {
 
   verify_switch("mcast 1", ctx->mcast_ip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
                 ST22P_TEST_UDP_PORT + 2, tx_update_dst ? 0 : 1);
-  const uint8_t* tx0_dst_ip =
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R];
-  const uint8_t* rx0_src_ip =
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P];
-  verify_switch("unicast 0", tx0_dst_ip, rx0_src_ip, ST22P_TEST_UDP_PORT, 0);
+  verify_switch("unicast 0", ctx->para.sip_addr[MTL_PORT_R],
+                ctx->para.sip_addr[MTL_PORT_P], ST22P_TEST_UDP_PORT, 0);
 
   lb.stop_all();
   EXPECT_EQ(mtl_test::relaxed_load(&lb.rx[0].ctx->incomplete_frame_cnt), 0);
@@ -1467,6 +1510,7 @@ struct st22p_tx_drop_late_ctx {
   std::atomic<int> dropped_done_calls{0};
   std::atomic<int> complete_done_calls{0};
   std::atomic<int> late_calls{0};
+  std::atomic<uint64_t> last_complete_ts{0};
   int done_total() const {
     return dropped_done_calls.load() + complete_done_calls.load();
   }
@@ -1474,10 +1518,12 @@ struct st22p_tx_drop_late_ctx {
 
 static int test_st22p_tx_drop_late_frame_done(void* priv, struct st_frame* frame) {
   auto* s = static_cast<st22p_tx_drop_late_ctx*>(priv);
-  if (frame->status == ST_FRAME_STATUS_DROPPED)
+  if (frame->status == ST_FRAME_STATUS_DROPPED) {
     s->dropped_done_calls++;
-  else if (frame->status == ST_FRAME_STATUS_COMPLETE)
+  } else if (frame->status == ST_FRAME_STATUS_COMPLETE) {
+    s->last_complete_ts.store(frame->timestamp, std::memory_order_release);
     s->complete_done_calls++;
+  }
   return 0;
 }
 
@@ -1554,8 +1600,11 @@ TEST(St22p, tx_drop_when_late) {
 
   constexpr int kOnTimeCnt = 3;
   for (int i = 0; i < kOnTimeCnt; i++) {
-    EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) + frame_period_ns * 4))
+    const uint64_t target_tai = mtl_ptp_read_time(st) + frame_period_ns * 4;
+    EXPECT_TRUE(put_one_and_drain(target_tai))
         << "on-time frame " << i << " never completed";
+    EXPECT_GE(dctx.last_complete_ts.load(std::memory_order_acquire),
+              target_tai - frame_period_ns);
   }
 
   /* Exceed kFbCnt stale frames so leaking DROPPED slots exhausts the pool. */

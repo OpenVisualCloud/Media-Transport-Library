@@ -160,9 +160,6 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     else if (1 == i)
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
              MTL_IP_ADDR_LEN);
-    else if (ctx->mcast_only)
-      memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-             MTL_IP_ADDR_LEN);
     else
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
@@ -190,9 +187,6 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     struct st20_rx_ops ops_rx;
     st20_fill_loopback_rx_ops(ops_rx, test_ctx_rx[i], st, "st20_test",
                               udp_port_for_idx(i));
-    if (ctx->mcast_only)
-      memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-             MTL_IP_ADDR_LEN);
     ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
     if (type == ST20_TYPE_FRAME_LEVEL) {
       ops_rx.priv = &rx_states[i];
@@ -255,11 +249,8 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     switch_and_verify(2, ctx->mcast_ip_addr[MTL_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
                       rand(), "mcast 2");
   }
-  switch_and_verify(
-      0,
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P],
-      rand(), "unicast 0");
+  switch_and_verify(0, ctx->para.sip_addr[MTL_PORT_R], ctx->para.sip_addr[MTL_PORT_P],
+                    rand(), "unicast 0");
 
   guard.release_sessions();
 }

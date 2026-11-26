@@ -538,6 +538,22 @@ void rx_get_packet_ex(tests_context* ctx,
       }
     }
     hdr = (struct st20_rfc4175_rtp_hdr*)usrptr;
+    size_t expect_len = sizeof(*hdr);
+    if (mbuf_len < expect_len) {
+      __atomic_fetch_add(&ctx->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
+    } else {
+      expect_len += ntohs(hdr->row_length);
+      if (ntohs(hdr->row_offset) & ST20_SRD_OFFSET_CONTINUATION) {
+        const auto* e_hdr =
+            reinterpret_cast<const struct st20_rfc4175_extra_rtp_hdr*>(hdr + 1);
+        expect_len +=
+            sizeof(*e_hdr) +
+            (mbuf_len >= sizeof(*hdr) + sizeof(*e_hdr) ? ntohs(e_hdr->row_length) : 0u);
+      }
+      if (mbuf_len != expect_len) {
+        __atomic_fetch_add(&ctx->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
+      }
+    }
     if (on_pkt) on_pkt(hdr);
     uint32_t tmstamp = ntohl(hdr->base.tmstamp);
     bool newframe = false;
@@ -668,12 +684,8 @@ void init_single_port_tx(struct st20_tx_ops& ops, tests_context* tctx, const cha
   ops.name = name;
   ops.priv = tctx;
   ops.num_port = 1;
-  if (tctx->ctx->mcast_only)
-    memcpy(ops.dip_addr[MTL_SESSION_PORT_P], tctx->ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  else
-    memcpy(ops.dip_addr[MTL_SESSION_PORT_P], tctx->ctx->para.sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
+  memcpy(ops.dip_addr[MTL_SESSION_PORT_P], tctx->ctx->para.sip_addr[MTL_PORT_R],
+         MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            tctx->ctx->para.port[MTL_PORT_P]);
   ops.udp_port[MTL_SESSION_PORT_P] = udp_port;
@@ -686,12 +698,8 @@ void init_single_port_rx(struct st20_rx_ops& ops, tests_context* tctx, const cha
   ops.name = name;
   ops.priv = tctx;
   ops.num_port = 1;
-  if (tctx->ctx->mcast_only)
-    memcpy(ops.ip_addr[MTL_SESSION_PORT_P], tctx->ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  else
-    memcpy(ops.ip_addr[MTL_SESSION_PORT_P], tctx->ctx->para.sip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
+  memcpy(ops.ip_addr[MTL_SESSION_PORT_P], tctx->ctx->para.sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            tctx->ctx->para.port[MTL_PORT_R]);
   ops.udp_port[MTL_SESSION_PORT_P] = udp_port;

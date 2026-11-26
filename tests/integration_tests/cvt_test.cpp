@@ -60,7 +60,18 @@ void run_packed_dma(mtl_handle st, mtl_udma_handle dma, int w, int h,
     st_test_rand_data(src.bytes(), src_sz, 0);
   std::vector<uint8_t> expected(src.bytes(), src.bytes() + src_sz);
 
-  auto* s = static_cast<SrcT*>(src.data());
+  /* Poison chunk 0 in a separate CPU copy so silent CPU fallback fails round-trip. */
+  std::vector<uint8_t> cpu_src(expected);
+  if (src_sz > 256u * 1024u) {
+    if (mask) {
+      auto* p = reinterpret_cast<uint16_t*>(cpu_src.data());
+      for (size_t i = 0; i < 32; i++) p[i] ^= mask;
+    } else {
+      for (size_t i = 0; i < 64; i++) cpu_src[i] ^= 0xFFu;
+    }
+  }
+
+  auto* s = reinterpret_cast<SrcT*>(cpu_src.data());
   auto* d = reinterpret_cast<DstT*>(mid.data());
   int ret = (lvl == MTL_SIMD_LEVEL_MAX) ? dma_fn(dma, s, src.iova(), d, w, h)
                                         : simd_fn(dma, s, src.iova(), d, w, h, lvl);
@@ -85,7 +96,11 @@ void run_planar_dma(mtl_handle st, mtl_udma_handle dma, int w, int h,
 
   st_test_rand_data(pg.bytes(), pg_sz, 0);
   std::vector<uint8_t> expected(pg.bytes(), pg.bytes() + pg_sz);
-  auto* s = static_cast<PgT*>(pg.data());
+  std::vector<uint8_t> cpu_src(expected);
+  if (pg_sz > 256u * 1024u) {
+    for (size_t i = 0; i < 64; i++) cpu_src[i] ^= 0xFFu;
+  }
+  auto* s = reinterpret_cast<PgT*>(cpu_src.data());
   uint16_t *y = pl.data(), *b = y + px, *r = y + px * 3 / 2;
   int ret = (lvl == MTL_SIMD_LEVEL_MAX) ? dma_fn(dma, s, pg.iova(), y, b, r, w, h)
                                         : simd_fn(dma, s, pg.iova(), y, b, r, w, h, lvl);
@@ -111,14 +126,24 @@ void cvt_yuv422p10le_to_422be10(mtl_handle st, mtl_udma_handle dma, int w, int h
   auto* y = static_cast<uint16_t*>(p10.data());
   fill_masked_u16(y, px * 2, 0x3ff);
   std::vector<uint8_t> expected(p10.bytes(), p10.bytes() + pl_sz);
+  std::vector<uint16_t> cpu_p10(y, y + px * 2);
+  if (px * sizeof(uint16_t) > 256u * 1024u) {
+    for (size_t i = 0; i < 32; i++) {
+      cpu_p10[i] ^= 0x3ffu;
+      cpu_p10[px + i] ^= 0x3ffu;
+      cpu_p10[px * 3 / 2 + i] ^= 0x3ffu;
+    }
+  }
+  uint16_t* cy = cpu_p10.data();
   auto* dst = reinterpret_cast<Pg10Be*>(pg.data());
   const mtl_iova_t bi = p10.iova() + static_cast<mtl_iova_t>(px * 2);
   const mtl_iova_t ri = p10.iova() + static_cast<mtl_iova_t>(px * 3);
-  int ret = (lvl == MTL_SIMD_LEVEL_MAX)
-                ? st20_yuv422p10le_to_rfc4175_422be10_dma(dma, y, p10.iova(), y + px, bi,
-                                                          y + px * 3 / 2, ri, dst, w, h)
-                : st20_yuv422p10le_to_rfc4175_422be10_simd_dma(
-                      dma, y, p10.iova(), y + px, bi, y + px * 3 / 2, ri, dst, w, h, lvl);
+  int ret =
+      (lvl == MTL_SIMD_LEVEL_MAX)
+          ? st20_yuv422p10le_to_rfc4175_422be10_dma(dma, cy, p10.iova(), cy + px, bi,
+                                                    cy + px * 3 / 2, ri, dst, w, h)
+          : st20_yuv422p10le_to_rfc4175_422be10_simd_dma(
+                dma, cy, p10.iova(), cy + px, bi, cy + px * 3 / 2, ri, dst, w, h, lvl);
   ASSERT_EQ(0, ret);
   EXPECT_TRUE(has_nonzero(pg.data(), pg_sz));
   ASSERT_EQ(0, st20_rfc4175_422be10_to_yuv422p10le_simd(
@@ -151,10 +176,15 @@ void cvt_422be10_to_422le8(mtl_handle st, mtl_udma_handle dma, int w, int h,
     src[i].Y01_ = p8[i].Y01 << 2;
   }
 
+  std::vector<uint8_t> cpu_src(pg_10.bytes(), pg_10.bytes() + sz_10);
+  if (sz_10 > 256u * 1024u) {
+    for (size_t i = 0; i < 64; i++) cpu_src[i] ^= 0xFFu;
+  }
+  auto* cs = reinterpret_cast<Pg10Be*>(cpu_src.data());
   auto* dst = reinterpret_cast<Pg8Le*>(pg_8_2.data());
   int ret = (lvl == MTL_SIMD_LEVEL_MAX)
-                ? st20_rfc4175_422be10_to_422le8_dma(dma, src, pg_10.iova(), dst, w, h)
-                : st20_rfc4175_422be10_to_422le8_simd_dma(dma, src, pg_10.iova(), dst, w,
+                ? st20_rfc4175_422be10_to_422le8_dma(dma, cs, pg_10.iova(), dst, w, h)
+                : st20_rfc4175_422be10_to_422le8_simd_dma(dma, cs, pg_10.iova(), dst, w,
                                                           h, lvl);
   ASSERT_EQ(0, ret);
   EXPECT_TRUE(has_nonzero(pg_8_2.data(), sz_8));
@@ -173,7 +203,11 @@ void cvt_422be10_to_v210(mtl_handle st, mtl_udma_handle dma, int w, int h,
 
   st_test_rand_data(pg_be.bytes(), pg_sz, 0);
   std::vector<uint8_t> expected(pg_be.bytes(), pg_be.bytes() + pg_sz);
-  auto* s = static_cast<Pg10Be*>(pg_be.data());
+  std::vector<uint8_t> cpu_src(expected);
+  if (!fail && pg_sz > 256u * 1024u) {
+    for (size_t i = 0; i < 64; i++) cpu_src[i] ^= 0xFFu;
+  }
+  auto* s = reinterpret_cast<Pg10Be*>(cpu_src.data());
   int ret =
       (lvl == MTL_SIMD_LEVEL_MAX)
           ? st20_rfc4175_422be10_to_v210_dma(dma, s, pg_be.iova(), v210.data(), w, h)
@@ -207,12 +241,16 @@ void cvt_v210_to_422be10(mtl_handle st, mtl_udma_handle dma, int w, int h,
   st_test_rand_data(pg_be.data(), pg_sz, 0);
   int fwd_ret = st20_rfc4175_422be10_to_v210_simd(
       reinterpret_cast<Pg10Be*>(pg_be.data()), v210.bytes(), w, h, MTL_SIMD_LEVEL_NONE);
+  std::vector<uint8_t> cpu_src(v210.bytes(), v210.bytes() + v210_sz);
+  if (!fail && v210_sz > 256u * 1024u) {
+    for (size_t i = 0; i < 64; i++) cpu_src[i] ^= 0xFFu;
+  }
   auto* dst = reinterpret_cast<Pg10Be*>(pg_be_2.data());
   int ret =
       (lvl == MTL_SIMD_LEVEL_MAX)
-          ? st20_v210_to_rfc4175_422be10_dma(dma, v210.bytes(), v210.iova(), dst, w, h)
-          : st20_v210_to_rfc4175_422be10_simd_dma(dma, v210.bytes(), v210.iova(), dst, w,
-                                                  h, lvl);
+          ? st20_v210_to_rfc4175_422be10_dma(dma, cpu_src.data(), v210.iova(), dst, w, h)
+          : st20_v210_to_rfc4175_422be10_simd_dma(dma, cpu_src.data(), v210.iova(), dst,
+                                                  w, h, lvl);
   if (fail) {
     EXPECT_LT(fwd_ret, 0);
     EXPECT_LT(ret, 0);

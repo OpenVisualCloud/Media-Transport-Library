@@ -61,12 +61,18 @@ inline void verify_pcapng_file(const char* path, uint32_t min_epb_packets) {
 
     if (block_type == 0x00000006u) {
       ASSERT_GE(block_len, 32u) << "truncated pcapng EPB at offset " << off;
-      uint8_t cap_buf[4];
+      uint8_t len_buf[8];
       file.seekg(static_cast<std::streamoff>(off + 20u), std::ios::beg);
       ASSERT_TRUE(
-          static_cast<bool>(file.read(reinterpret_cast<char*>(cap_buf),
-                                      static_cast<std::streamsize>(sizeof(cap_buf)))));
-      if (detail::pcapng_read_le32(cap_buf) > 0u) epb_cnt++;
+          static_cast<bool>(file.read(reinterpret_cast<char*>(len_buf),
+                                      static_cast<std::streamsize>(sizeof(len_buf)))));
+      const uint32_t cap_len = detail::pcapng_read_le32(len_buf);
+      const uint32_t orig_len = detail::pcapng_read_le32(len_buf + 4);
+      EXPECT_GT(cap_len, 0u) << "empty pcapng EPB at offset " << off;
+      EXPECT_EQ(cap_len, orig_len) << "truncated pcapng packet at offset " << off;
+      ASSERT_LE(static_cast<uint64_t>(32u) + cap_len, block_len)
+          << "pcapng EPB payload exceeds block length at offset " << off;
+      if (cap_len > 0u) epb_cnt++;
     }
     off += block_len;
     block_idx++;

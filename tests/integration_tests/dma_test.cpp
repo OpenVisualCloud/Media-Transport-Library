@@ -235,6 +235,7 @@ void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
       st_test_get_monotonic_time() + static_cast<uint64_t>(10000) * NS_PER_MS;
   int dst_off = 0;
   int src_off = 0;
+  int first_enqueued = 0;
   bool hit_enospc = false;
   while (dst_off < fb_size) {
     int enqueued = 0;
@@ -252,6 +253,12 @@ void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
       }
       src_off += element_size;
       enqueued++;
+    }
+    if (dst_off == 0 && first_enqueued == 0) {
+      first_enqueued = enqueued;
+      EXPECT_GE(first_enqueued, nb_desc / 2)
+          << "uDMA ring accepted far fewer descriptors than requested nb_desc="
+          << nb_desc;
     }
     if (enqueued > 0) {
       ASSERT_GE(mtl_udma_submit(dma.get()), 0);
@@ -632,33 +639,4 @@ TEST(Dma, hp_virt2iova_and_page_size) {
   const auto bad_port = static_cast<enum mtl_port>(MTL_PORT_MAX);
   EXPECT_FALSE(mtl_test::ScopedHpBuf(st, kAllocSize, bad_port, false));
   EXPECT_FALSE(mtl_test::ScopedHpBuf(st, kAllocSize, bad_port, true));
-}
-
-TEST(Dma, iova_pa_rejects_map_and_mem_alloc) {
-  auto* ctx = st_test_ctx();
-  if (ctx->iova != MTL_IOVA_MODE_PA) {
-    GTEST_SKIP() << "Test requires IOVA PA mode";
-  }
-
-  mtl_handle st = ctx->handle;
-  const size_t pg_sz = mtl_page_size(st);
-  const size_t size = 64 * pg_sz;
-  mtl_test::PageAlignedBuf buf(size, pg_sz);
-  ASSERT_TRUE(buf);
-
-  mtl_test::ScopedDmaMap mapping(st, buf.data(), size);
-  EXPECT_EQ(mapping.iova(), MTL_BAD_IOVA);
-  EXPECT_LT(mtl_dma_unmap(st, buf.data(), static_cast<mtl_iova_t>(pg_sz), size), 0);
-
-  mtl_test::ScopedDmaMem dma_mem(st, size);
-  EXPECT_EQ(dma_mem.get(), nullptr);
-
-  mtl_test::ScopedUdma dma(mtl_udma_create(st, 128, MTL_PORT_P));
-  EXPECT_EQ(dma.get(), nullptr);
-
-  /* Hugepage allocation and virt2iova still work in IOVA PA mode. */
-  mtl_test::ScopedHpBuf hp(st, 4096, MTL_PORT_P, true);
-  ASSERT_TRUE(hp);
-  EXPECT_NE(hp.iova(), MTL_BAD_IOVA);
-  EXPECT_NE(hp.iova(), static_cast<mtl_iova_t>(0));
 }

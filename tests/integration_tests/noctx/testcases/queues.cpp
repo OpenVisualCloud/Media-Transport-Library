@@ -31,6 +31,43 @@ void runQueueInitTest(st_tests_context* ctx, uint16_t tx_q, uint16_t rx_q,
   ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr) << "mtl_init failed with " << label;
+
+  /* Verify configured RX queue count is honored by probing dedicated RX queues. */
+  if (rx_q > 0 && mtl_pmd_is_dpdk_based(ctx->handle, MTL_PORT_P) &&
+      mtl_rss_mode_get(ctx->handle) == MTL_RSS_MODE_NONE &&
+      !(ctx->para.flags & MTL_FLAG_SHARED_RX_QUEUE)) {
+    const uint16_t probe_max = std::min<uint16_t>(rx_q, 64);
+    struct st40_rx_ops rx_ops = {};
+    rx_ops.name = "rx_queue_probe";
+    rx_ops.num_port = 1;
+    memcpy(rx_ops.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    snprintf(rx_ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[MTL_PORT_P]);
+    rx_ops.udp_port[MTL_SESSION_PORT_P] = 20000;
+    rx_ops.payload_type = 113;
+    rx_ops.type = ST40_TYPE_RTP_LEVEL;
+    rx_ops.rtp_ring_size = 128;
+    rx_ops.flags = ST40_RX_FLAG_DATA_PATH_ONLY;
+    rx_ops.notify_rtp_ready = [](void*) { return 0; };
+
+    std::vector<st40_rx_handle> rx_handles;
+    rx_handles.reserve(probe_max);
+    for (uint16_t i = 0; i < probe_max; i++) {
+      st40_rx_handle h = st40_rx_create(ctx->handle, &rx_ops);
+      if (!h) break;
+      rx_handles.push_back(h);
+      rx_ops.udp_port[MTL_SESSION_PORT_P]++;
+    }
+    const uint16_t created = static_cast<uint16_t>(rx_handles.size());
+    for (st40_rx_handle h : rx_handles) EXPECT_EQ(st40_rx_free(h), 0);
+    EXPECT_GT(created, 0u) << "no dedicated RX queues usable for " << label;
+    if (rx_q > tx_q && tx_q == 0) {
+      EXPECT_GE(created, 2u) << "rx-only rx_queues_cnt=" << rx_q
+                             << " did not allocate multiple RX queues";
+    }
+  }
+
   ASSERT_EQ(mtl_start(ctx->handle), 0) << "mtl_start failed with " << label;
   ASSERT_EQ(mtl_stop(ctx->handle), 0) << "mtl_stop failed with " << label;
 }
