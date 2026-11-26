@@ -24,6 +24,7 @@ verdict is ``fail``. ``summary.json`` lists each reason of a failed run.
 from __future__ import annotations
 
 import dataclasses
+import fcntl
 import json
 import logging
 import os
@@ -42,6 +43,7 @@ from .workload import Plan, Worker
 
 logger = logging.getLogger(__name__)
 
+RUN_LOCK = "/run/mtl-stability.lock"
 SETTLE_S = 20.0  # sessions are up and the schedulers run
 STOP_GRACE_S = 60.0
 FAIL_CLASSES = ("crash", "sha-mismatch", "result-failed")
@@ -226,6 +228,13 @@ class Run:
         os.replace(tmp, os.path.join(self.dir, "status.json"))
 
     def execute(self) -> dict:
+        # One run at a time: a second run takes the same VFs, and MTL then fails
+        # at init with "Bus (pci) probe failed" in each worker it shares.
+        self._lock = open(RUN_LOCK, "w")
+        try:
+            fcntl.flock(self._lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(f"another stability run holds {RUN_LOCK}") from None
         self.prepare()
         signal.signal(signal.SIGTERM, self._ask_stop)
         signal.signal(signal.SIGINT, self._ask_stop)
