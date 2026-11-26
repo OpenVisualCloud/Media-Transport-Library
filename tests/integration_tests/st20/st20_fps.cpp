@@ -47,10 +47,12 @@ void st20_rx_fps_test(const std::vector<St20StreamSpec>& streams) {
   }
 }
 
-void st20_tx_fps_test(const std::vector<St20StreamSpec>& streams) {
+void st20_tx_fps_test(const std::vector<St20StreamSpec>& streams, bool ext_buf = false) {
   auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
   const int sessions = static_cast<int>(streams.size());
+
+  if (ext_buf) MTL_TEST_REQUIRE_IOVA_VA(ctx);
 
   std::vector<tests_context*> test_ctx(sessions);
   std::vector<tests_context*> test_ctx_rx;
@@ -74,7 +76,13 @@ void st20_tx_fps_test(const std::vector<St20StreamSpec>& streams) {
     ops.height = st.height;
     ops.fmt = st.fmt;
     ops.packing = ST20_PACKING_BPM;
-    ops.notify_frame_done = tx_notify_frame_done_check_tmstamp;
+    if (ext_buf) {
+      ops.flags |= ST20_TX_FLAG_EXT_FRAME;
+      ops.get_next_frame = tx_next_ext_video_frame;
+      ops.notify_frame_done = tx_notify_ext_frame_done;
+    } else {
+      ops.notify_frame_done = tx_notify_frame_done_check_tmstamp;
+    }
     if (st.tx_type == ST20_TYPE_RTP_LEVEL) {
       rtp_tx_specific_init(&ops, test_ctx[i]);
     }
@@ -82,6 +90,9 @@ void st20_tx_fps_test(const std::vector<St20StreamSpec>& streams) {
     ASSERT_TRUE(handle[i] != NULL);
 
     test_ctx[i]->frame_size = st20_tx_get_framebuffer_size(handle[i]);
+    if (ext_buf) {
+      ASSERT_TRUE(st20_alloc_ext_frames(m_handle, test_ctx[i], test_ctx[i]->frame_size));
+    }
     st20_set_handle(test_ctx[i], handle[i]);
     test_ctx[i]->ready.store(true, std::memory_order_release);
     if (st.tx_type == ST20_TYPE_RTP_LEVEL) {
@@ -93,7 +104,6 @@ void st20_tx_fps_test(const std::vector<St20StreamSpec>& streams) {
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
 
-  /* Warmup=12 absorbs RL pacing; >=35 frames over >=1500 ms gives <=2.2% edge error. */
   auto res = mtl_test::measure_rate_window(
       test_ctx, mtl_test::tx_frames, kSt20WarmupFrames, kSt20MinRateFrames,
       kSt20MinRateWindowMs, kSt20WarmupTimeoutMs, kSt20WindowTimeoutMs);
@@ -106,7 +116,7 @@ void st20_tx_fps_test(const std::vector<St20StreamSpec>& streams) {
   for (int i = 0; i < sessions; i++) {
     const double expect_fps = st_frame_rate(streams[i].fps);
     EXPECT_GT(test_ctx[i]->fb_send, 0);
-    if (streams[i].tx_type != ST20_TYPE_RTP_LEVEL) {
+    if (!ext_buf && streams[i].tx_type != ST20_TYPE_RTP_LEVEL) {
       EXPECT_GT(mtl_test::tx_done_frames(test_ctx[i]), 0);
     }
     EXPECT_LE(test_ctx[i]->tx_tmstamp_delta_fail_cnt, 1);
@@ -129,8 +139,21 @@ TEST(St20_tx, mix_s3) {
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
        1280, 720},
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
-       1280, 720},
+       1920, 1080},
   });
+}
+
+TEST(St20_tx, ext_frame_mix_s3) {
+  st20_tx_fps_test(
+      {
+          {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
+           1280, 720},
+          {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P50,
+           1920, 1080},
+          {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
+           3840, 2160},
+      },
+      /*ext_buf=*/true);
 }
 
 TEST(St20_rx, mix_s2) {

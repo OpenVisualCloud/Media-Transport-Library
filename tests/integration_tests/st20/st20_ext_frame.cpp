@@ -11,6 +11,7 @@ namespace {
 struct St20ExtFrameScenario {
   std::vector<St20StreamSpec> streams;
   bool check_fps = true;
+  bool tx_ext = true;
   bool dynamic = false;
 };
 
@@ -76,15 +77,18 @@ void st20_tx_ext_frame_rx_digest_test(const St20ExtFrameScenario& s) {
     struct st20_tx_ops ops_tx;
     st20_fill_loopback_tx_ops(ops_tx, test_ctx_tx[i], st, "st20_ext_frame_digest_test",
                               udp_port_for_idx(i));
-    ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-    ops_tx.get_next_frame = tx_next_ext_video_frame;
-    ops_tx.notify_frame_done = tx_notify_ext_frame_done;
+    if (s.tx_ext) {
+      ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
+      ops_tx.get_next_frame = tx_next_ext_video_frame;
+      ops_tx.notify_frame_done = tx_notify_ext_frame_done;
+    }
 
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
-    st20_init_tx_digest_frames(m_handle, test_ctx_tx[i], tx_handle[i], st,
-                               St20TxBufMode::kExtMap);
+    st20_init_tx_digest_frames(
+        m_handle, test_ctx_tx[i], tx_handle[i], st,
+        s.tx_ext ? St20TxBufMode::kExtMap : St20TxBufMode::kInternal);
     if (::testing::Test::HasFatalFailure()) return;
   }
 
@@ -137,7 +141,7 @@ void st20_tx_ext_frame_rx_digest_test(const St20ExtFrameScenario& s) {
     const double expect_fps = st_frame_rate(s.streams[i].fps);
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
-    EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
+    EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 1);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_EQ(mtl_test::relaxed_load(&test_ctx_rx[i]->rx_field_fail_cnt), 0);
@@ -166,10 +170,25 @@ TEST(St20_rx, ext_frame_s3) {
        1280, 720, true, ST20_FMT_YUV_422_12BIT},
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P50, 1920,
        1080, false, ST20_FMT_YUV_422_10BIT},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P50, 1920,
        1080, true, ST20_FMT_YUV_422_8BIT},
   };
   sc.check_fps = true;
+  sc.tx_ext = true;
+  sc.dynamic = false;
+  st20_tx_ext_frame_rx_digest_test(sc);
+}
+
+TEST(St20_rx, ext_frame_mix_s2) {
+  St20ExtFrameScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
+       1280, 720, false, ST20_FMT_YUV_422_10BIT},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P50, 1920,
+       1080, false, ST20_FMT_YUV_422_10BIT},
+  };
+  sc.check_fps = true;
+  sc.tx_ext = false;
   sc.dynamic = false;
   st20_tx_ext_frame_rx_digest_test(sc);
 }

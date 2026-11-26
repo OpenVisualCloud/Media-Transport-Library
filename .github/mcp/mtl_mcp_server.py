@@ -1123,6 +1123,7 @@ def run_gtest(
     dma_dev: str = "",
     timeout_seconds: int = 600,
     auto_start_stop: bool = True,
+    level: str = "",
 ) -> str:
     """
     Run MTL integration tests (KahawaiTest).
@@ -1137,6 +1138,9 @@ def run_gtest(
         dma_dev: Comma-separated DMA devices for DMA tests (e.g. '0000:00:01.0,0000:00:01.1').
         timeout_seconds: Max seconds for test run (default 600).
         auto_start_stop: Pass --auto_start_stop flag (default True).
+        level: Test level, 'all' or 'mandatory'. Binary default (mandatory-only) if empty.
+            Non-mandatory cases (gated ST_TEST_LEVEL_ALL) silently no-op unless 'all' is
+            passed here -- they still report PASS at 0ms, so a real run must set this.
     """
     binary = REPO_ROOT / "build/tests/KahawaiTest"
     if not binary.is_file():
@@ -1174,19 +1178,27 @@ def run_gtest(
     if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
         return "Error: invalid gtest_filter characters. Use alphanumeric, *, ., :, /, -"
 
-    # NoCtxTest cases need their own topology/port list and per-case isolation
-    # (handled by run_noctx_tests / run_noctx_pf_tests). Refuse here and point
-    # at the dedicated tool.
+    if level and level not in ("all", "mandatory"):
+        return "Error: level must be 'all' or 'mandatory'"
+
+    # NoCtxTest cases require one KahawaiTest process per test (DPDK EAL
+    # cannot be re-initialised within a single process) plus the --no_ctx /
+    # --no_ctx_tests flags this tool doesn't pass. Running them here would
+    # just fail/hang, so refuse up front and point at the right tool.
     if _is_noctx_filter(gtest_filter):
         return (
-            "Error: NoCtxTest cases should be run via run_noctx_tests or "
-            "run_noctx_pf_tests (with 4 VF ports or 2 PF ports)."
+            "Error: NoCtxTest cases cannot be run via run_gtest (each needs its "
+            "own KahawaiTest process). Use run_noctx_tests instead."
         )
 
     # Build command as list for safe execution
     cmd_parts: list[str] = [str(binary), "--p_port", p_port, "--r_port", r_port]
+    if auto_start_stop:
+        cmd_parts.append("--auto_start_stop")
     if dma_dev:
         cmd_parts.extend(["--dma_dev", dma_dev])
+    if level:
+        cmd_parts.extend(["--level", level])
     cmd_parts.append(f"--gtest_filter={_exclude_noctx_tests(gtest_filter)}")
 
     out = _run_output(cmd_parts, timeout=timeout_seconds, env=_test_runtime_env())
@@ -1227,45 +1239,69 @@ def run_gtest(
     return f"{summary}\n\n{_summarize_output('gtest', out)}"
 
 
-def _run_noctx_suite(
-    raw_ports: tuple[str, ...],
-    gtest_filter: str,
-    timeout_seconds: int,
-    cooldown_seconds: int,
-    *,
-    pf_only: bool,
+@mcp.tool()
+def run_noctx_tests(
+    port_1: str = "",
+    port_2: str = "",
+    port_3: str = "",
+    port_4: str = "",
+    gtest_filter: str = "",
+    timeout_seconds: int = 600,
+    cooldown_seconds: int = 10,
 ) -> str:
-    """Shared implementation for run_noctx_tests (VF/4-port) and run_noctx_pf_tests (PF/2-port)."""
-    req = 2 if pf_only else 4
-    if not any(raw_ports):
-        cmd = (
-            "for d in $(dpdk-devbind.py -s 2>/dev/null | awk '/drv=vfio-pci/{print $1}'); do "
-            '[ ! -e "/sys/bus/pci/devices/$d/physfn" ] && echo "$d"; done | head -2'
-            if pf_only
-            else "dpdk-devbind.py -s 2>/dev/null | awk '/drv=vfio-pci/{print $1}' | head -4"
-        )
-        ports = [v.strip() for v in _run_output(cmd).strip().splitlines()[:req]]
-    else:
-        ports = [p for p in raw_ports if p]
+    """
+    Run MTL no-context (noctx) integration tests.
 
-    if len(ports) < req:
-        if pf_only:
-            return (
-                "Error: PF noctx tests require 2 ports bound to vfio-pci as PFs "
-                f"(not VFs). Found {len(ports)}. Run `nic_bind_pmd` on a PF, or "
-                "supply port_1/port_2 explicitly."
+    Each NoCtxTest case is run in its own KahawaiTest process because DPDK EAL
+    cannot be re-initialised within a single process. The tool enumerates the
+    test names that match `gtest_filter` via `--gtest_list_tests` and then
+    invokes one process per test, sleeping `cooldown_seconds` between them
+    (mirrors tests/integration_tests/noctx/run.sh).
+
+    All 4 ports are required — this is the full-suite run and a handful of
+    tests exercise redundant (4-port) sessions; requiring fewer here would let
+    those tests fail ambiguously depending on how many ports happen to be
+    supplied. Tests named with a `_pf_` infix (e.g. TSN/launch-time-pacing)
+    require a PF, which this VF-oriented run can never satisfy, so they are
+    excluded automatically — use `run_noctx_pf_tests` for those instead.
+
+    Args:
+        port_1, port_2, port_3, port_4: BDFs for the 4 ports. Auto-discovered
+                        (any vfio-pci-bound ports, PF or VF) if left empty.
+        gtest_filter: Gtest filter scoped to NoCtxTest (e.g. '*nonsplit*' or
+                      'NoCtxTest.st40i_*'). All NoCtxTest cases if empty.
+        timeout_seconds: Max seconds per individual test process (default 600).
+        cooldown_seconds: Sleep between tests (default 10).
+    """
+
+    # Auto-discover only if the caller supplied nothing; otherwise respect
+    # exactly what was passed.
+    if not any([port_1, port_2, port_3, port_4]):
+        discovered = (
+            _run_output(
+                "dpdk-devbind.py -s 2>/dev/null | awk '/drv=vfio-pci/{print $1}' | head -4"
             )
+            .strip()
+            .splitlines()
+        )
+        ports = [v.strip() for v in discovered[:4]]
+    else:
+        ports = [p for p in (port_1, port_2, port_3, port_4) if p]
+
+    if len(ports) < 4:
         return (
             "Error: noctx full-suite run requires 4 ports bound to vfio-pci "
             f"(PF or VF). Found {len(ports)}. Run `setup_after_reboot_auto` first, "
             "or supply port_1..port_4 explicitly."
         )
 
+    # Validate the BDFs we ended up with
     for idx, bdf in enumerate(ports, start=1):
         err = _validate_bdf(bdf)
         if err:
             return f"Error: port_{idx} — {err}"
 
+    # Sanitize gtest_filter
     if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
         return "Error: invalid gtest_filter characters"
 
@@ -1274,8 +1310,10 @@ def _run_noctx_suite(
         return "Error: KahawaiTest not built. Run `build_mtl` first."
 
     sim_hint = "" if _build_has_simulate_drops() else _SIM_DROPS_HINT
+
     port_list = ",".join(ports)
 
+    # Default to all NoCtxTest cases; scope user filter to NoCtxTest.*
     if not gtest_filter:
         list_filter = "NoCtxTest.*"
     elif gtest_filter.startswith("NoCtxTest."):
@@ -1283,18 +1321,25 @@ def _run_noctx_suite(
     else:
         list_filter = f"NoCtxTest.*{gtest_filter}*"
 
-    if not pf_only and "-" not in list_filter:
+    # PF-only tests (name contains "_pf_") can never pass on these VF-capable
+    # ports; exclude them unless the caller already wrote their own negative
+    # pattern (gtest filter syntax only supports one "-" exclusion group).
+    if "-" not in list_filter:
         list_filter = f"{list_filter}-NoCtxTest.*_pf_*"
 
+    # Enumerate matching test names (one process per test below)
     listing = _run_output(
         [
             str(binary),
             "--gtest_list_tests",
+            "--no_ctx",
+            f"--port_list={port_list}",
             f"--gtest_filter={list_filter}",
         ],
         timeout=60,
         env=_test_runtime_env(),
     )
+    # Output format: "NoCtxTest.\n  test_a\n  test_b\n"
     test_names: list[str] = []
     current_suite = ""
     for raw in listing.splitlines():
@@ -1304,33 +1349,27 @@ def _run_noctx_suite(
             current_suite = raw.strip().rstrip(".")
         else:
             name = raw.strip()
-            if (
-                name
-                and current_suite == "NoCtxTest"
-                and (not pf_only or "_pf_" in name)
-            ):
+            if name and current_suite == "NoCtxTest":
                 test_names.append(name)
 
     if not test_names:
-        if pf_only:
-            return (
-                f"No PF-only (name contains '_pf_') NoCtxTest cases matched filter "
-                f"'{list_filter}'.\nListing output:\n{listing}"
-            )
         return (
             f"Error: no NoCtxTest cases matched filter '{list_filter}'.\n"
             f"Listing output:\n{listing}"
         )
 
+    # Run each test in its own process; collect per-test results
     sections: list[str] = []
-    results: list[tuple[str, str]] = []
+    results: list[tuple[str, str]] = []  # (name, PASS|FAIL|TIMEOUT)
     for idx, name in enumerate(test_names):
         full = f"NoCtxTest.{name}"
         out = _run_output(
             [
                 str(binary),
+                "--auto_start_stop",
                 f"--port_list={port_list}",
                 f"--gtest_filter={full}",
+                "--no_ctx_tests",
             ],
             timeout=timeout_seconds,
             env=_test_runtime_env(),
@@ -1346,10 +1385,13 @@ def _run_noctx_suite(
         if idx < len(test_names) - 1 and cooldown_seconds > 0:
             time.sleep(cooldown_seconds)
 
-    log_path = _save_test_log("noctx_pf" if pf_only else "noctx", "\n".join(sections))
+    combined = "\n".join(sections)
+    log_path = _save_test_log("noctx", combined)
+
     passed = sum(1 for _, s in results if s == "PASS")
     failed = sum(1 for _, s in results if s != "PASS")
     status = "PASSED" if failed == 0 else "FAILED"
+
     per_test = "\n".join(f"- {s}: NoCtxTest.{n}" for n, s in results)
     last_failure = ""
     for name, st in results:
@@ -1363,9 +1405,8 @@ def _run_noctx_suite(
                     break
             break
 
-    title = "## Noctx PF Test Results" if pf_only else "## Noctx Test Results"
     return (
-        f"{title}\n"
+        f"## Noctx Test Results\n"
         f"- Status: {status}\n"
         f"- Ports: {port_list}\n"
         f"- Tests run: {len(results)} (passed {passed}, failed {failed})\n"
@@ -1377,26 +1418,6 @@ def _run_noctx_suite(
 
 
 @mcp.tool()
-def run_noctx_tests(
-    port_1: str = "",
-    port_2: str = "",
-    port_3: str = "",
-    port_4: str = "",
-    gtest_filter: str = "",
-    timeout_seconds: int = 600,
-    cooldown_seconds: int = 10,
-) -> str:
-    """Run 4-port NoCtxTest cases in one process per test (mirrors gtest_runner.py --profile noctx)."""
-    return _run_noctx_suite(
-        (port_1, port_2, port_3, port_4),
-        gtest_filter,
-        timeout_seconds,
-        cooldown_seconds,
-        pf_only=False,
-    )
-
-
-@mcp.tool()
 def run_noctx_pf_tests(
     port_1: str = "",
     port_2: str = "",
@@ -1404,13 +1425,161 @@ def run_noctx_pf_tests(
     timeout_seconds: int = 600,
     cooldown_seconds: int = 10,
 ) -> str:
-    """Run 2-port PF-only NoCtxTest cases (mirrors gtest_runner.py --profile noctx_pf)."""
-    return _run_noctx_suite(
-        (port_1, port_2),
-        gtest_filter,
-        timeout_seconds,
-        cooldown_seconds,
-        pf_only=True,
+    """
+    Run the NoCtxTest cases that require PF ports (mirrors
+    tests/integration_tests/noctx/run_pf.sh).
+
+    Tests named with a `_pf_` infix (e.g. TSN/launch-time-pacing) require a PF
+    port — that offload is not advertised by VF drivers — so `run_noctx_tests`
+    excludes them. This tool runs just those, against 2 PF-bound ports (all
+    current PF-only tests use a single TX/RX pair).
+
+    Args:
+        port_1, port_2: BDFs for a PF TX/RX pair. Auto-discovered (vfio-pci
+                        ports without a `physfn` sysfs link, i.e. real PFs,
+                        not VFs) if left empty.
+        gtest_filter: Substring/glob to match against the test name (e.g.
+                      'st20p_tx_epoch_onward_recovers_after_ptp_step' or
+                      'st20p_*'), matched anywhere in the name — no need to
+                      include "_pf_" yourself, it's required separately.
+                      All `_pf_` cases if empty.
+        timeout_seconds: Max seconds per individual test process (default 600).
+        cooldown_seconds: Sleep between tests (default 10).
+    """
+
+    if not any([port_1, port_2]):
+        discovered = (
+            _run_output(
+                "for d in $(dpdk-devbind.py -s 2>/dev/null | awk '/drv=vfio-pci/{print $1}'); do "
+                '[ ! -e "/sys/bus/pci/devices/$d/physfn" ] && echo "$d"; done | head -2'
+            )
+            .strip()
+            .splitlines()
+        )
+        ports = [v.strip() for v in discovered[:2]]
+    else:
+        ports = [p for p in (port_1, port_2) if p]
+
+    if len(ports) < 2:
+        return (
+            "Error: PF noctx tests require 2 ports bound to vfio-pci as PFs "
+            f"(not VFs). Found {len(ports)}. Run `nic_bind_pmd` on a PF, or "
+            "supply port_1/port_2 explicitly."
+        )
+
+    for idx, bdf in enumerate(ports, start=1):
+        err = _validate_bdf(bdf)
+        if err:
+            return f"Error: port_{idx} — {err}"
+
+    if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
+        return "Error: invalid gtest_filter characters"
+
+    binary = REPO_ROOT / "build/tests/KahawaiTest"
+    if not binary.is_file():
+        return "Error: KahawaiTest not built. Run `build_mtl` first."
+
+    sim_hint = "" if _build_has_simulate_drops() else _SIM_DROPS_HINT
+
+    port_list = ",".join(ports)
+
+    # Scope to NoCtxTest, same convention as run_noctx_tests: don't assume
+    # where "_pf_" falls relative to the caller's filter text (the naming
+    # convention puts the descriptive prefix *before* "_pf_", e.g.
+    # "st20p_..._pf_tsn_pacing", so a filter matching that prefix would never
+    # match a glob that requires "_pf_" to come first). Enumerate with just
+    # the caller's filter, then require "_pf_" as a separate post-filter.
+    if not gtest_filter:
+        list_filter = "NoCtxTest.*"
+    elif gtest_filter.startswith("NoCtxTest."):
+        list_filter = gtest_filter
+    else:
+        list_filter = f"NoCtxTest.*{gtest_filter}*"
+
+    listing = _run_output(
+        [
+            str(binary),
+            "--gtest_list_tests",
+            "--no_ctx",
+            f"--port_list={port_list}",
+            f"--gtest_filter={list_filter}",
+        ],
+        timeout=60,
+        env=_test_runtime_env(),
+    )
+    test_names: list[str] = []
+    current_suite = ""
+    for raw in listing.splitlines():
+        if not raw or raw.startswith(("DISABLED", "Note:")):
+            continue
+        if not raw.startswith(" "):
+            current_suite = raw.strip().rstrip(".")
+        else:
+            name = raw.strip()
+            if name and current_suite == "NoCtxTest" and "_pf_" in name:
+                test_names.append(name)
+
+    if not test_names:
+        return (
+            f"No PF-only (name contains '_pf_') NoCtxTest cases matched filter "
+            f"'{list_filter}'.\nListing output:\n{listing}"
+        )
+
+    sections: list[str] = []
+    results: list[tuple[str, str]] = []  # (name, PASS|FAIL|TIMEOUT)
+    for idx, name in enumerate(test_names):
+        full = f"NoCtxTest.{name}"
+        out = _run_output(
+            [
+                str(binary),
+                "--auto_start_stop",
+                f"--port_list={port_list}",
+                f"--gtest_filter={full}",
+                "--no_ctx_tests",
+            ],
+            timeout=timeout_seconds,
+            env=_test_runtime_env(),
+        )
+        if "*** TIMEOUT" in out:
+            status = "TIMEOUT"
+        elif re.search(r"\[\s+PASSED\s+\]\s+1\s+test", out):
+            status = "PASS"
+        else:
+            status = "FAIL"
+        results.append((name, status))
+        sections.append(f"===== {full}: {status} =====\n{out}\n")
+        if idx < len(test_names) - 1 and cooldown_seconds > 0:
+            time.sleep(cooldown_seconds)
+
+    combined = "\n".join(sections)
+    log_path = _save_test_log("noctx_pf", combined)
+
+    passed = sum(1 for _, s in results if s == "PASS")
+    failed = sum(1 for _, s in results if s != "PASS")
+    status = "PASSED" if failed == 0 else "FAILED"
+
+    per_test = "\n".join(f"- {s}: NoCtxTest.{n}" for n, s in results)
+    last_failure = ""
+    for name, st in results:
+        if st != "PASS":
+            for sec in sections:
+                if sec.startswith(f"===== NoCtxTest.{name}:"):
+                    last_failure = (
+                        f"\n### First failure: NoCtxTest.{name}\n"
+                        f"```\n{_noctx_failure_excerpt(sec)}\n```"
+                    )
+                    break
+            break
+
+    return (
+        f"## Noctx PF Test Results\n"
+        f"- Status: {status}\n"
+        f"- Ports: {port_list}\n"
+        f"- Tests run: {len(results)} (passed {passed}, failed {failed})\n"
+        f"- Full log: `{log_path}`\n"
+        f"\n### Per-test results\n{per_test}\n"
+        f"{last_failure}"
+        f"{sim_hint}"
     )
 
 

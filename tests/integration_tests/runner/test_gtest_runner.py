@@ -132,10 +132,179 @@ class TestGtestRunnerHelpers(unittest.TestCase):
             ]
             self.assertTrue(
                 any(
-                    r["case"].endswith(".<process>") and r["result"] == "failed"
+                    r["case"].endswith(".__process__") and r["result"] == "failed"
                     for r in recs
                 )
             )
+            self.assertFalse(any("<" in r["case"] for r in recs))
+
+    def test_noctx_env_does_not_shorten_durations(self) -> None:
+        self.assertNotIn("NOCTX_STABILITY_SECONDS", gr.NOCTX_ENV)
+        self.assertNotIn("NOCTX_TEST_DURATION", gr.NOCTX_ENV)
+
+    def test_extract_case_logs_and_recover_crash_without_xml(self) -> None:
+        log = (
+            "[ RUN      ] St20_tx.first\n"
+            "ok line\n"
+            "[       OK ] St20_tx.first (12 ms)\n"
+            "[ RUN      ] St20_tx.crasher\n"
+            "fatal line before sigsegv\n"
+        )
+        ctx = {"profile": "st2110_20", "nic": "E810", "host": "h"}
+        recs = gr._recover_from_log(log, ctx, 139)
+        by_case = {r["case"]: r for r in recs}
+        self.assertEqual(by_case["St20_tx.first"]["result"], "passed")
+        self.assertEqual(by_case["St20_tx.crasher"]["result"], "failed")
+        self.assertIn(
+            "fatal line before sigsegv", by_case["St20_tx.crasher"]["message"]
+        )
+        self.assertIn("rc=139", by_case["St20_tx.crasher"]["message"])
+
+    def test_empty_noctx_list_fails_instead_of_passing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            fake_bin = td_p / "KahawaiTest"
+            fake_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_bin.chmod(0o755)
+            out_dir = td_p / "out"
+            with (
+                mock.patch.object(
+                    gr,
+                    "_setup_ports",
+                    return_value=(["0000:4b:01.0", "0000:4b:01.1"], [], [], "E810"),
+                ),
+                mock.patch.object(gr, "_list_cases", return_value=[]),
+            ):
+                rc = gr.main(
+                    [
+                        "--binary",
+                        str(fake_bin),
+                        "--profile",
+                        "^init_modes$",
+                        "--out-dir",
+                        str(out_dir),
+                        "--jobs",
+                        "1",
+                    ]
+                )
+            self.assertEqual(rc, 1)
+            recs = [
+                json.loads(ln)
+                for ln in (out_dir / "results.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if ln.strip()
+            ]
+            self.assertTrue(
+                any(
+                    r["case"] == "init_modes.__empty__" and r["result"] == "failed"
+                    for r in recs
+                )
+            )
+
+    def test_pr_tier_does_not_pass_gtest_fail_fast(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            fake_bin = td_p / "KahawaiTest"
+            fake_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_bin.chmod(0o755)
+            seen_cmds: list[list[str]] = []
+
+            def fake_run_cmd(cmd, env, to_s, last_log, log_fh, io_lock, *_a):
+                seen_cmds.append(cmd)
+                for arg in cmd:
+                    if arg.startswith("--gtest_output=xml:"):
+                        Path(arg.split("xml:", 1)[1]).write_text(
+                            '<testsuites><testsuite name="S">'
+                            '<testcase classname="S" name="t1" status="run" '
+                            'result="completed" time="0.01"/>'
+                            "</testsuite></testsuites>",
+                            encoding="utf-8",
+                        )
+                return 0, ""
+
+            with (
+                mock.patch.object(
+                    gr,
+                    "_setup_ports",
+                    return_value=(["0000:4b:01.0", "0000:4b:01.1"], [], [], "E810"),
+                ),
+                mock.patch.object(gr, "_run_cmd", side_effect=fake_run_cmd),
+            ):
+                rc = gr.main(
+                    [
+                        "--binary",
+                        str(fake_bin),
+                        "--tier",
+                        "pr",
+                        "--profile",
+                        "^st2110_22$",
+                        "--out-dir",
+                        str(td_p / "out"),
+                        "--retries",
+                        "1",
+                        "--jobs",
+                        "1",
+                    ]
+                )
+            self.assertEqual(rc, 0)
+            self.assertTrue(seen_cmds)
+            self.assertNotIn("--gtest_fail_fast", seen_cmds[0])
+
+    def test_negative_test_log_does_not_trigger_host_fault_on_later_crash(self):
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            fake_bin = td_p / "KahawaiTest"
+            fake_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+            fake_bin.chmod(0o755)
+            out_dir = td_p / "out"
+            crash_log = (
+                "Note: Google Test filter = Main*\n"
+                "[==========] Running 2 tests from 1 test suite.\n"
+                "[ RUN      ] Main.init_expect_fail\n"
+                "MTL: Error: mt_user_params_check(0), invalid ip 0.0.0.0\n"
+                "[       OK ] Main.init_expect_fail (0 ms)\n"
+                "[ RUN      ] Main.crash_later\n"
+            )
+            with (
+                mock.patch.object(
+                    gr,
+                    "_setup_ports",
+                    return_value=(["0000:4b:01.0", "0000:4b:01.1"], [], [], "E810"),
+                ),
+                mock.patch.object(gr, "_run_cmd", return_value=(-11, crash_log)),
+                mock.patch.object(
+                    gr,
+                    "_list_cases",
+                    return_value=["Main.init_expect_fail", "Main.crash_later"],
+                ),
+            ):
+                rc = gr.main(
+                    [
+                        "--binary",
+                        str(fake_bin),
+                        "--tier",
+                        "nightly",
+                        "--profile",
+                        "^core_misc$",
+                        "--out-dir",
+                        str(out_dir),
+                        "--retries",
+                        "1",
+                        "--jobs",
+                        "1",
+                    ]
+                )
+            self.assertEqual(rc, 1)
+            recs = [
+                json.loads(line)
+                for line in (out_dir / "results.jsonl").read_text().splitlines()
+                if line.strip()
+            ]
+            by_case = {r["case"]: r for r in recs}
+            self.assertEqual(by_case["Main.init_expect_fail"]["result"], "passed")
+            self.assertEqual(by_case["Main.crash_later"]["result"], "failed")
+            self.assertNotIn("host_fault", by_case["Main.crash_later"]["message"])
 
 
 if __name__ == "__main__":

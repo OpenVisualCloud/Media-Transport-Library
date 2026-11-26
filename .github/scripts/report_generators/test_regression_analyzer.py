@@ -126,6 +126,43 @@ class AnalyzeRegressionsTest(unittest.TestCase):
             ["[st20p_auto_pacing_pa] St20p.digest_1080p_s1"],
         )
 
+    def test_profiled_gtest_matches_legacy_unprofiled_baseline(self):
+        base = [
+            {
+                "test_cases": [
+                    {
+                        "platform": "gtest",
+                        "nic": "E810",
+                        "category": "St20p",
+                        "test_name": "St20p.digest_1080p_s1",
+                        "result": "PASSED",
+                        "log": "",
+                    }
+                ]
+            }
+        ]
+        cur = [
+            {
+                "test_cases": [
+                    {
+                        "platform": "gtest",
+                        "nic": "E810",
+                        "category": "St20p",
+                        "profile": "st2110_20p",
+                        "test_name": "St20p.digest_1080p_s1",
+                        "result": "FAILED",
+                        "log": "AssertionError: drop",
+                    }
+                ]
+            }
+        ]
+        rep = analyze_regressions([], cur, [], base)
+        self.assertEqual(
+            [e["test_name"] for e in rep["regressions"]],
+            ["[st2110_20p] St20p.digest_1080p_s1"],
+        )
+        self.assertEqual(rep["coverage"]["common"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

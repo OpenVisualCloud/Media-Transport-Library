@@ -21,11 +21,11 @@
  * user-timestamp spacing). A 600ms window collects >= 150 packets
  * (<= 0.67% edge quantization error), well inside the +/-10% tolerance.
  */
-static constexpr int kSt30RateWarmupFrames = 5;
-static constexpr int kSt30RateMinDeltaFrames = 40;
-static constexpr int kSt30RateMinWindowMs = 600;
-static constexpr int kSt30PhaseTargetFrames = 30;
-static constexpr int kSt30PhaseTimeoutMs = 5000;
+static constexpr int kSt30RateWarmupFrames = 10;
+static constexpr int kSt30RateMinDeltaFrames = 100;
+static constexpr int kSt30RateMinWindowMs = 1500;
+static constexpr int kSt30PhaseTargetFrames = 50;
+static constexpr int kSt30PhaseTimeoutMs = 6000;
 
 /* rx_audio_session_put_frame unconditionally returns -EIO
  * (lib/src/st2110/st_rx_audio_session.c:91). */
@@ -910,6 +910,45 @@ TEST(St30_rx, frame_digest_max_channel_48k_16bit_ptime_mix_s5) {
       },
       {/*check_sha=*/true});
 }
+TEST(St30_rx, frame_digest_max_channel_48k_24bit_ptime_mix_s5) {
+  st30_rx_fps_test(
+      {
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_48K, ST30_PTIME_125US, 80,
+           ST30_FMT_PCM24},
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_48K, ST30_PTIME_250US, 40,
+           ST30_FMT_PCM24},
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_48K, ST30_PTIME_333US, 30,
+           ST30_FMT_PCM24},
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_48K, ST30_PTIME_1MS, 10, ST30_FMT_PCM24},
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_48K, ST30_PTIME_4MS, 2, ST30_FMT_PCM24},
+      },
+      {/*check_sha=*/true});
+}
+/* ST 2110-30:2017 §7 Table 2 (p7): 96 kHz at 125 us is required for levels BX and CX. */
+TEST(St30_rx, frame_digest_max_channel_96k_24bit_ptime_mix_s5) {
+  st30_rx_fps_test(
+      {
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_96K, ST30_PTIME_125US, 40,
+           ST30_FMT_PCM24},
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_96K, ST30_PTIME_250US, 20,
+           ST30_FMT_PCM24},
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_96K, ST30_PTIME_333US, 15,
+           ST30_FMT_PCM24},
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_96K, ST30_PTIME_1MS, 5, ST30_FMT_PCM24},
+          {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_96K, ST30_PTIME_4MS, 1, ST30_FMT_PCM24},
+      },
+      {/*check_sha=*/true});
+}
+/* Sub-0.5ms RTP-level audio exercises the RTP tasklet together with RL pacing
+ * (ST30_TX_PACING_WAY_AUTO selects RL below 0.5 ms). */
+TEST(St30_rx, rtp_digest_sub_ms_ptime_mix_s2) {
+  st30_rx_fps_test(
+      {
+          {ST30_TYPE_RTP_LEVEL, ST30_SAMPLING_96K, ST30_PTIME_125US, 2, ST30_FMT_PCM24},
+          {ST30_TYPE_RTP_LEVEL, ST30_SAMPLING_48K, ST30_PTIME_250US, 2, ST30_FMT_PCM16},
+      },
+      {/*check_sha=*/true});
+}
 TEST(St30_rx, frame_meta_pcm16_48k_2ch_s1) {
   st30_rx_fps_test(
       {{ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_48K, ST30_PTIME_1MS, 2, ST30_FMT_PCM16}},
@@ -1173,14 +1212,21 @@ TEST(St30_rx, session_stats_reset) {
       kSt30PhaseTimeoutMs));
   EXPECT_GE(mtl_guard.stop(), 0);
 
-  uint8_t bogus = 0;
-  EXPECT_LT(st30_rx_put_framebuff(rx_handle.get(), nullptr), 0);
-  EXPECT_LT(st30_rx_put_framebuff(rx_handle.get(), &bogus), 0);
-
+  /* Free TX before resetting stats so no packets arrive under DEV_AUTO_START_STOP.
+   * Note: st30_rx_put_framebuff() is not asserted on invalid inputs because
+   * rx_audio_session_put_frame() unconditionally returns -EIO in the library. */
   EXPECT_EQ(st30_tx_get_session_stats(tx_handle.get(), &tx_stats), 0);
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
+  EXPECT_EQ(st30_tx_reset_session_stats(tx_handle.get()), 0);
+  EXPECT_EQ(st30_tx_get_session_stats(tx_handle.get(), &tx_stats), 0);
+  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
+
+  tx_handle.reset();
+  st_usleep(20 * 1000);
 
   EXPECT_EQ(st30_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
   EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
@@ -1188,14 +1234,7 @@ TEST(St30_rx, session_stats_reset) {
   EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
   EXPECT_GT(rx_stats.common.stat_pkts_received, 0u);
 
-  EXPECT_EQ(st30_tx_reset_session_stats(tx_handle.get()), 0);
   EXPECT_EQ(st30_rx_reset_session_stats(rx_handle.get()), 0);
-
-  EXPECT_EQ(st30_tx_get_session_stats(tx_handle.get(), &tx_stats), 0);
-  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
-  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
-  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
-
   EXPECT_EQ(st30_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
   EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
   EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);

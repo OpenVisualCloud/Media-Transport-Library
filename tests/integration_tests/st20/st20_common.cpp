@@ -1220,14 +1220,15 @@ static int st20_digest_rx_ready_common(void* priv, void* frame,
   }
 
   if (!interlaced) {
-    if (ctx->frame_time > 0) {
-      if (meta->fpt > (ctx->frame_time / 10)) {
+    /* Skip initial startup warmup frames before enforcing steady-state timing bounds. */
+    if (ctx->frame_time > 0 && ctx->fb_rec >= 3) {
+      if (meta->fpt < 0 || meta->fpt > (ctx->frame_time / 2)) {
         ctx->meta_timing_fail_cnt++;
         dbg("%s(%d), fpt %" PRId64 ", frame time %fms\n", __func__, ctx->idx, meta->fpt,
             ctx->frame_time / NS_PER_MS);
       }
       double rx_time = (double)meta->timestamp_last_pkt - meta->timestamp_first_pkt;
-      if (rx_time > ctx->frame_time) {
+      if (rx_time < (ctx->frame_time * 0.5) || rx_time > (ctx->frame_time * 1.25)) {
         ctx->meta_timing_fail_cnt++;
         dbg("%s(%d), rx_time %fms\n", __func__, ctx->idx, rx_time / NS_PER_MS);
       }

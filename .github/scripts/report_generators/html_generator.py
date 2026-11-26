@@ -253,11 +253,17 @@ def _generate_status_detail_sections(data, prefix):
         for idx, (d, tc) in enumerate(tests):
             log_id = f"{section_id}-log-{idx}"
             log_cell = _log_toggle_span(tc, log_id)
+            prof = tc.get("profile", "")
+            disp_name = (
+                f"[{prof}] {tc.get('test_name', '')}"
+                if prof
+                else tc.get("test_name", "")
+            )
             panels += (
-                f"<tr><td>{d.get('nic', '')}</td>"
-                f"<td>{d.get('category', '')}</td>"
-                f"<td>{tc.get('test_name', '')}</td>"
-                f"<td>{tc.get('duration', '')}</td>"
+                f"<tr><td>{_escape_html(str(d.get('nic', '')))}</td>"
+                f"<td>{_escape_html(str(d.get('category', '')))}</td>"
+                f"<td>{_escape_html(str(disp_name))}</td>"
+                f"<td>{_escape_html(str(tc.get('duration', '')))}</td>"
                 f"<td>{log_cell}</td></tr>"
             )
             panels += _log_row(tc, log_id, colspan=5)
@@ -411,8 +417,10 @@ def _build_regression_table(key, entries, show_baseline):
                 f"onclick=\"toggleDetails('{log_id}', this)\">Show log</span>"
             )
         html += (
-            f"<tr><td>{e['platform']}</td><td>{e['nic']}</td>"
-            f"<td>{e['category']}</td><td>{e['test_name']}{log_cell}</td>"
+            f"<tr><td>{_escape_html(str(e['platform']))}</td>"
+            f"<td>{_escape_html(str(e['nic']))}</td>"
+            f"<td>{_escape_html(str(e['category']))}</td>"
+            f"<td>{_escape_html(str(e['test_name']))}{log_cell}</td>"
         )
         if show_baseline:
             html += (
@@ -744,23 +752,38 @@ def _detail_section(d, detail_id, col_count, title_prefix=""):
     if not test_cases:
         return ""
 
+    has_profile = any(tc.get("profile") for tc in test_cases)
+    hdr_cols = (
+        "<th>Profile</th><th>Test Name</th><th>Result</th><th>Duration</th>"
+        if has_profile
+        else "<th>Test Name</th><th>Result</th><th>Duration</th>"
+    )
+    detail_colspan = 4 if has_profile else 3
     html = (
         f'<tr><td colspan="{col_count}">'
         f'<div id="{detail_id}" class="details">'
-        f"<h4>{title_prefix}{d['nic']} &mdash; {d['category']} &mdash; "
-        f"Detailed Results</h4>"
-        "<table><thead><tr><th>Test Name</th><th>Result</th>"
-        "<th>Duration</th></tr></thead><tbody>"
+        f"<h4>{title_prefix}{_escape_html(str(d['nic']))} &mdash; "
+        f"{_escape_html(str(d['category']))} &mdash; Detailed Results</h4>"
+        f"<table><thead><tr>{hdr_cols}</tr></thead><tbody>"
     )
-    for tc in sorted(test_cases, key=lambda x: x["test_name"]):
-        log_id = f"{detail_id}-log-{tc['test_name']}"
+    for tc_idx, tc in enumerate(
+        sorted(test_cases, key=lambda x: (x.get("profile", ""), x["test_name"]))
+    ):
+        log_id = f"{detail_id}-log-{tc_idx}"
         log_cell = _log_toggle_span(tc, log_id)
-        html += (
-            f'<tr><td>{tc["test_name"]}{log_cell}</td>'
-            f'<td class="{_result_class(tc["result"])}">{tc["result"]}</td>'
-            f'<td>{tc["duration"]}</td></tr>'
+        prof_cell = (
+            f"<td>{_escape_html(str(tc.get('profile', '')))}</td>"
+            if has_profile
+            else ""
         )
-        html += _log_row(tc, log_id, colspan=3)
+        html += (
+            f"<tr>{prof_cell}"
+            f'<td>{_escape_html(str(tc["test_name"]))}{log_cell}</td>'
+            f'<td class="{_result_class(tc["result"])}">'
+            f'{_escape_html(str(tc["result"]))}</td>'
+            f'<td>{_escape_html(str(tc["duration"]))}</td></tr>'
+        )
+        html += _log_row(tc, log_id, colspan=detail_colspan)
     html += "</tbody></table></div></td></tr>"
     return html
 

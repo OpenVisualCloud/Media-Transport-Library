@@ -320,7 +320,9 @@ void run_cvt_dma_tier(enum mtl_simd_level simd_level) {
   ASSERT_TRUE(dma);
 
   /* All positive dimensions exceed the 256 KB DMA cache threshold; {602, 211}
-   * also exercises invalid v210 pixel-group counts. */
+   * also exercises invalid v210 pixel-group counts. Sweep all 64 tail residues
+   * (w=602, h=211..274 for standard kernels; w=600, h=211..274 for v210 where
+   * (w*h)%6 == 0) on explicit SIMD tiers. */
   static constexpr CvtDimCase kAutoDims[] = {{1920, 1080}};
   static constexpr CvtDimCase kStdDims[] = {{1920, 1080}, {602, 211}};
   static constexpr CvtDimCase kV210Dims[] = {
@@ -335,6 +337,13 @@ void run_cvt_dma_tier(enum mtl_simd_level simd_level) {
     for (size_t i = 0; i < count; i++) {
       SCOPED_TRACE(c.name);
       ASSERT_NO_FATAL_FAILURE(c.fn(st, dma.get(), dims[i].w, dims[i].h, simd_level));
+    }
+    if (simd_level != MTL_SIMD_LEVEL_MAX) {
+      const int tail_w = c.is_v210 ? 600 : 602;
+      for (int h = 211; h <= 274; h++) {
+        SCOPED_TRACE(c.name);
+        ASSERT_NO_FATAL_FAILURE(c.fn(st, dma.get(), tail_w, h, simd_level));
+      }
     }
   }
 }

@@ -57,8 +57,13 @@ def analyze_regressions(current_pytest, current_gtest, baseline_pytest, baseline
             "test_name": display_name,
         }
 
-        if key in baseline:
-            base_result, _base_log = baseline[key]
+        base_entry = baseline.get(key)
+        if base_entry is None and profile:
+            # Backward compatibility: match legacy baselines that had no profile key.
+            base_entry = baseline.get((platform, nic, category, "", test_name))
+
+        if base_entry is not None:
+            base_result, _base_log = base_entry
             if _is_pass(base_result) and _is_fail(cur_result):
                 regressions.append(
                     {
@@ -130,10 +135,15 @@ def analyze_regressions(current_pytest, current_gtest, baseline_pytest, baseline
     changed_failures.sort(key=_sort_key)
     lost_coverage.sort(key=_sort_key)
 
-    # Coverage comparison: how many tests exist in each index
+    # Coverage comparison: count keys that match either directly or via legacy fallback
     current_keys = set(current)
     baseline_keys = set(baseline)
-    common = len(current_keys & baseline_keys)
+    common = sum(
+        1
+        for k in current_keys
+        if k in baseline_keys
+        or (k[3] and (k[0], k[1], k[2], "", k[4]) in baseline_keys)
+    )
 
     return {
         "regressions": regressions,

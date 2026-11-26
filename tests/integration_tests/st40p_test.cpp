@@ -421,9 +421,9 @@ void st40p_tx_epoch_drop_test(bool user_pacing) {
         },
         6000));
   } else {
-    /* Wait for >= 25 paced frames (~0.42 s at 59.94 fps) to verify zero epoch drops. */
+    /* Wait for >= 60 paced frames (~1.0 s at 59.94 fps) to verify zero epoch drops. */
     std::vector<tests_context*> tx_ctxs = {test_ctx.get()};
-    EXPECT_TRUE(mtl_test::wait_for_all(tx_ctxs, mtl_test::tx_frames, 25, 6000));
+    EXPECT_TRUE(mtl_test::wait_for_all(tx_ctxs, mtl_test::tx_frames, 60, 6000));
   }
   const uint64_t elapsed_ms = (st_test_get_monotonic_time() - t_start) / NS_PER_MS;
 
@@ -433,8 +433,11 @@ void st40p_tx_epoch_drop_test(bool user_pacing) {
   struct st40_tx_user_stats stats;
   EXPECT_GE(st40p_tx_get_session_stats(tx_handle.get(), &stats), 0);
   EXPECT_GT(mtl_test::tx_frames(test_ctx.get()), 0);
-  EXPECT_EQ(stats.common.stat_epoch_drop, 0u);
-  if (user_pacing) {
+  if (!user_pacing) {
+    EXPECT_EQ(stats.common.stat_epoch_drop, 0u);
+  } else {
+    /* Under ST40P_TX_FLAG_USER_PACING, tx_ancillary_calc_epoch returns early before
+     * stat_epoch_drop; verify real pacing via done_seq, rtp_timestamp, and elapsed_ms. */
     EXPECT_GE(stats.common.stat_frames_sent, 15u);
     EXPECT_GE(done_ctx.done_seq.load(std::memory_order_acquire), 15u);
     EXPECT_EQ(done_ctx.rtp_ts_mismatch.load(std::memory_order_relaxed), 0);
@@ -604,35 +607,39 @@ TEST(St40p, session_stats_reset) {
   struct st40_tx_user_stats tx_stats;
   struct st40_rx_user_stats rx_stats;
   ASSERT_GE(st40p_tx_get_session_stats(lb.tx.get(), &tx_stats), 0);
-  ASSERT_GE(st40p_rx_get_session_stats(lb.rx.get(), &rx_stats), 0);
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
   EXPECT_GT(tx_stats.common.stat_frames_sent, 0u);
-  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
-  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
-  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
-  EXPECT_GT(rx_stats.common.stat_frames_received, 0u);
-
   EXPECT_GE(st40p_tx_reset_session_stats(lb.tx.get()), 0);
-  EXPECT_GE(st40p_rx_reset_session_stats(lb.rx.get()), 0);
-
   ASSERT_GE(st40p_tx_get_session_stats(lb.tx.get(), &tx_stats), 0);
-  ASSERT_GE(st40p_rx_get_session_stats(lb.rx.get(), &rx_stats), 0);
   EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
   EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
   EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
   EXPECT_EQ(tx_stats.common.stat_frames_sent, 0u);
   EXPECT_EQ(tx_stats.common.stat_frames_dropped, 0u);
+
+  EXPECT_LT(st40p_tx_get_session_stats(nullptr, &tx_stats), 0);
+  EXPECT_LT(st40p_tx_get_session_stats(lb.tx.get(), nullptr), 0);
+  EXPECT_LT(st40p_tx_reset_session_stats(nullptr), 0);
+
+  /* Free TX before resetting RX stats so no packets arrive under DEV_AUTO_START_STOP. */
+  lb.tx.reset();
+  st_usleep(20 * 1000);
+
+  ASSERT_GE(st40p_rx_get_session_stats(lb.rx.get(), &rx_stats), 0);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
+  EXPECT_GT(rx_stats.common.stat_frames_received, 0u);
+  EXPECT_GE(st40p_rx_reset_session_stats(lb.rx.get()), 0);
+  ASSERT_GE(st40p_rx_get_session_stats(lb.rx.get(), &rx_stats), 0);
   EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
   EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
   EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
   EXPECT_EQ(rx_stats.common.stat_frames_received, 0u);
   EXPECT_EQ(rx_stats.common.stat_frames_dropped, 0u);
 
-  EXPECT_LT(st40p_tx_get_session_stats(nullptr, &tx_stats), 0);
-  EXPECT_LT(st40p_tx_get_session_stats(lb.tx.get(), nullptr), 0);
-  EXPECT_LT(st40p_tx_reset_session_stats(nullptr), 0);
   EXPECT_LT(st40p_rx_get_session_stats(nullptr, &rx_stats), 0);
   EXPECT_LT(st40p_rx_get_session_stats(lb.rx.get(), nullptr), 0);
   EXPECT_LT(st40p_rx_reset_session_stats(nullptr), 0);
@@ -828,9 +835,10 @@ TEST(St40p, digest_non_block) {
   lb.start_workers(cfg);
 
   EXPECT_GE(lb.mtl.start(), 0);
-  /* 1.0 s window, >= 25 frames after 3-frame warmup: <= 1.7% edge error vs +/-10%. */
+  /* 2.0 s window, >= 50 frames after 6-frame warmup: <= 1% edge error vs +/-10%. */
   std::vector<tests_context*> rx_ctxs = {lb.rx_ctx.get()};
-  auto win = mtl_test::measure_rate_window(rx_ctxs, mtl_test::rx_frames, 3, 25, 1000);
+  auto win = mtl_test::measure_rate_window(rx_ctxs, mtl_test::rx_frames, 6, 50, 2000,
+                                           8000, 10000);
   EXPECT_TRUE(win.warmed_up);
   EXPECT_TRUE(win.complete);
   lb.stop_all();

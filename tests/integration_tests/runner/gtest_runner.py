@@ -39,15 +39,9 @@ NOCTX_ISO = (
 ).split()
 NOCTX_ENV = {
     "NOCTX_REQUIRE_STRICT": "1",
-    "NOCTX_STABILITY_SECONDS": "60",
-    "NOCTX_TEST_DURATION": "10",
     "MTL_ISOLATE": "require",
 }
-_KL = (
-    "St20p.tx_create_free_mix:St20p.rx_create_free_mix:St20p.digest_1080p_s1:"
-    "St20p.digest_1080i_s2:St20p.put_frame_abort:St20p.query_params:"
-    "St20p.session_stats_reset:St20p.update_source_and_destination"
-)
+_KL = "St20p*-St20p.redundant*"
 _F34 = "St3*:St4*-St30p.redundant*:St40p.redundant*"
 _FRD = "St20p.redundant*:St30p.redundant*:St40p.redundant*"
 _F_MODES = "NoCtxTest.init_mode_*:NoCtxTest.tx_queue_cnt_24"
@@ -68,7 +62,7 @@ GROUPS = {
 RUNS = (
     ("st2110_20", "St20_rx*:St20_tx*", "vf_pair", "pr,dma,par,bw"),
     ("st2110_20p", "St20p*-St20p.redundant*", "vf_pair", "pr,par,bw"),
-    ("st2110_22", "St22*", "vf_pair", "pr,par"),
+    ("st2110_22", "St22*", "vf_pair", "pr,par,bw"),
     ("st2110_3x_4x", _F34, "vf_pair", "pr,par"),
     ("core_misc", "Main*:Misc*:Sch*:TxUserTimestampSync*", "vf_pair", "par"),
     ("dma_cvt", "Dma*:Cvt*", "vf_pair", "dma,par"),
@@ -281,50 +275,141 @@ def _run_cmd(
     cmd: list[str],
     env: dict[str, str],
     to_s: int,
-    tmp: Path,
+    last_log: Path,
     log_fh,
     io_lock: threading.Lock,
     active_procs: set[subprocess.Popen] | None = None,
     state_lock: threading.Lock | None = None,
 ) -> tuple[int, str]:
-    with tmp.open("w+", encoding="utf-8", errors="replace") as fh:
-        proc = subprocess.Popen(
-            cmd, stdout=fh, stderr=subprocess.STDOUT, env=env, start_new_session=True
-        )
+    chunks: list[str] = []
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=env,
+        start_new_session=True,
+    )
+    if active_procs is not None and state_lock is not None:
+        with state_lock:
+            active_procs.add(proc)
+
+    def _drain() -> None:
+        assert proc.stdout is not None
+        with last_log.open("w", encoding="utf-8", errors="replace") as lf:
+            while True:
+                data = proc.stdout.read(4096)
+                if not data:
+                    break
+                text = data.decode("utf-8", errors="replace")
+                chunks.append(text)
+                lf.write(text)
+                lf.flush()
+                with io_lock:
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                    log_fh.write(text)
+                    log_fh.flush()
+
+    reader = threading.Thread(target=_drain, daemon=True)
+    reader.start()
+    try:
+        rc = proc.wait(timeout=to_s)
+    except subprocess.TimeoutExpired:
+        for sig, ws in ((signal.SIGTERM, 15), (signal.SIGKILL, 5)):
+            try:
+                os.killpg(proc.pid, sig)
+                proc.wait(timeout=ws)
+                break
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                pass
+        rc = 124
+    finally:
         if active_procs is not None and state_lock is not None:
             with state_lock:
-                active_procs.add(proc)
-        try:
-            rc = proc.wait(timeout=to_s)
-        except subprocess.TimeoutExpired:
-            for sig, ws in ((signal.SIGTERM, 15), (signal.SIGKILL, 5)):
-                try:
-                    os.killpg(proc.pid, sig)
-                    proc.wait(timeout=ws)
-                    break
-                except (ProcessLookupError, subprocess.TimeoutExpired):
-                    pass
-            rc = 124
-        finally:
-            if active_procs is not None and state_lock is not None:
-                with state_lock:
-                    active_procs.discard(proc)
-        fh.flush()
-        fh.seek(0)
-        out = fh.read()
-    try:
-        tmp.unlink(missing_ok=True)
-    except OSError:
-        pass
-    if out:
-        with io_lock:
-            sys.stdout.write(out)
-            log_fh.write(out)
-            log_fh.flush()
-    return rc, out
+                active_procs.discard(proc)
+        reader.join(timeout=5)
+        if proc.stdout is not None:
+            proc.stdout.close()
+    return rc, "".join(chunks)
 
 
-def _parse_xml(xml: Path, ctx: dict[str, str]) -> list[dict]:
+_GTEST_LINE_RE = re.compile(
+    r"^\[\s*(RUN|OK|FAILED|SKIPPED)\s*\]\s+(\S+)(?:\s+\((\d+)\s*ms\))?"
+)
+
+
+def _extract_case_logs(txt: str, max_chars: int = 16384) -> dict[str, str]:
+    """Extract full console output per test case between [ RUN ] and end markers."""
+    logs: dict[str, str] = {}
+    cur_case: str | None = None
+    buf: list[str] = []
+    for ln in txt.splitlines():
+        m = _GTEST_LINE_RE.match(ln)
+        if m:
+            tag, case = m.group(1), m.group(2)
+            if tag == "RUN":
+                if cur_case is not None:
+                    logs[cur_case] = "\n".join(buf)[-max_chars:]
+                cur_case = case
+                buf = [ln]
+                continue
+            if cur_case == case:
+                buf.append(ln)
+                logs[cur_case] = "\n".join(buf)[-max_chars:]
+                cur_case = None
+                buf = []
+                continue
+        if cur_case is not None:
+            buf.append(ln)
+    if cur_case is not None:
+        logs[cur_case] = "\n".join(buf)[-max_chars:]
+    return logs
+
+
+def _recover_from_log(txt: str, ctx: dict[str, str], rc: int) -> list[dict]:
+    """Recover completed and crashing test cases from console output when XML is absent."""
+    case_logs = _extract_case_logs(txt)
+    records: list[dict] = []
+    running: str | None = None
+    for ln in txt.splitlines():
+        m = _GTEST_LINE_RE.match(ln)
+        if not m:
+            continue
+        tag, case, dur = m.group(1), m.group(2), m.group(3)
+        if tag == "RUN":
+            running = case
+        elif tag in ("OK", "FAILED", "SKIPPED"):
+            res = {"OK": "passed", "FAILED": "failed", "SKIPPED": "skipped"}[tag]
+            msg = case_logs.get(case, "") if res == "failed" else ""
+            records.append(
+                {
+                    "case": case,
+                    **ctx,
+                    "result": res,
+                    "duration_ms": float(dur or 0),
+                    "message": msg,
+                }
+            )
+            if running == case:
+                running = None
+    if running is not None:
+        log = case_logs.get(running, "")
+        msg = f"crashed or timed out (rc={rc})\n{log}".strip()
+        records.append(
+            {
+                "case": running,
+                **ctx,
+                "result": "failed",
+                "duration_ms": 0.0,
+                "message": msg,
+            }
+        )
+    return records
+
+
+def _parse_xml(
+    xml: Path, ctx: dict[str, str], case_logs: dict[str, str] | None = None
+) -> list[dict]:
     if not xml.is_file():
         return []
     try:
@@ -342,7 +427,8 @@ def _parse_xml(xml: Path, ctx: dict[str, str]) -> list[dict]:
         result_attr = tc.attrib.get("result", "")
         if fail is not None:
             res = "failed"
-            msg = (fail.attrib.get("message") or fail.text or "").strip()[:400]
+            xml_msg = (fail.attrib.get("message") or fail.text or "").strip()
+            msg = (case_logs or {}).get(case) or xml_msg
         elif skip is not None or result_attr == "skipped":
             res = "skipped"
             msg = (skip.attrib.get("message") if skip is not None else "") or ""
@@ -456,12 +542,9 @@ def main(argv: list[str] | None = None) -> int:
     stop_ev = threading.Event()
     active_procs: set[subprocess.Popen] = set()
     sig_rc = [0]
-    tmp_seq = [0]
 
-    def next_tmp(tag: str) -> Path:
-        with state_lock:
-            tmp_seq[0] += 1
-            return out / f"tmp_{tag}_{tmp_seq[0]}.log"
+    def last_log_path() -> Path:
+        return out / "last.log"
 
     def kill_active(sig: int) -> None:
         with state_lock:
@@ -536,31 +619,51 @@ def main(argv: list[str] | None = None) -> int:
                 cmd = [*_sudo(root, extra), *iso_p, *base, fa, xa]
                 if att > 1:
                     tee(f"  retrying {case} ({att}/{a.retries})\n")
+                sweep_rc = 0
                 if iso:
-                    subprocess.run(sweep, capture_output=True)
+                    sweep_rc = subprocess.run(sweep, capture_output=True).returncode
                 rc, txt = _run_cmd(
                     cmd,
                     env,
                     to_s,
-                    next_tmp(safe),
+                    last_log_path(),
                     log_fh,
                     io_lock,
                     active_procs,
                     state_lock,
                 )
                 if iso:
-                    subprocess.run(sweep, capture_output=True)
-                if rc != 0 and (m := CFG_ERR.search(txt)):
+                    post_rc = subprocess.run(sweep, capture_output=True).returncode
+                    sweep_rc = sweep_rc or post_rc
+                preamble = txt.split("[==========] Running", 1)[0]
+                if rc != 0 and (m := CFG_ERR.search(preamble)):
                     raise HostFault(f"Config error in {case}: {m.group(0)}")
-                parsed = _parse_xml(xml, ctx)
+                case_logs = _extract_case_logs(txt)
+                parsed = _parse_xml(xml, ctx, case_logs)
                 st = "passed" if rc == 0 else "failed"
                 cur = (
                     parsed[0]
                     if parsed
-                    else {**fin, "result": st, "message": "" if rc == 0 else f"rc={rc}"}
+                    else {
+                        **fin,
+                        "result": st,
+                        "message": (
+                            "" if rc == 0 else (case_logs.get(case) or f"rc={rc}")
+                        ),
+                    }
                 )
                 if rc != 0 and cur["result"] in ("passed", "skipped"):
-                    cur = {**cur, "result": "failed", "message": f"rc={rc}"}
+                    cur = {
+                        **cur,
+                        "result": "failed",
+                        "message": case_logs.get(case) or f"rc={rc}",
+                    }
+                if sweep_rc != 0 and cur["result"] in ("passed", "skipped"):
+                    cur = {
+                        **cur,
+                        "result": "failed",
+                        "message": f"isolate.sh --sweep failed (rc={sweep_rc})",
+                    }
                 if cur["result"] in ("passed", "skipped"):
                     if att > 1 and cur["result"] == "passed":
                         ms = f"Passed on retry {att}" + (
@@ -586,8 +689,6 @@ def main(argv: list[str] | None = None) -> int:
             base = [str(binary), f"--p_sip={sip}", *pargs]
             if lcores:
                 base.append(f"--lcores={lcores}")
-            if a.tier == "pr" and a.retries < 2:
-                base.append("--gtest_fail_fast")
             xa, fa = f"--gtest_output=xml:{xml}", f"--gtest_filter={flt}"
             cmd = [*_sudo(root, penv), *base, xa, fa]
             lc_msg = f" lcores={lcores}" if lcores else ""
@@ -598,19 +699,51 @@ def main(argv: list[str] | None = None) -> int:
                 cmd,
                 {**e, **penv},
                 a.timeout,
-                next_tmp(name),
+                last_log_path(),
                 log_fh,
                 io_lock,
                 active_procs,
                 state_lock,
             )
-            parsed = _parse_xml(xml, ctx)
+            case_logs = _extract_case_logs(txt)
+            parsed = _parse_xml(xml, ctx, case_logs)
             prof_failed = False
             if rc != 0 and not parsed:
-                if m := CFG_ERR.search(txt):
+                preamble = txt.split("[==========] Running", 1)[0]
+                if m := CFG_ERR.search(preamble):
                     raise HostFault(f"Config error in {name}: {m.group(0)}")
-                emit(ctx, f"{name}.<process>", "failed", msg=f"rc={rc} without XML")
-                prof_failed = True
+                recovered = _recover_from_log(txt, ctx, rc)
+                if not recovered:
+                    emit(
+                        ctx,
+                        f"{name}.__process__",
+                        "failed",
+                        msg=f"rc={rc} without XML",
+                    )
+                    return True
+                seen_cases = set()
+                for r in recovered:
+                    seen_cases.add(r["case"])
+                    if (
+                        r["result"] == "failed"
+                        and a.retries >= 2
+                        and not stop_ev.is_set()
+                    ):
+                        r = run_case(
+                            ctx, base, r["case"], root, penv, a.timeout, 2, r["message"]
+                        )
+                    emit(ctx, r["case"], r["result"], r["duration_ms"], r["message"])
+                    prof_failed = prof_failed or r["result"] in ("failed", "not_run")
+                try:
+                    all_cases = _list_cases(binary, flt)
+                except RuntimeError:
+                    all_cases = []
+                remaining = [c for c in all_cases if c not in seen_cases]
+                if remaining and not stop_ev.is_set():
+                    rem_flt = ":".join(remaining)
+                    if run_shared(name, rem_flt, topo, flags, pair_ports, sip, lcores):
+                        prof_failed = True
+                return prof_failed
             has_xml_fail = any(r["result"] in ("failed", "not_run") for r in parsed)
             for r in parsed:
                 if r["result"] == "failed" and a.retries >= 2 and not stop_ev.is_set():
@@ -620,7 +753,12 @@ def main(argv: list[str] | None = None) -> int:
                 emit(ctx, r["case"], r["result"], r["duration_ms"], r["message"])
                 prof_failed = prof_failed or r["result"] in ("failed", "not_run")
             if rc != 0 and parsed and not has_xml_fail:
-                emit(ctx, f"{name}.<process>", "failed", msg=f"process exited rc={rc}")
+                emit(
+                    ctx,
+                    f"{name}.__process__",
+                    "failed",
+                    msg=f"process exited rc={rc}",
+                )
                 prof_failed = True
             return prof_failed
 
@@ -655,6 +793,16 @@ def main(argv: list[str] | None = None) -> int:
                     flags = set(flag_s.split(",")) if flag_s else set()
                     if "noctx" in flags:
                         cases = _list_cases(binary, flt)
+                        if not cases:
+                            ctx = {"profile": name, "nic": nic, "host": host}
+                            emit(
+                                ctx,
+                                f"{name}.__empty__",
+                                "failed",
+                                msg=f"filter '{flt}' matched 0 cases",
+                            )
+                            failed = True
+                            continue
                         # Run TSC pacing before RL on any VF pair (DPDK < 26.07.91).
                         cases.sort(key=lambda c: (0 if "tsc" in c else 1, c))
                         tee(
@@ -748,21 +896,33 @@ def main(argv: list[str] | None = None) -> int:
                             if slot_item is not None:
                                 pair_pool.put(slot_item)
 
+                # Run TSC noctx_case tasks in a barrier wave before RL/AUTO tasks so PF
+                # RL shaper commits never perturb TSC pacing on sibling VFs.
+                tsc_wave = [t for t in tasks if t[0] == "noctx_case" and "tsc" in t[2]]
+                main_wave = [
+                    t for t in tasks if not (t[0] == "noctx_case" and "tsc" in t[2])
+                ]
+                main_wave.sort(key=lambda t: (0 if t[3] == "kernel_lo" else 1))
+                waves = [w for w in (tsc_wave, main_wave) if w]
+
                 with ThreadPoolExecutor(max_workers=pool_workers) as ex:
-                    futs = [ex.submit(_exec_task, t) for t in tasks]
-                    try:
-                        for fut in as_completed(futs):
-                            _, task_failed = fut.result()
-                            if task_failed:
-                                failed = True
-                                if a.exit_on_failure:
-                                    stop_ev.set()
-                    except BaseException:
-                        stop_ev.set()
-                        kill_active(signal.SIGTERM)
-                        for fut in futs:
-                            fut.cancel()
-                        raise
+                    for wave in waves:
+                        if stop_ev.is_set():
+                            break
+                        futs = [ex.submit(_exec_task, t) for t in wave]
+                        try:
+                            for fut in as_completed(futs):
+                                _, task_failed = fut.result()
+                                if task_failed:
+                                    failed = True
+                                    if a.exit_on_failure:
+                                        stop_ev.set()
+                        except BaseException:
+                            stop_ev.set()
+                            kill_active(signal.SIGTERM)
+                            for fut in futs:
+                                fut.cancel()
+                            raise
                 for n in noctx_par_names:
                     done.add(n)
 
@@ -791,9 +951,24 @@ def main(argv: list[str] | None = None) -> int:
                     pl = ",".join(ports)
                     base = [str(binary), f"--p_sip={a.p_sip}", f"--port_list={pl}"]
                     cases = _list_cases(binary, flt)
+                    if not cases:
+                        emit(
+                            ctx,
+                            f"{name}.__empty__",
+                            "failed",
+                            msg=f"filter '{flt}' matched 0 cases",
+                        )
+                        failed = True
+                        done.add(name)
+                        continue
                     tee(f"\n==> [{name}] {len(cases)} per-process cases on {pl}\n")
                     for c in cases:
-                        iso = any(sub in c for sub in NOCTX_ISO) and ISOLATE.is_file()
+                        wants_iso = any(sub in c for sub in NOCTX_ISO)
+                        iso = wants_iso and ISOLATE.is_file()
+                        if wants_iso and not iso:
+                            tee(
+                                f"Warning: {ISOLATE} not found; running {c} unconfined\n"
+                            )
                         ie = {}
                         if iso:
                             ie = {

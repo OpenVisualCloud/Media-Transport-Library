@@ -278,6 +278,15 @@ TEST(Sch, create_invalid_and_defaults) {
   EXPECT_EQ(mtl_sch_create(mt, nullptr), nullptr);
 
   /* Default ops (null name, 0 nb_tasklets) must succeed and allow lifecycle edges. */
+  int owned_sch_idx = -1;
+  for (int idx = 0; idx < 64; idx++) {
+    if (mtl_sch_enable_sleep(mt, idx, false) < 0) {
+      owned_sch_idx = idx;
+      break;
+    }
+  }
+  ASSERT_GE(owned_sch_idx, 0);
+
   struct mtl_sch_ops ops = {};
   TaskletTestCtx ctx_sch;
   {
@@ -326,9 +335,9 @@ TEST(Sch, create_invalid_and_defaults) {
     EXPECT_FALSE(ctx_sch.start.load(std::memory_order_acquire));
     EXPECT_EQ(ctx_sch.stop_cnt.load(std::memory_order_acquire), 2);
 
-    /* Valid active scheduler index 0 must accept sleep toggle. */
-    EXPECT_EQ(mtl_sch_enable_sleep(mt, 0, true), 0);
-    EXPECT_EQ(mtl_sch_enable_sleep(mt, 0, false), 0);
+    /* Toggle sleep on our own scheduler slot so global sch 0 state is untouched. */
+    EXPECT_EQ(mtl_sch_enable_sleep(mt, owned_sch_idx, true), 0);
+    EXPECT_EQ(mtl_sch_enable_sleep(mt, owned_sch_idx, false), 0);
   }
   EXPECT_EQ(st_test_sch_cnt(global_ctx), base_sch);
 

@@ -103,9 +103,9 @@ inline void* get_handle(const tests_context* c) {
  *     vsync ticks at 50-59.94 fps (<= 2.0% edge quantization error, inside
  *     +/-10% FPS and vsync tolerances) and exercises >= 18 fault intervals.
  */
-constexpr int kSt22pRateWarmupFrames = 3;
-constexpr int kSt22pRateMinDeltaFrames = 25;
-constexpr int kSt22pRateMinWindowMs = 1000;
+constexpr int kSt22pRateWarmupFrames = 6;
+constexpr int kSt22pRateMinDeltaFrames = 50;
+constexpr int kSt22pRateMinWindowMs = 2000;
 
 /* Member order guarantees RAII teardown: handle free -> DMA unmap -> context free. */
 struct St22pTxSession {
@@ -913,7 +913,7 @@ static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
     if (sc.tx_ext) ops_tx.flags |= ST22P_TX_FLAG_EXT_FRAME;
     if (sc.rtcp) {
       ops_tx.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
-      ops_tx.rtcp.buffer_size = 1024;
+      ops_tx.rtcp.buffer_size = 512;
     }
 
     if (sc.derive) {
@@ -971,8 +971,10 @@ static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
     memcpy(s.ctx->shas, tx[i].ctx->shas, ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
 
     if (sc.rx_ext) {
+      /* Allocate extra ext slots above fb_cnt so query_ext_frame never hits a
+       * brief drop window between st22p_rx_put_frame() and slot release. */
       ASSERT_TRUE(s.ctx->ext_frames.init(st, stream.fmt, stream.width, stream.height,
-                                         sc.interlace, s.ctx->fb_cnt));
+                                         sc.interlace, s.ctx->fb_cnt + 2));
       info("%s, session %zu rx ext_frames %p\n", __func__, i, s.ctx->ext_frames.data());
     }
 
@@ -1004,7 +1006,9 @@ static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
 
     if (sc.derive) {
       s.ctx->frame_size = tx[i].ctx->frame_size;
-      ops_rx.max_codestream_size = s.ctx->frame_size;
+      /* Leave max_codestream_size == 0 on session 0 so the library's 1 MiB default
+       * branch (st22_pipeline_rx.c) executes; set explicit size on session 1+. */
+      if (i > 0) ops_rx.max_codestream_size = s.ctx->frame_size;
     } else {
       s.ctx->frame_size = st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height,
                                         ops_rx.interlaced);
@@ -1012,7 +1016,9 @@ static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
 
     s.handle.reset(st22p_rx_create(st, &ops_rx));
     ASSERT_TRUE(static_cast<bool>(s.handle));
-    EXPECT_EQ(s.ctx->frame_size, st22p_rx_frame_size(s.handle.get()));
+    const size_t expect_rx_buf_sz =
+        (sc.derive && ops_rx.max_codestream_size == 0) ? 0x100000u : s.ctx->frame_size;
+    EXPECT_EQ(expect_rx_buf_sz, st22p_rx_frame_size(s.handle.get()));
     if (sc.block_get) {
       EXPECT_EQ(st22p_rx_set_block_timeout(s.handle.get(), NS_PER_S), 0);
     }
@@ -1095,12 +1101,20 @@ TEST(St22p, digest_st22_1080i) {
   st22p_rx_digest_test(sc);
 }
 
-TEST(St22p, digest_st22_s2) {
+TEST(St22p, digest_st22_4k_s1) {
   St22pDigestScenario sc;
   sc.streams = {
       {ST_FPS_P59_94, 1920 * 2, 1080 * 2, ST_FRAME_FMT_YUV422PLANAR10LE,
        ST22_CODEC_JPEGXS, 20},
-      {ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 10},
+  };
+  st22p_rx_digest_test(sc);
+}
+
+TEST(St22p, digest_st22_s2) {
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 10},
+      {ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 16},
   };
   sc.user_timestamp = true;
   sc.ssrc = 778899;

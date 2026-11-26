@@ -499,9 +499,11 @@ static int rx_rtp_ready(void* priv) {
 
 struct St40FieldState {
   tests_context* ctx = nullptr;
+  bool expect_empty = false;
   std::atomic<int> first_field_cnt{0};
   std::atomic<int> second_field_cnt{0};
   std::atomic<int> bad_f_cnt{0};
+  std::atomic<int> bad_empty_hdr_cnt{0};
 };
 
 static int rx_rtp_ready_interlaced(void* priv) {
@@ -525,6 +527,12 @@ static int rx_rtp_ready_interlaced(void* priv) {
         st->second_field_cnt.fetch_add(1, std::memory_order_relaxed);
       else
         st->bad_f_cnt.fetch_add(1, std::memory_order_relaxed);
+      /* ST 2110-40:2023 §5.5 (p7): empty interlaced field requires ANC_Count == 0
+       * and RTP marker bit set. */
+      if (st->expect_empty &&
+          (hdr->first_hdr_chunk.anc_count != 0 || !hdr->base.marker)) {
+        st->bad_empty_hdr_cnt.fetch_add(1, std::memory_order_relaxed);
+      }
     }
     st40_rx_put_mbuf(handle, mbuf);
     __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
@@ -851,8 +859,9 @@ static void st40_tx_fps_test(const std::vector<St40SessionSpec>& specs) {
   }
 
   EXPECT_GE(mtl_run.start(), 0);
-  /* 1.0 s window, >= 25 frames after 3-frame warmup: <= 4% edge error vs +/-10%. */
-  auto win = mtl_test::measure_rate_window(raw_tx, mtl_test::tx_frames, 3, 25, 1000);
+  /* 2.0 s window, >= 50 frames after 6-frame warmup: <= 2% edge error vs +/-10%. */
+  auto win = mtl_test::measure_rate_window(raw_tx, mtl_test::tx_frames, 6, 50, 2000, 8000,
+                                           10000);
   EXPECT_TRUE(win.warmed_up);
   EXPECT_TRUE(win.complete);
 
@@ -942,6 +951,7 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
     } else if (s.interlaced && !s.check_sha) {
       field_states[i] = std::make_unique<St40FieldState>();
       field_states[i]->ctx = raw_rx[i];
+      field_states[i]->expect_empty = s.empty_frame;
       ops_rx.priv = field_states[i].get();
       ops_rx.notify_rtp_ready = rx_rtp_ready_interlaced;
     }
@@ -965,13 +975,14 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
   }
 
   EXPECT_GE(mtl_run.start(), 0);
-  /* 1.0 s window, >= 25 frames after 3-frame warmup: <= 4% edge error vs +/-10%. */
-  auto win = mtl_test::measure_rate_window(raw_rx, mtl_test::rx_frames, 3, 25, 1000);
+  /* 2.0 s window, >= 50 frames after 6-frame warmup: <= 2% edge error vs +/-10%. */
+  auto win = mtl_test::measure_rate_window(raw_rx, mtl_test::rx_frames, 6, 50, 2000, 8000,
+                                           10000);
   EXPECT_TRUE(win.warmed_up);
   EXPECT_TRUE(win.complete);
 
   if (s.check_sha) {
-    EXPECT_TRUE(mtl_test::wait_for_all(raw_rx, mtl_test::sha_checked_frames, 1, 2000));
+    EXPECT_TRUE(mtl_test::wait_for_all(raw_rx, mtl_test::sha_checked_frames, 10, 4000));
   }
 
   const uint64_t stop_time = st_test_get_monotonic_time();
@@ -984,9 +995,8 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
     EXPECT_GT(rec, 0);
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, rec, win.rate[i]);
     EXPECT_NEAR(win.rate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-    int fail_tolerance = raw_rx[i]->st40_fmd ? 0 : 2;
-    EXPECT_LE(mtl_test::relaxed_load(&raw_rx[i]->sha_fail_cnt), fail_tolerance);
-    EXPECT_LE(mtl_test::relaxed_load(&raw_rx[i]->rx_meta_fail_cnt), fail_tolerance);
+    EXPECT_EQ(mtl_test::relaxed_load(&raw_rx[i]->sha_fail_cnt), 0);
+    EXPECT_EQ(mtl_test::relaxed_load(&raw_rx[i]->rx_meta_fail_cnt), 0);
     if (raw_rx[i]->st40_fmd) {
       st40_fmd_expect_stats(raw_rx[i], tx_handles[i].get(), rx_handles[i].get(),
                             stop_time);
@@ -998,6 +1008,7 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
       EXPECT_GT(field_states[i]->first_field_cnt.load(std::memory_order_relaxed), 0);
       EXPECT_GT(field_states[i]->second_field_cnt.load(std::memory_order_relaxed), 0);
       EXPECT_EQ(field_states[i]->bad_f_cnt.load(std::memory_order_relaxed), 0);
+      EXPECT_EQ(field_states[i]->bad_empty_hdr_cnt.load(std::memory_order_relaxed), 0);
     }
   }
 }
@@ -1009,6 +1020,23 @@ TEST(St40_tx, mix_fps50_fps29_97) {
   });
 }
 
+/* Frame-level 29.97 fps and redundant dual-port TX at 59.94 fps. */
+TEST(St40_tx, frame_fps29_97_fps59_94) {
+  st40_tx_fps_test({
+      {ST40_TYPE_FRAME_LEVEL, ST_FPS_P29_97},
+      {ST40_TYPE_FRAME_LEVEL, ST_FPS_P59_94},
+  });
+}
+
+/* Three concurrent RTP-level TX feeders (FRAME 50 + RTP 59.94 + 3 RTP feeders). */
+TEST(St40_tx, rtp_fps50_s3) {
+  st40_tx_fps_test({
+      {ST40_TYPE_RTP_LEVEL, ST_FPS_P50},
+      {ST40_TYPE_RTP_LEVEL, ST_FPS_P50},
+      {ST40_TYPE_RTP_LEVEL, ST_FPS_P59_94},
+  });
+}
+
 TEST(St40_rx, mix_s2) {
   St40RxScenario s;
   s.sessions = {
@@ -1017,6 +1045,19 @@ TEST(St40_rx, mix_s2) {
   };
   s.check_sha = true;
   s.dedicate_tx_queue = true;
+  st40_rx_fps_test(s);
+}
+
+/* Shared-TX-queue RTP-level RFC 8331 digest plus FRAME 50 alongside RTP 59.94. */
+TEST(St40_rx, rtp_fps50_fps59_94_digest) {
+  St40RxScenario s;
+  s.sessions = {
+      {ST40_TYPE_RTP_LEVEL, ST_FPS_P50},
+      {ST40_TYPE_RTP_LEVEL, ST_FPS_P59_94},
+      {ST40_TYPE_FRAME_LEVEL, ST_FPS_P50},
+  };
+  s.check_sha = true;
+  s.dedicate_tx_queue = false;
   st40_rx_fps_test(s);
 }
 TEST(St40_rx, frame_user_timestamp) {
@@ -1641,29 +1682,33 @@ TEST(St40_rx, session_stats_reset) {
   struct st40_tx_user_stats tx_stats;
   struct st40_rx_user_stats rx_stats;
   ASSERT_GE(st40_tx_get_session_stats(tx_handle.get(), &tx_stats), 0);
-  ASSERT_GE(st40_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
-  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
-  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
-  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
-
   EXPECT_GE(st40_tx_reset_session_stats(tx_handle.get()), 0);
-  EXPECT_GE(st40_rx_reset_session_stats(rx_handle.get()), 0);
-
   ASSERT_GE(st40_tx_get_session_stats(tx_handle.get(), &tx_stats), 0);
-  ASSERT_GE(st40_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
   EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
   EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
   EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
-  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
-  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
-  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
 
   EXPECT_LT(st40_tx_get_session_stats(nullptr, &tx_stats), 0);
   EXPECT_LT(st40_tx_get_session_stats(tx_handle.get(), nullptr), 0);
   EXPECT_LT(st40_tx_reset_session_stats(nullptr), 0);
+
+  /* Free TX before resetting RX stats so no packets arrive under DEV_AUTO_START_STOP. */
+  tx_handle.reset();
+  st_usleep(20 * 1000);
+
+  ASSERT_GE(st40_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
+  EXPECT_GE(st40_rx_reset_session_stats(rx_handle.get()), 0);
+  ASSERT_GE(st40_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
+  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
+
   EXPECT_LT(st40_rx_get_session_stats(nullptr, &rx_stats), 0);
   EXPECT_LT(st40_rx_get_session_stats(rx_handle.get(), nullptr), 0);
   EXPECT_LT(st40_rx_reset_session_stats(nullptr), 0);

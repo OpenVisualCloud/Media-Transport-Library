@@ -23,6 +23,7 @@
 
 struct st_tests_context {
   struct mtl_init_params para;
+  uint8_t init_sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   mtl_handle handle;
   uint8_t mcast_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   uint64_t ptp_time;

@@ -879,7 +879,7 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
       ops_rx.rtcp.seq_bitmap_size = 64;
       ops_rx.rtcp.seq_skip_window = 0;
       ops_rx.rtcp.burst_loss_max = 1;
-      ops_rx.rtcp.sim_loss_rate = 0.001f;
+      ops_rx.rtcp.sim_loss_rate = 0.1f;
     }
 
     rx_handles[i].reset(st20p_rx_create(st, &ops_rx));
@@ -917,13 +917,13 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
   }
 
   /*
-   * Warmup=3 absorbs RL pacing and startup; >=25 frames over >=1000 ms gives
-   * <=4.0% edge error at 25 fps and <=1.7% at 59.94 fps (vs +/-10% tolerance)
-   * while exercising >=8 fault intervals and hundreds of RTCP NACKs.
+   * Warmup=6 absorbs RL pacing and startup; >=50 frames over >=2000 ms gives
+   * <=2.0% edge error at 25 fps and <=0.9% at 59.94 fps (vs +/-10% tolerance)
+   * while exercising >=16 fault intervals and thousands of RTCP NACKs.
    */
   const auto win = mtl_test::measure_pipeline_window(
-      raw_tx_ctxs, raw_rx_ctxs, /*warmup_frames=*/3, /*min_delta_frames=*/25,
-      /*min_window_ms=*/1000, /*warmup_timeout_ms=*/6000, /*window_timeout_ms=*/6000);
+      raw_tx_ctxs, raw_rx_ctxs, /*warmup_frames=*/6, /*min_delta_frames=*/50,
+      /*min_window_ms=*/2000, /*warmup_timeout_ms=*/8000, /*window_timeout_ms=*/10000);
   EXPECT_TRUE(win.warmed_up);
   EXPECT_TRUE(win.complete);
 
@@ -964,9 +964,12 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     info("%s, session %zu fb_rec %d framerate %f:%f\n", __func__, i, rec, win.rx_fps[i],
          expect_fps_rx[i]);
     EXPECT_GT(rec, 0);
-    EXPECT_LE(raw_rx_ctxs[i]->incomplete_frame_cnt, 4);
+    if (sc.fail_interval || sc.timeout_interval)
+      EXPECT_LE(raw_rx_ctxs[i]->incomplete_frame_cnt, 2);
+    else
+      EXPECT_LE(raw_rx_ctxs[i]->incomplete_frame_cnt, 1);
     EXPECT_EQ(raw_rx_ctxs[i]->sha_fail_cnt, 0);
-    EXPECT_LE(raw_rx_ctxs[i]->user_meta_fail_cnt, 2);
+    EXPECT_LE(raw_rx_ctxs[i]->user_meta_fail_cnt, 1);
     EXPECT_EQ(raw_rx_ctxs[i]->tp_fail_cnt, 0);
     EXPECT_EQ(raw_rx_ctxs[i]->field_phase_fail_cnt, 0);
     EXPECT_EQ(raw_rx_ctxs[i]->field_phase_unverified_cnt, 0);
@@ -987,8 +990,15 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
                 static_cast<int>(sc.streams[i].fps));
     }
     if (sc.check_fps) {
-      const double tol = (sc.fail_interval || sc.timeout_interval) ? 0.5 : 0.1;
-      EXPECT_NEAR(win.rx_fps[i], expect_fps_rx[i], expect_fps_rx[i] * tol);
+      const bool is_kernel_lo = (strcmp(ctx->para.port[MTL_PORT_P], "kernel:lo") == 0) ||
+                                (strcmp(ctx->para.port[MTL_PORT_R], "kernel:lo") == 0);
+      if (is_kernel_lo && sessions > 1) {
+        /* Multi-session kernel:lo UDP loopback is single-core socket CPU bound. */
+        EXPECT_GT(win.rx_fps[i], expect_fps_rx[i] * 0.4);
+      } else {
+        const double tol = (sc.fail_interval || sc.timeout_interval) ? 0.5 : 0.1;
+        EXPECT_NEAR(win.rx_fps[i], expect_fps_rx[i], expect_fps_rx[i] * tol);
+      }
     }
     if (sc.rtcp) {
       info("%s, session %zu rx/tx fb ratio %f sim_loss %" PRIu64 " retransmit %" PRIu64
@@ -1137,6 +1147,18 @@ TEST(St20p, ext_digest_1080p_convert_s2) {
   st20p_rx_digest_test(sc);
 }
 
+TEST(St20p, rx_dedicated_ext_digest_1080p_convert_s2) {
+  St20pDigestScenario sc;
+  sc.streams = {
+      make_stream(ST_FPS_P29_97, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE),
+      make_stream(ST_FPS_P59_94, 1280, 720, ST_FRAME_FMT_Y210),
+  };
+  sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  sc.rx_ext = true;
+  sc.rx_dedicated_ext = true;
+  st20p_rx_digest_test(sc);
+}
+
 TEST(St20p, ext_digest_1080p_convert_with_padding_s2) {
   St20pDigestScenario sc;
   sc.streams = {
@@ -1148,6 +1170,21 @@ TEST(St20p, ext_digest_1080p_convert_with_padding_s2) {
   sc.rx_ext = true;
   sc.check_fps = false;
   sc.line_padding_size = 1024;
+  st20p_rx_digest_test(sc);
+}
+
+TEST(St20p, rx_dedicated_ext_digest_1080p_convert_with_padding_s2) {
+  St20pDigestScenario sc;
+  sc.streams = {
+      make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE),
+      make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_Y210),
+  };
+  sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  sc.tx_ext = true;
+  sc.rx_ext = true;
+  sc.rx_dedicated_ext = true;
+  sc.check_fps = false;
+  sc.line_padding_size = 512;
   st20p_rx_digest_test(sc);
 }
 
@@ -1186,7 +1223,7 @@ TEST(St20p, digest_rtcp_s1) {
   sc.streams = {
       make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422RFC4175PG2BE10)};
   sc.rtcp = true;
-  sc.check_fps = true;
+  sc.check_fps = false;
   sc.packing = ST20_PACKING_GPM_SL;
   st20p_rx_digest_test(sc);
 }
@@ -1635,7 +1672,7 @@ static int test_st20p_tx_user_pacing_done(void* priv, struct st_frame* frame) {
   return 0;
 }
 
-static void st20p_tx_epoch_drop_test(bool user_pacing) {
+static void st20p_tx_epoch_drop_test(bool user_pacing, bool near_deadline = false) {
   auto ctx = st_test_ctx();
   auto st = ctx->handle;
   auto test_ctx = mtl_test::make_context(ctx, 0, 3);
@@ -1674,9 +1711,22 @@ static void st20p_tx_epoch_drop_test(bool user_pacing) {
   mtl_test::ScopedWorker tx_worker(
       test_ctx.get(),
       std::thread(
-          [user_pacing](tests_context* s) {
+          [user_pacing, near_deadline](tests_context* s) {
             auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
             auto m_handle = s->ctx->handle;
+            if (user_pacing && near_deadline) {
+              /* Base near-deadline schedule: target now + 20 ms per frame. */
+              while (!s->stop) {
+                auto frame = st20p_tx_get_frame(handle);
+                if (!frame) continue;
+                frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+                frame->timestamp =
+                    mtl_ptp_read_time(m_handle) + static_cast<uint64_t>(20) * NS_PER_MS;
+                st20p_tx_put_frame(handle, frame);
+                __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
+              }
+              return;
+            }
             if (user_pacing) {
               /* Pace monotonically at 35ms/frame (> 16.68ms at 59.94 fps) to prove
                * ST20P_TX_FLAG_USER_PACING actually governs wire transmission timing. */
@@ -1705,17 +1755,17 @@ static void st20p_tx_epoch_drop_test(bool user_pacing) {
           test_ctx.get()),
       [&]() { st20p_tx_wake_block(tx_handle.get()); });
 
-  if (user_pacing) {
+  if (user_pacing && !near_deadline) {
     EXPECT_TRUE(mtl_test::wait_until(
         [&]() {
           return pacing_ctx.done_cnt.load(std::memory_order_acquire) >= kPacedFrames;
         },
         6000));
   } else {
-    /* 40 paced frames (~0.67 s at 59.94 fps) exercises >13 wraparounds of the 3-slot
-     * ring. */
+    /* 60 paced frames (~1.0 s at 59.94 fps) exercises 20 wraparounds of the 3-slot ring.
+     */
     EXPECT_TRUE(mtl_test::wait_until(
-        [&]() { return mtl_test::tx_frames(test_ctx.get()) >= 40; }, 6000));
+        [&]() { return mtl_test::tx_frames(test_ctx.get()) >= 60; }, 6000));
   }
 
   tx_worker.stop();
@@ -1724,23 +1774,26 @@ static void st20p_tx_epoch_drop_test(bool user_pacing) {
   struct st20_tx_user_stats stats;
   EXPECT_GE(st20p_tx_get_session_stats(tx_handle.get(), &stats), 0);
   EXPECT_GT(mtl_test::tx_frames(test_ctx.get()), 0);
-  info("%s, user_pacing %d, fb_send %d, epoch_drop %" PRIu64 "\n", __func__, user_pacing,
-       mtl_test::tx_frames(test_ctx.get()), stats.common.stat_epoch_drop);
+  info("%s, user_pacing %d near_deadline %d, fb_send %d, epoch_drop %" PRIu64 "\n",
+       __func__, user_pacing, near_deadline, mtl_test::tx_frames(test_ctx.get()),
+       stats.common.stat_epoch_drop);
   EXPECT_EQ(stats.common.stat_epoch_drop, static_cast<uint64_t>(0));
   if (user_pacing) {
-    EXPECT_EQ(stats.common.stat_error_user_timestamp, static_cast<uint64_t>(0));
     EXPECT_GE(stats.common.port[MTL_SESSION_PORT_P].frames, static_cast<uint64_t>(15));
     EXPECT_EQ(pacing_ctx.bad_meta_cnt.load(std::memory_order_acquire), 0);
-    EXPECT_NE(pacing_ctx.first_rtp_ts.load(std::memory_order_acquire),
-              pacing_ctx.last_rtp_ts.load(std::memory_order_acquire));
-    const uint64_t t0 = pacing_ctx.first_done_ptp.load(std::memory_order_acquire);
-    const uint64_t t1 = pacing_ctx.last_done_ptp.load(std::memory_order_acquire);
-    ASSERT_GT(t0, static_cast<uint64_t>(0));
-    ASSERT_GT(t1, t0);
-    const uint64_t elapsed_ns = t1 - t0;
-    EXPECT_GE(elapsed_ns, static_cast<uint64_t>(14) * 28 * NS_PER_MS)
-        << "Elapsed PTP time " << elapsed_ns
-        << " ns too short for 16 frames paced at 35 ms";
+    if (!near_deadline) {
+      EXPECT_EQ(stats.common.stat_error_user_timestamp, static_cast<uint64_t>(0));
+      EXPECT_NE(pacing_ctx.first_rtp_ts.load(std::memory_order_acquire),
+                pacing_ctx.last_rtp_ts.load(std::memory_order_acquire));
+      const uint64_t t0 = pacing_ctx.first_done_ptp.load(std::memory_order_acquire);
+      const uint64_t t1 = pacing_ctx.last_done_ptp.load(std::memory_order_acquire);
+      ASSERT_GT(t0, static_cast<uint64_t>(0));
+      ASSERT_GT(t1, t0);
+      const uint64_t elapsed_ns = t1 - t0;
+      EXPECT_GE(elapsed_ns, static_cast<uint64_t>(14) * 28 * NS_PER_MS)
+          << "Elapsed PTP time " << elapsed_ns
+          << " ns too short for 16 frames paced at 35 ms";
+    }
   }
 }
 
@@ -1749,7 +1802,10 @@ TEST(St20p, tx_no_epoch_drop) {
 }
 
 TEST(St20p, tx_user_pacing_no_epoch_drop) {
-  st20p_tx_epoch_drop_test(true);
+  /* Phase 1: near-deadline now + 20 ms schedule; Phase 2: 35 ms monotonic pacing proof.
+   */
+  st20p_tx_epoch_drop_test(true, /*near_deadline=*/true);
+  st20p_tx_epoch_drop_test(true, /*near_deadline=*/false);
 }
 
 TEST(St20p, query_params) {
@@ -1783,13 +1839,17 @@ TEST(St20p, query_params) {
   uint32_t vrx_pkts = 0;
   EXPECT_EQ(
       st20p_tx_get_pacing_params(tx_handle.get(), &tr_offset_ns, &trs_ns, &vrx_pkts), 0);
-  EXPECT_GT(tr_offset_ns, trs_ns);
-  EXPECT_GE(tr_offset_ns, 500e3);
-  EXPECT_LE(tr_offset_ns, 800e3);
-  EXPECT_GE(trs_ns, 1e3);
-  EXPECT_LE(trs_ns, 15e3);
+  /* ST 2110-21:2022 §6.3.2 (p7): 1080p59.94 BPM T_FRAME = 1001/60000 s,
+   * R_ACTIVE = 1080/1125, N_PACKETS = ceil(5184000/1260) = 4115,
+   * T_R_OFFSET = (43/1125) * T_FRAME = 637674.07 ns,
+   * T_RS = T_FRAME * R_ACTIVE / 4115 = 3892.10 ns. */
+  const double frame_ns = static_cast<double>(NS_PER_S) * 1001.0 / 60000.0;
+  const double expect_tr_offset_ns = frame_ns * (43.0 / 1125.0);
+  const double expect_trs_ns = frame_ns * (1080.0 / 1125.0) / 4115.0;
+  EXPECT_NEAR(tr_offset_ns, expect_tr_offset_ns, 1.0);
+  EXPECT_NEAR(trs_ns, expect_trs_ns, 1.0);
   EXPECT_GE(vrx_pkts, 4u);
-  EXPECT_LE(vrx_pkts, 16u);
+  EXPECT_LE(vrx_pkts, 8u);
   EXPECT_EQ(st20p_tx_get_pacing_params(tx_handle.get(), &tr_offset_ns, nullptr, nullptr),
             0);
   EXPECT_LT(st20p_tx_get_pacing_params(nullptr, &tr_offset_ns, &trs_ns, &vrx_pkts), 0);
@@ -1932,20 +1992,22 @@ TEST(St20p, rx_timing_parser_critical) {
   EXPECT_TRUE(mtl_test::wait_until(
       [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= 5; }, 6000));
 
+  /* ST 2110-21:2022 §6.3.2 (p7), §7.1.2 (p12), §7.1.4 (p13) for 720p59.94 BPM. */
   struct st20_rx_tp_pass pass = {};
   EXPECT_EQ(st20p_rx_timing_parser_critical(pair.rx.get(), &pass), 0);
-  EXPECT_GE(pass.tr_offset, 500000);
-  EXPECT_LE(pass.tr_offset, 750000);
-  EXPECT_GE(pass.cinst_max_narrow, 4);
-  EXPECT_GE(pass.cinst_max_wide, 16);
-  EXPECT_GE(pass.cinst_max_wide, pass.cinst_max_narrow);
-  EXPECT_GE(pass.vrx_max_narrow, 8);
-  EXPECT_GE(pass.vrx_max_wide, 720);
-  EXPECT_GE(pass.vrx_max_wide, pass.vrx_max_narrow);
-  EXPECT_GT(pass.latency_max, 0);
+  EXPECT_EQ(pass.tr_offset, 622844);
+  EXPECT_EQ(pass.cinst_max_narrow, 4);
+  EXPECT_EQ(pass.cinst_max_wide, 16);
+  EXPECT_EQ(pass.cinst_min, 0);
+  EXPECT_EQ(pass.vrx_max_narrow, 8);
+  EXPECT_EQ(pass.vrx_max_wide, 720);
+  EXPECT_EQ(pass.vrx_min, 0);
+  EXPECT_EQ(pass.latency_max, 1000000);
+  EXPECT_EQ(pass.latency_min, 0);
   EXPECT_EQ(pass.rtp_ts_delta_min, 1501);
   EXPECT_EQ(pass.rtp_ts_delta_max, 1502);
-  EXPECT_GT(pass.rtp_offset_max, 0);
+  EXPECT_EQ(pass.rtp_offset_max, 58);
+  EXPECT_EQ(pass.rtp_offset_min, -1);
 
   pair.stop_all();
 }

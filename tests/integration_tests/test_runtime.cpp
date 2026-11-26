@@ -158,6 +158,10 @@ int run_shared_phase(struct st_tests_context* ctx, bool needs_dma) {
   if (!validate_ports(ctx)) return 1;
   const bool link_flap_wa = prepare_common_params(ctx, needs_dma);
 
+  /* Preserve pre-init configured IPs before mtl_port_ip_info() refreshes para.sip_addr.
+   */
+  memcpy(ctx->init_sip_addr, ctx->para.sip_addr, sizeof(ctx->init_sip_addr));
+
   ctx->handle = mtl_init(&ctx->para);
   if (!ctx->handle) {
     err("%s, mtl_init fail\n", __func__);

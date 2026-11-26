@@ -31,15 +31,15 @@
  *   quantization error at 25 fps and <=1.1% at 59.94 fps (vs +/-10% tolerance).
  */
 constexpr int kSt20WarmupFrames = 12;
-constexpr int kSt20MinRateFrames = 35;
-constexpr int kSt20MinRateWindowMs = 1500;
+constexpr int kSt20MinRateFrames = 50;
+constexpr int kSt20MinRateWindowMs = 2000;
 constexpr int kSt20WarmupTimeoutMs = 10000;
-constexpr int kSt20WindowTimeoutMs = 8000;
+constexpr int kSt20WindowTimeoutMs = 10000;
 
-/* Functional/digest wait targets when check_fps is false (~0.4-0.8 s). */
-constexpr int kSt20MinRxFrames = 12;
-constexpr int kSt20MinSliceRxFrames = 25;
-constexpr int kSt20MinShaFrames = 4;
+/* Functional/digest wait targets when check_fps is false (~1.0-1.5 s). */
+constexpr int kSt20MinRxFrames = 30;
+constexpr int kSt20MinSliceRxFrames = 40;
+constexpr int kSt20MinShaFrames = 10;
 constexpr int kSt20EventTimeoutMs = 8000;
 constexpr int kSt20SlicesPerFrame = 32;
 constexpr uint32_t kSt20RtpSsrcBase = 0x20000000u;

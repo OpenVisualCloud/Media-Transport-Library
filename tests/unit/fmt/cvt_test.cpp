@@ -13,6 +13,7 @@
 #include <st_pipeline_api.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <initializer_list>
 #include <memory>
@@ -50,12 +51,23 @@ void fill_u16_masked(uint16_t* p, size_t cnt, uint16_t mask,
   for (size_t i = 0; i < cnt; ++i) p[i] = static_cast<uint16_t>(xorshift32(seed)) & mask;
 }
 
+bool simd_level_available(enum mtl_simd_level lvl) {
+  const enum mtl_simd_level cpu = mtl_get_simd_level();
+  if (lvl == MTL_SIMD_LEVEL_NONE) return true;
+  if (lvl == MTL_SIMD_LEVEL_MAX) return cpu > MTL_SIMD_LEVEL_NONE;
+  return lvl <= cpu;
+}
+
 /* Sweep SIMD levels on full + tail dims, cross-checking SIMD vs scalar and all 64
- * remainders (w=2, h=64..127) for pg2 kernels. */
+ * remainders (w=2, h=64..127) for pg2 kernels. Levels above host CPU support are
+ * skipped rather than silently falling back to scalar self-comparison. */
 template <typename Fn>
 void sweep_simd_rt(Fn fn, std::initializer_list<enum mtl_simd_level> levels,
                    int tail_w = kTailW, int tail_h = kTailH, bool rem64 = true) {
+  int ran = 0;
   for (auto lvl : levels) {
+    if (!simd_level_available(lvl)) continue;
+    ++ran;
     fn(kFullW, kFullH, lvl, lvl);
     fn(tail_w, tail_h, lvl, lvl);
     if (lvl != MTL_SIMD_LEVEL_NONE && lvl != MTL_SIMD_LEVEL_MAX) {
@@ -66,16 +78,29 @@ void sweep_simd_rt(Fn fn, std::initializer_list<enum mtl_simd_level> levels,
       }
     }
   }
+  if (ran == 0) {
+    GTEST_SKIP() << "Host CPU SIMD level "
+                 << mtl_get_simd_level_name(mtl_get_simd_level())
+                 << " does not support any requested SIMD level";
+  }
 }
 
 template <typename Fn>
 void sweep_simd_1way(Fn fn, std::initializer_list<enum mtl_simd_level> levels) {
+  int ran = 0;
   for (auto lvl : levels) {
+    if (!simd_level_available(lvl)) continue;
+    ++ran;
     fn(kFullW, kFullH, lvl);
     fn(kTailW, kTailH, lvl);
     if (lvl != MTL_SIMD_LEVEL_NONE && lvl != MTL_SIMD_LEVEL_MAX) {
       for (int h = 64; h < 128; ++h) fn(2, h, lvl);
     }
+  }
+  if (ran == 0) {
+    GTEST_SKIP() << "Host CPU SIMD level "
+                 << mtl_get_simd_level_name(mtl_get_simd_level())
+                 << " does not support any requested SIMD level";
   }
 }
 
@@ -100,6 +125,8 @@ void check_packed_both(int w, int h, size_t bytes, FwdFn fwd, BackFn back,
 template <typename SrcPg, typename DstPg, typename FwdFn>
 void check_packed_vs_scalar(int w, int h, size_t bytes, FwdFn fwd,
                             enum mtl_simd_level lvl) {
+  /* Never compare scalar against scalar on hosts without the requested SIMD level. */
+  if (lvl == MTL_SIMD_LEVEL_NONE || !simd_level_available(lvl)) return;
   std::vector<uint8_t> src(bytes), ref(bytes), got(bytes);
   fill_bytes(src.data(), bytes);
   EXPECT_EQ(0, fwd(ptr<SrcPg>(src), ptr<DstPg>(ref), w, h, MTL_SIMD_LEVEL_NONE));
@@ -238,9 +265,13 @@ using ScopedFrame = std::unique_ptr<struct st_frame, decltype(&st_frame_free)>;
 
 TEST(Cvt, simd_level) {
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
+  const char* name = mtl_get_simd_level_name(cpu_level);
   EXPECT_GE(cpu_level, MTL_SIMD_LEVEL_NONE);
   EXPECT_LT(cpu_level, MTL_SIMD_LEVEL_MAX);
-  EXPECT_NE(mtl_get_simd_level_name(cpu_level), nullptr);
+  ASSERT_NE(name, nullptr);
+  RecordProperty("cpu_simd_level", name);
+  std::printf("[  SIMD    ] CPU SIMD level: %s (%d)\n", name,
+              static_cast<int>(cpu_level));
 }
 
 /* ── 4:2:2 10-bit conversions ────────────────────────────────────────── */
@@ -323,6 +354,10 @@ TEST(Cvt, rfc4175_422be10_to_yuv422p8) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_yuv420p8) {
+  if (mtl_get_simd_level() < MTL_SIMD_LEVEL_AVX512) {
+    GTEST_SKIP() << "CPU SIMD level " << mtl_get_simd_level_name(mtl_get_simd_level())
+                 << " < AVX512 required for 422be10_to_yuv420p8 SIMD comparison";
+  }
   for (auto [w, h] : {std::pair{kFullW, kFullH}, std::pair{kTail420W, kTail420H}}) {
     const size_t px = static_cast<size_t>(w) * h;
     std::vector<uint8_t> pg10(px * 5 / 2), ref(px * 3 / 2), got(px * 3 / 2);
@@ -332,6 +367,7 @@ TEST(Cvt, rfc4175_422be10_to_yuv420p8) {
                                                        ref.data() + px * 5 / 4, w, h,
                                                        MTL_SIMD_LEVEL_NONE));
     for (auto lvl : {MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_MAX}) {
+      if (!simd_level_available(lvl)) continue;
       EXPECT_EQ(
           0, st20_rfc4175_422be10_to_yuv420p8_simd(p10, got.data(), got.data() + px,
                                                    got.data() + px * 5 / 4, w, h, lvl));
@@ -385,6 +421,7 @@ TEST(Cvt, rfc4175_422_10_v210) {
 
   for (auto lvl : {MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512,
                    MTL_SIMD_LEVEL_AVX512_VBMI2, MTL_SIMD_LEVEL_MAX}) {
+    if (!simd_level_available(lvl)) continue;
     for (auto [w, h] : {std::pair{kFullW, kFullH}, std::pair{kTailW, kTailH},
                         std::pair{kV210BadW, kV210BadH}}) {
       check_via_le(w, h, lvl);
@@ -438,6 +475,7 @@ TEST(Cvt, yuv422p16le_rfc4175_422be10) {
     EXPECT_EQ(in, out);
   };
   for (auto lvl : {MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_AVX512, MTL_SIMD_LEVEL_MAX}) {
+    if (!simd_level_available(lvl)) continue;
     run(kFullW, kFullH, lvl);
     run(kTailW, kTailH, lvl);
   }

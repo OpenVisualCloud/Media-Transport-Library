@@ -331,11 +331,12 @@ TEST(Main, bind_to_lcore) {
 
   EXPECT_EQ(mtl_bind_to_lcore(handle, tid, lcore1), 0);
 #ifndef WINDOWSENV
+  /* Verify single-CPU pinning without assuming lcore_id == OS cpu_id
+   * (false under --remap-lcore-ids). */
   cpu_set_t set1;
   CPU_ZERO(&set1);
   ASSERT_EQ(pthread_getaffinity_np(tid, sizeof(set1), &set1), 0);
   EXPECT_EQ(CPU_COUNT(&set1), 1);
-  EXPECT_TRUE(CPU_ISSET(static_cast<int>(lcore1), &set1));
 #endif
 
   EXPECT_EQ(mtl_bind_to_lcore(handle, tid, lcore2), 0);
@@ -344,7 +345,6 @@ TEST(Main, bind_to_lcore) {
   CPU_ZERO(&set2);
   ASSERT_EQ(pthread_getaffinity_np(tid, sizeof(set2), &set2), 0);
   EXPECT_EQ(CPU_COUNT(&set2), 1);
-  EXPECT_TRUE(CPU_ISSET(static_cast<int>(lcore2), &set2));
   EXPECT_FALSE(CPU_EQUAL(&set1, &set2));
 #endif
 
@@ -373,13 +373,10 @@ TEST(Main, lcore_max) {
 
 TEST(Main, lcore_expect_fail) {
   auto* ctx = st_test_ctx();
-  ASSERT_LT(mtl_put_lcore(ctx->handle, 10000), 0);
-
-  unsigned int lcore = 0;
-  ASSERT_GE(mtl_get_lcore(ctx->handle, &lcore), 0);
-  mtl_test::ScopedLcore guard(ctx->handle, lcore);
-  EXPECT_EQ(guard.reset(), 0);
-  EXPECT_LT(mtl_put_lcore(ctx->handle, lcore), 0);
+  /* Avoid double-putting a released low lcore ID because another process may acquire it
+   * via MtlManager in between. Validate out-of-range IDs instead. */
+  EXPECT_LT(mtl_put_lcore(ctx->handle, 10000), 0);
+  EXPECT_LT(mtl_put_lcore(ctx->handle, 0xFFFFFFFFu), 0);
 
   test_lcore_one(ctx);
 }
@@ -522,7 +519,12 @@ TEST(Main, mode_and_port_info_queries) {
     EXPECT_EQ(rss, ctx->para.rss_mode);
   }
   const enum mtl_iova_mode iova = mtl_iova_mode_get(handle);
-  EXPECT_TRUE(iova == MTL_IOVA_MODE_VA || iova == MTL_IOVA_MODE_PA);
+  if (ctx->para.iova_mode != MTL_IOVA_MODE_AUTO) {
+    EXPECT_EQ(iova, ctx->para.iova_mode);
+  } else {
+    EXPECT_TRUE(iova == MTL_IOVA_MODE_VA || iova == MTL_IOVA_MODE_PA);
+  }
+  EXPECT_EQ(iova, ctx->iova);
 
   for (int port = 0; port < ctx->para.num_ports; port++) {
     auto p = static_cast<enum mtl_port>(port);
@@ -541,14 +543,16 @@ TEST(Main, mode_and_port_info_queries) {
     EXPECT_EQ((~mask + 1u) & (~mask), 0u);
     const uint8_t kSentinel[MTL_IP_ADDR_LEN] = {0xFF, 0xFF, 0xFF, 0xFF};
     EXPECT_NE(memcmp(gateway, kSentinel, MTL_IP_ADDR_LEN), 0);
-    if (!ctx->dhcp) {
+    if (!ctx->dhcp && ctx->para.pmd[port] == MTL_PMD_DPDK_USER) {
+      /* Compare against pre-init configured IP rather than para.sip_addr populated by
+       * mtl_port_ip_info() so a zero/corrupt mtl_port_ip_info() fails. */
+      EXPECT_EQ(memcmp(ip, ctx->init_sip_addr[port], MTL_IP_ADDR_LEN), 0);
+      const uint8_t kDefaultMask[MTL_IP_ADDR_LEN] = {255, 255, 255, 0};
+      const uint8_t kZeroGw[MTL_IP_ADDR_LEN] = {0, 0, 0, 0};
+      EXPECT_EQ(memcmp(netmask, kDefaultMask, MTL_IP_ADDR_LEN), 0);
+      EXPECT_EQ(memcmp(gateway, kZeroGw, MTL_IP_ADDR_LEN), 0);
+    } else if (!ctx->dhcp) {
       EXPECT_EQ(memcmp(ip, ctx->para.sip_addr[port], MTL_IP_ADDR_LEN), 0);
-      if (ctx->para.pmd[port] == MTL_PMD_DPDK_USER) {
-        const uint8_t kDefaultMask[MTL_IP_ADDR_LEN] = {255, 255, 255, 0};
-        const uint8_t kZeroGw[MTL_IP_ADDR_LEN] = {0, 0, 0, 0};
-        EXPECT_EQ(memcmp(netmask, kDefaultMask, MTL_IP_ADDR_LEN), 0);
-        EXPECT_EQ(memcmp(gateway, kZeroGw, MTL_IP_ADDR_LEN), 0);
-      }
     }
     const bool expected_dpdk = (ctx->para.pmd[port] == MTL_PMD_DPDK_USER) ||
                                (ctx->para.pmd[port] == MTL_PMD_DPDK_AF_XDP) ||
@@ -663,6 +667,10 @@ TEST(Misc, ptp) {
   EXPECT_GT(prev, 0u);
   if (user_ptp) {
     EXPECT_GT(cb_after_sync, cb_before_sync);
+    /* First read on cache miss must match the PTP callback value within 5 us. */
+    const uint64_t cb_diff =
+        (prev > cb_after_sync) ? (prev - cb_after_sync) : (cb_after_sync - prev);
+    EXPECT_LT(cb_diff, static_cast<uint64_t>(5) * NS_PER_US);
   }
 
   /* Within the 10 ms cache window (2 ms sleep), mtl_ptp_read_time() must hit the TSC
@@ -677,7 +685,7 @@ TEST(Misc, ptp) {
     const uint64_t real_time = st_test_get_realtime_ns();
     const uint64_t diff =
         (cached > real_time) ? (cached - real_time) : (real_time - cached);
-    EXPECT_LT(diff, static_cast<uint64_t>(5) * NS_PER_MS);
+    EXPECT_LT(diff, static_cast<uint64_t>(50) * NS_PER_US);
   }
   prev = cached;
 
@@ -691,6 +699,7 @@ TEST(Misc, ptp) {
     const uint64_t cb_after_raw = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
     EXPECT_GT(ptp_raw, 0u);
     EXPECT_GT(cb_after_raw, cb_before_raw);
+    EXPECT_EQ(ptp_raw, cb_after_raw);
     EXPECT_GE(ptp_raw, rt_before);
     EXPECT_LE(ptp_raw, rt_after);
     EXPECT_GT(ptp_raw, prev);
@@ -699,7 +708,7 @@ TEST(Misc, ptp) {
     EXPECT_GT(ptp_raw, 0u);
   }
 
-  /* Cached reads must stay strictly monotonic over repeated 2 ms polls. */
+  /* Cached reads must stay strictly monotonic and accurate over repeated 2 ms polls. */
   for (int i = 0; i < 4; i++) {
     st_usleep(2 * 1000);
     const uint64_t cur = mtl_ptp_read_time(handle);
@@ -707,7 +716,7 @@ TEST(Misc, ptp) {
     if (user_ptp) {
       const uint64_t real_time = st_test_get_realtime_ns();
       const uint64_t diff = (cur > real_time) ? (cur - real_time) : (real_time - cur);
-      EXPECT_LT(diff, static_cast<uint64_t>(5) * NS_PER_MS);
+      EXPECT_LT(diff, static_cast<uint64_t>(50) * NS_PER_US);
     }
     prev = cur;
   }
@@ -720,10 +729,10 @@ TEST(Misc, ptp) {
   EXPECT_GT(refreshed, prev);
   if (user_ptp) {
     EXPECT_GT(cb_after_refresh, cb_before_refresh);
-    const uint64_t real_time = st_test_get_realtime_ns();
-    const uint64_t diff =
-        (refreshed > real_time) ? (refreshed - real_time) : (real_time - refreshed);
-    EXPECT_LT(diff, static_cast<uint64_t>(5) * NS_PER_MS);
+    const uint64_t cb_diff = (refreshed > cb_after_refresh)
+                                 ? (refreshed - cb_after_refresh)
+                                 : (cb_after_refresh - refreshed);
+    EXPECT_LT(cb_diff, static_cast<uint64_t>(5) * NS_PER_US);
   }
 }
 

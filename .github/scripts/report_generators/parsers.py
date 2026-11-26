@@ -6,11 +6,11 @@ import json
 import re
 from pathlib import Path
 
-from bs4 import BeautifulSoup
-
 
 def parse_pytest_html(html_file):
     """Parse pytest HTML report and extract test results and individual test cases."""
+    from bs4 import BeautifulSoup
+
     with open(html_file, "r") as f:
         soup = BeautifulSoup(f.read(), "html.parser")
 
@@ -381,12 +381,16 @@ def _parse_gtest_jsonl(records, default_nic):
                 "nic": nic,
                 "category": suite,
                 "test_name": case,
-                "profile": rec.get("profile", "default"),
+                "profile": rec.get("profile", ""),
                 "result": status,
                 "duration": f"{rec.get('duration_ms', 0)} ms",
                 "platform": "gtest",
                 "unstable": raw_res == "flaky",
-                "log": rec.get("message", "") if status == "FAILED" else "",
+                "log": (
+                    (rec.get("log") or rec.get("message", ""))
+                    if status in ("FAILED", "SKIPPED")
+                    else ""
+                ),
             }
         )
     return list(suites.values())

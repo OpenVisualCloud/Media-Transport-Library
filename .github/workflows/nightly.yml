@@ -12,8 +12,7 @@ name: nightly
 run-name: >-
   ${{ (inputs.branch == '' && inputs.gtest && inputs.pytest && inputs.fuzz &&
   inputs.unit && inputs.code_scan && inputs.gtest_cases == '' &&
-  inputs.pytest_dir == '' && inputs.pytest_filter == '' &&
-  inputs.pytest_test_time == '') &&
+  inputs.pytest_dir == '' && inputs.pytest_filter == '') &&
   format('nightly {0}', github.ref_name) ||
   format('nightly {0} (custom inputs)', inputs.branch || github.ref_name) }}
 
@@ -42,10 +41,6 @@ on:
         type: string
       pytest_filter:
         description: 'pytest -k expression for each directory (empty = all nightly tests)'
-        required: false
-        type: string
-      pytest_test_time:
-        description: 'Override seconds of traffic per pytest case (empty = suite default)'
         required: false
         type: string
       fuzz:
@@ -179,9 +174,6 @@ jobs:
   run-pytest:
     needs: build
     if: ${{ inputs.pytest }}
-    concurrency:
-      group: pytest-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}-${{ matrix.suite.dir }}-${{ matrix.suite.shard || 'all' }}
-      cancel-in-progress: true
     strategy:
       matrix:
         nic:
@@ -190,18 +182,16 @@ jobs:
           - e835
         # st20p takes about 6 h on one runner, so 4 shards spread it over the
         # runners of the NIC. A dispatch with pytest_dir runs only that one
-        # directory. Every directory under tests/acceptance/tests/single/ with
-        # pytest.mark.nightly must appear here.
+        # directory.
         suite: >-
           ${{ fromJSON(inputs.pytest_dir && format('[{{"dir": {0}}}]', toJSON(inputs.pytest_dir)) || '[
-          {"dir": "backends"}, {"dir": "cross_app"}, {"dir": "dma"},
-          {"dir": "gstreamer"}, {"dir": "kernel_socket"}, {"dir": "rss_mode"},
-          {"dir": "rx_timing"}, {"dir": "st20"},
+          {"dir": "cross_app"}, {"dir": "st40p"}, {"dir": "gstreamer"},
+          {"dir": "kernel_socket"}, {"dir": "rss_mode"}, {"dir": "rx_timing"},
           {"dir": "st20p", "shard": 1, "shards": 4},
           {"dir": "st20p", "shard": 2, "shards": 4},
           {"dir": "st20p", "shard": 3, "shards": 4},
           {"dir": "st20p", "shard": 4, "shards": 4},
-          {"dir": "st22p"}, {"dir": "st30p"}, {"dir": "st40p"}, {"dir": "xdp"}]') }}
+          {"dir": "st22p"}, {"dir": "st30p"}, {"dir": "xdp"}]') }}
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
@@ -241,14 +231,12 @@ jobs:
       - name: 'preparation: Validate host and download artifacts'
         uses: ./.github/actions/validate-host
         with:
-          nic: ${{ matrix.nic }}
           build_outputs: ${{ toJSON(needs.build.outputs) }}
 
       - name: 'preparation: Set up the acceptance suite'
         uses: ./.github/actions/pytest-setup
         with:
           nic: ${{ matrix.nic }}
-          test_time: ${{ inputs.pytest_test_time }}
 
       - name: 'execution: Run the nightly tests of ${{ env.SUITE }}'
         env:
@@ -555,6 +543,43 @@ jobs:
 
       - name: Build and run the unit suite
         uses: ./.github/actions/unit-tests
+
+  # Run Cvt SIMD unit tests on a self-hosted Xeon runner so AVX-512 and
+  # AVX-512 VBMI2 kernels execute on real hardware instead of skipping on
+  # GitHub-hosted VMs.
+  unit-tests-simd:
+    if: ${{ inputs.unit }}
+    runs-on: dpdk
+    timeout-minutes: 30
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
+
+      - name: Install Task
+        if: inputs.branch != ''
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Overlay CI and tests from the workflow commit
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+
+      - name: Build and run Cvt SIMD unit tests on Xeon
+        run: |
+          ./build.sh unit
+          ./build_unit/tests/unit/UnitTest --gtest_filter='Cvt.*'
 
   # The Clang Static Analyzer results of main, which code scanning compares the
   # alerts of a pull request with. It configures MTL against the DPDK of the

@@ -444,6 +444,42 @@ void expectInitFlagsSet(mtl_handle handle, uint64_t required_flags) {
   EXPECT_EQ(fix.init_flags & required_flags, required_flags);
 }
 
+/* Exercises Main port IP query + St20p create/expect-fail/abort under a mode. */
+void verifyModePortIpAndSt20pControl(struct st_tests_context* ctx, uint16_t udp_port,
+                                     const uint8_t expected_p_ip[MTL_IP_ADDR_LEN]) {
+  mtl_handle st = ctx->handle;
+  uint8_t ip[MTL_IP_ADDR_LEN] = {};
+  uint8_t mask[MTL_IP_ADDR_LEN] = {};
+  uint8_t gw[MTL_IP_ADDR_LEN] = {};
+  ASSERT_EQ(mtl_port_ip_info(st, MTL_PORT_P, ip, mask, gw), 0);
+  EXPECT_EQ(memcmp(ip, expected_p_ip, MTL_IP_ADDR_LEN), 0);
+
+  struct st20p_tx_ops bad_ops = {};
+  bad_ops.name = "init_mode_bad_st20p";
+  mtl_test::fill_tx_port(bad_ops.port, ctx, udp_port, kInitModePt);
+  bad_ops.port.num_port = 0;
+  bad_ops.width = 1920;
+  bad_ops.height = 1080;
+  bad_ops.fps = ST_FPS_P59_94;
+  bad_ops.input_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  bad_ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  bad_ops.framebuff_cnt = 3;
+  EXPECT_EQ(st20p_tx_create(st, &bad_ops), nullptr);
+
+  bad_ops.port.num_port = 1;
+  bad_ops.framebuff_cnt = 1;
+  EXPECT_EQ(st20p_tx_create(st, &bad_ops), nullptr);
+
+  bad_ops.framebuff_cnt = 3;
+  bad_ops.flags = ST20P_TX_FLAG_BLOCK_GET;
+  ScopedSt20pTx tx(st20p_tx_create(st, &bad_ops));
+  ASSERT_TRUE(static_cast<bool>(tx));
+  struct st_frame* f = st20p_tx_get_frame(tx.get());
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(st20p_tx_put_frame_abort(tx.get(), f), 0);
+  EXPECT_LT(st20p_tx_put_frame_abort(tx.get(), f), 0);
+}
+
 struct st20_tx_ops makeBasicSt20TxOps(struct st_tests_context* ctx,
                                       tests_context* test_ctx, const char* name,
                                       uint16_t udp_port) {
@@ -538,6 +574,8 @@ TEST_F(NoCtxTest, init_mode_pacing_tsc_va_rss_l3_l4_multi_src) {
 
   ModeLogTap log_tap;
   setCompactQueues(ctx);
+  uint8_t expected_p_ip[MTL_IP_ADDR_LEN];
+  memcpy(expected_p_ip, ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
   ctx->para.pacing = ST21_TX_PACING_WAY_TSC;
   ctx->para.iova_mode = MTL_IOVA_MODE_VA;
   ctx->para.rss_mode = MTL_RSS_MODE_L3_L4;
@@ -559,6 +597,7 @@ TEST_F(NoCtxTest, init_mode_pacing_tsc_va_rss_l3_l4_multi_src) {
   EXPECT_EQ(res.vrx_pkts, 6u);
   EXPECT_EQ(res.distinct_src_ports, 8u)
       << "MTL_FLAG_MULTI_SRC_PORT must rotate across 8 distinct UDP source ports";
+  verifyModePortIpAndSt20pControl(ctx, kInitModeUdpPort + 50, expected_p_ip);
 }
 
 /* Replaces --pacing_way rl / auto + --iova_mode va + --rss_mode l3_l4 +
@@ -624,17 +663,20 @@ TEST_F(NoCtxTest, init_mode_iova_pa_dma_reject_and_st20p) {
   MTL_TEST_REQUIRE_DPDK_PMD(ctx, MTL_PORT_P);
 
   setCompactQueues(ctx);
+  uint8_t expected_p_ip[MTL_IP_ADDR_LEN];
+  memcpy(expected_p_ip, ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
   ctx->para.pacing = ST21_TX_PACING_WAY_AUTO;
   ctx->para.iova_mode = MTL_IOVA_MODE_PA;
   ctx->para.rss_mode = MTL_RSS_MODE_L3_L4;
-  ctx->para.flags |= MTL_FLAG_MULTI_SRC_PORT;
-  ctx->para.flags &= ~MTL_FLAG_DMA_AUTO;
+  /* Exercise MTL_FLAG_DMA_AUTO under IOVA PA mode (library must safely reject DMA). */
+  ctx->para.flags |= MTL_FLAG_MULTI_SRC_PORT | MTL_FLAG_DMA_AUTO;
   ctx->para.num_dma_dev_port = 0;
   initDefaultContext();
   if (HasFatalFailure()) return;
 
   ASSERT_EQ(mtl_iova_mode_get(ctx->handle), MTL_IOVA_MODE_PA);
   EXPECT_EQ(mtl_rss_mode_get(ctx->handle), MTL_RSS_MODE_L3_L4);
+  verifyModePortIpAndSt20pControl(ctx, kInitModeUdpPort + 52, expected_p_ip);
 
   /* DMA mapping, DMA memory allocation, and UDMA creation must reject in PA mode. */
   mtl_handle st = ctx->handle;
@@ -966,4 +1008,133 @@ TEST_F(NoCtxTest, init_mode_rxtx_simd_512) {
 #endif
   auto res = runSt20pDigestLoopback(ctx, kInitModeUdpPort + 18);
   expectDigestLoopbackOk(res);
+}
+
+/* Covers TSC pacing + IOVA PA mode with ST20p converter timeout recovery. */
+TEST_F(NoCtxTest, init_mode_pacing_tsc_iova_pa_st20p_timeout) {
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+  MTL_TEST_REQUIRE_DPDK_PMD(ctx, MTL_PORT_P);
+
+  ModeLogTap log_tap;
+  setCompactQueues(ctx);
+  uint8_t expected_p_ip[MTL_IP_ADDR_LEN];
+  memcpy(expected_p_ip, ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  ctx->para.pacing = ST21_TX_PACING_WAY_TSC;
+  ctx->para.iova_mode = MTL_IOVA_MODE_PA;
+  ctx->para.rss_mode = MTL_RSS_MODE_L3_L4;
+  initDefaultContext();
+  if (HasFatalFailure()) return;
+
+  ASSERT_EQ(mtl_iova_mode_get(ctx->handle), MTL_IOVA_MODE_PA);
+  EXPECT_EQ(mtl_rss_mode_get(ctx->handle), MTL_RSS_MODE_L3_L4);
+
+  ASSERT_EQ(st_test_convert_plugin_register(ctx), 0);
+  struct UnregGuard {
+    st_tests_context* c;
+    ~UnregGuard() {
+      st_test_convert_plugin_unregister(c);
+    }
+  } unreg{ctx};
+  mtl_test::ScopedPluginFaults faults(ctx, /*fail_interval=*/0, /*timeout_interval=*/3,
+                                      /*timeout_ms=*/20);
+
+  constexpr uint32_t kW = 1920, kH = 1080;
+  constexpr enum st_frame_fmt kFmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  const size_t frame_sz = st_frame_size(kFmt, kW, kH, false);
+
+  struct st20p_tx_ops tx_ops = {};
+  tx_ops.name = "tsc_pa_timeout_tx";
+  mtl_test::fill_tx_port(tx_ops.port, ctx, kInitModeUdpPort + 20, kInitModePt);
+  tx_ops.width = kW;
+  tx_ops.height = kH;
+  tx_ops.fps = ST_FPS_P59_94;
+  tx_ops.input_fmt = kFmt;
+  tx_ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  tx_ops.device = ST_PLUGIN_DEVICE_TEST;
+  tx_ops.framebuff_cnt = 3;
+  tx_ops.flags = ST20P_TX_FLAG_BLOCK_GET;
+
+  struct st20p_rx_ops rx_ops = {};
+  rx_ops.name = "tsc_pa_timeout_rx";
+  mtl_test::fill_rx_port(rx_ops.port, ctx, kInitModeUdpPort + 20, kInitModePt);
+  rx_ops.width = kW;
+  rx_ops.height = kH;
+  rx_ops.fps = ST_FPS_P59_94;
+  rx_ops.output_fmt = kFmt;
+  rx_ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  rx_ops.device = ST_PLUGIN_DEVICE_TEST;
+  rx_ops.framebuff_cnt = 3;
+  rx_ops.flags = ST20P_RX_FLAG_BLOCK_GET;
+
+  ScopedSt20pRx rx(st20p_rx_create(ctx->handle, &rx_ops));
+  ScopedSt20pTx tx(st20p_tx_create(ctx->handle, &tx_ops));
+  ASSERT_TRUE(static_cast<bool>(rx));
+  ASSERT_TRUE(static_cast<bool>(tx));
+  EXPECT_EQ(st20p_tx_set_block_timeout(tx.get(), 200 * NS_PER_MS), 0);
+  EXPECT_EQ(st20p_rx_set_block_timeout(rx.get(), 200 * NS_PER_MS), 0);
+
+  unsigned char expect_sha[3][SHA256_DIGEST_LENGTH];
+  for (uint16_t i = 0; i < 3; i++) {
+    auto* fb = static_cast<uint8_t*>(st20p_tx_get_fb_addr(tx.get(), i));
+    ASSERT_NE(fb, nullptr);
+    st_test_rand_data(fb, frame_sz - SHA256_DIGEST_LENGTH, 0x70 + i);
+    SHA256(fb, frame_sz - SHA256_DIGEST_LENGTH, expect_sha[i]);
+    /* ST_PLUGIN_DEVICE_TEST forwards the trailing SHA-256 digest through TX and RX. */
+    memcpy(fb + frame_sz - SHA256_DIGEST_LENGTH, expect_sha[i], SHA256_DIGEST_LENGTH);
+  }
+
+  std::atomic<bool> stop{false};
+  std::atomic<int> rx_ok{0}, sha_fail{0};
+  std::thread rx_th([&]() {
+    while (!stop.load(std::memory_order_acquire)) {
+      struct st_frame* f = st20p_rx_get_frame(rx.get());
+      if (!f) continue;
+      if (st_is_frame_complete(f->status) && f->addr[0] && f->data_size == frame_sz) {
+        const auto* got_sha =
+            static_cast<const uint8_t*>(f->addr[0]) + frame_sz - SHA256_DIGEST_LENGTH;
+        bool matched = false;
+        for (int k = 0; k < 3; k++) {
+          if (memcmp(got_sha, expect_sha[k], SHA256_DIGEST_LENGTH) == 0) {
+            matched = true;
+            break;
+          }
+        }
+        if (matched)
+          rx_ok.fetch_add(1, std::memory_order_relaxed);
+        else
+          sha_fail.fetch_add(1, std::memory_order_relaxed);
+      }
+      EXPECT_GE(st20p_rx_put_frame(rx.get(), f), 0);
+    }
+  });
+  std::thread tx_th([&]() {
+    while (!stop.load(std::memory_order_acquire)) {
+      struct st_frame* f = st20p_tx_get_frame(tx.get());
+      if (!f) continue;
+      EXPECT_GE(st20p_tx_put_frame(tx.get(), f), 0);
+    }
+  });
+  mtl_test::ScopedWorker rx_w(nullptr, std::move(rx_th), [&]() {
+    stop.store(true, std::memory_order_release);
+    st20p_rx_wake_block(rx.get());
+  });
+  mtl_test::ScopedWorker tx_w(nullptr, std::move(tx_th), [&]() {
+    stop.store(true, std::memory_order_release);
+    st20p_tx_wake_block(tx.get());
+  });
+
+  ASSERT_GE(mtl_start(ctx->handle), 0);
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return rx_ok.load(std::memory_order_relaxed) >= 24; }, kInitModeTimeoutMs));
+  tx_w.stop();
+  rx_w.stop();
+  EXPECT_GE(mtl_stop(ctx->handle), 0);
+  rx.reset();
+  tx.reset();
+
+  EXPECT_GE(rx_ok.load(std::memory_order_relaxed), 24);
+  EXPECT_EQ(sha_fail.load(std::memory_order_relaxed), 0);
+  EXPECT_TRUE(ModeLogTap::saw_dev_tsc.load(std::memory_order_acquire));
+  EXPECT_TRUE(ModeLogTap::saw_tx_tsc.load(std::memory_order_acquire));
+  verifyModePortIpAndSt20pControl(ctx, kInitModeUdpPort + 54, expected_p_ip);
 }

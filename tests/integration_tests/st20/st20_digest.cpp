@@ -157,19 +157,19 @@ void st20_rx_digest_test(const St20DigestScenario& s) {
       EXPECT_LT(rx_stats[i].stat_frames_incomplete, 8u);
     }
     if (st.rx_type == ST20_TYPE_SLICE_LEVEL)
-      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 8);
+      EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
+    else if (s.enable_rtcp)
+      EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     else
-      EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 4);
-    if (s.check_fps && !s.enable_rtcp) {
-      EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
+      EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 1);
+    if (st.rx_type == ST20_TYPE_FRAME_LEVEL && s.check_fps && !s.enable_rtcp &&
+        !s.out_of_order) {
+      EXPECT_LE(test_ctx_rx[i]->meta_timing_fail_cnt, 2);
     }
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     EXPECT_EQ(mtl_test::relaxed_load(&test_ctx_rx[i]->rx_meta_fail_cnt), 0);
     EXPECT_EQ(mtl_test::relaxed_load(&test_ctx_rx[i]->rx_field_fail_cnt), 0);
-    if (st.rx_type == ST20_TYPE_FRAME_LEVEL)
-      EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
-    else
-      EXPECT_LE(test_ctx_rx[i]->sha_fail_cnt, 2);
+    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     info("%s, session %d fb_rec %d framerate %f fb_send %d\n", __func__, i,
          test_ctx_rx[i]->fb_rec, res.rate[i], test_ctx_tx[i]->fb_send);
     if (st.rx_type == ST20_TYPE_SLICE_LEVEL) {
@@ -185,6 +185,16 @@ void st20_rx_digest_test(const St20DigestScenario& s) {
 
 }  // namespace
 
+/* RTP-level TX/RX where 274 5-byte pgroups + 26-byte header fill 1396 bytes exactly. */
+TEST(St20_rx, digest_rtp_1080p_fps59_94_s1_pkt1396) {
+  St20DigestScenario sc;
+  sc.streams = {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_BPM,
+                 ST_FPS_P59_94, 1920, 1080, false}};
+  sc.check_fps = true;
+  sc.rtp_pkt_size = 1396;
+  st20_rx_digest_test(sc);
+}
+
 /* RTP-level TX/RX of a session at the 1452-byte rtp_pkt_size limit. Whole 5-byte
  * pgroups cap its largest pkt at 1451 bytes, the session's mbufs and rate are 1452. */
 TEST(St20_rx, digest_rtp_1080p_fps59_94_s1_pkt1452) {
@@ -193,6 +203,32 @@ TEST(St20_rx, digest_rtp_1080p_fps59_94_s1_pkt1452) {
                  ST_FPS_P59_94, 1920, 1080, false}};
   sc.check_fps = true;
   sc.rtp_pkt_size = 1452;
+  st20_rx_digest_test(sc);
+}
+
+/* Single-stream 1080p59.94 frame-level TX/RX with check_fps=true so meta_timing_fail_cnt
+ * actively guards the gapped model (ST 2110-21:2022 §6.3.2 p7) without multi-stream
+ * scheduler contention. */
+TEST(St20_rx, digest_frame_1080p_fps59_94_s1) {
+  St20DigestScenario sc;
+  sc.streams = {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM,
+                 ST_FPS_P59_94, 1920, 1080, false}};
+  sc.check_fps = true;
+  st20_rx_digest_test(sc);
+}
+
+/* Frame-level TX/RX across GPM_SL 1080p, GPM 1080x720p50, and BPM 2160p29.97. */
+TEST(St20_rx, digest_frame_s3) {
+  St20DigestScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
+       1920, 1080, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1080,
+       720, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
+       1920 * 2, 1080 * 2, false},
+  };
+  sc.check_fps = false;
   st20_rx_digest_test(sc);
 }
 

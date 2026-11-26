@@ -169,36 +169,46 @@ void run_dma_op_once(mtl_udma_handle dma, mtl_test::ScopedHpBuf& dst,
 
 void test_dma_op(struct st_tests_context* ctx, bool fill, uint32_t off, uint32_t len,
                  uint8_t pattern = 0) {
-  mtl_test::ScopedUdma dma(mtl_udma_create(ctx->handle, 128, MTL_PORT_P));
-  ASSERT_TRUE(dma);
+  /* Declare buffers before uDMA so RAII frees uDMA before the buffers. */
   mtl_test::ScopedHpBuf dst(ctx->handle, static_cast<size_t>(len) + 64u);
   ASSERT_TRUE(dst);
   mtl_test::ScopedHpBuf src(ctx->handle, static_cast<size_t>(len) + 64u);
   ASSERT_TRUE(src);
+  mtl_test::ScopedUdma dma(mtl_udma_create(ctx->handle, 128, MTL_PORT_P));
+  ASSERT_TRUE(dma);
   run_dma_op_once(dma.get(), dst, src, fill, off, len, pattern);
 }
 
 void test_dma_op_sanity(struct st_tests_context* ctx, bool fill) {
-  mtl_test::ScopedUdma dma(mtl_udma_create(ctx->handle, 128, MTL_PORT_P));
-  ASSERT_TRUE(dma);
-
-  constexpr uint32_t kBufSize = 1024;
+  /* 2048-byte buffer keeps a non-empty trailing canary for every op up to len=1024
+   * and off=128, while covering lengths 1..1024 (including 66..957) and offsets 0..128.
+   */
+  constexpr uint32_t kBufSize = 2048;
   mtl_test::ScopedHpBuf dst(ctx->handle, kBufSize);
   ASSERT_TRUE(dst);
   mtl_test::ScopedHpBuf src(ctx->handle, kBufSize);
   ASSERT_TRUE(src);
+  mtl_test::ScopedUdma dma(mtl_udma_create(ctx->handle, 128, MTL_PORT_P));
+  ASSERT_TRUE(dma);
 
-  static constexpr uint32_t kBounds[] = {0, 1, 3, 7, 15, 31, 33, 63, 64, 65};
-  for (uint32_t b : kBounds) {
-    if (b > 0) {
-      ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, fill, 0, b,
-                                              static_cast<uint8_t>((b % 255u) + 1u)));
-    }
-    ASSERT_NO_FATAL_FAILURE(
-        run_dma_op_once(dma.get(), dst, src, fill, b, kBufSize,
-                        static_cast<uint8_t>(((b * 3u) % 255u) + 1u)));
+  /* Sweep lengths 1..65 (every byte) and 66..1024 (step 4, plus 1024) at offset 0. */
+  for (uint32_t len = 1; len <= 65; len++) {
+    ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, fill, 0, len,
+                                            static_cast<uint8_t>((len % 255u) + 1u)));
   }
-  ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, fill, 33, 991, 0xA5));
+  for (uint32_t len = 66; len <= 1024; len += 4) {
+    ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, fill, 0, len,
+                                            static_cast<uint8_t>((len % 255u) + 1u)));
+  }
+  ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, fill, 0, 1024, 0x5Au));
+
+  /* Sweep offsets 1..128 with non-empty trailing canary (end <= 1152 < kBufSize). */
+  for (uint32_t off = 1; off <= 128; off++) {
+    ASSERT_NO_FATAL_FAILURE(
+        run_dma_op_once(dma.get(), dst, src, fill, off, off + 1024u,
+                        static_cast<uint8_t>(((off * 3u) % 255u) + 1u)));
+  }
+  ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, fill, 128, 1152, 0xA5));
 }
 
 void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
@@ -209,15 +219,15 @@ void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
   const int fb_size = element_size * nb_elements;
   const uint8_t pattern = 0xa5;
 
-  mtl_test::ScopedUdma dma(mtl_udma_create(st, nb_desc, MTL_PORT_P));
-  ASSERT_TRUE(dma);
-
+  /* Declare buffers before uDMA so RAII frees uDMA before the buffers. */
   mtl_test::ScopedHpBuf fb_dst(st, static_cast<size_t>(fb_size));
   ASSERT_TRUE(fb_dst);
   ASSERT_NE(fb_dst.iova(), MTL_BAD_IOVA);
   mtl_test::ScopedHpBuf fb_src(st, static_cast<size_t>(fb_size));
   ASSERT_TRUE(fb_src);
   ASSERT_NE(fb_src.iova(), MTL_BAD_IOVA);
+  mtl_test::ScopedUdma dma(mtl_udma_create(st, nb_desc, MTL_PORT_P));
+  ASSERT_TRUE(dma);
 
   memset(fb_dst.data(), fill ? static_cast<uint8_t>(pattern ^ 0x55u) : 0xEEu,
          static_cast<size_t>(fb_size));
@@ -497,9 +507,6 @@ TEST(Dma, map_copy) {
   MTL_TEST_REQUIRE_DMA(ctx);
 
   mtl_handle st = ctx->handle;
-  mtl_test::ScopedUdma dma(mtl_udma_create(st, 128, MTL_PORT_P));
-  ASSERT_TRUE(dma);
-
   size_t pg_sz = mtl_page_size(st);
   const size_t copy_size = 64 * pg_sz;
   mtl_test::PageAlignedBuf dst(copy_size, pg_sz);
@@ -515,10 +522,14 @@ TEST(Dma, map_copy) {
   ASSERT_TRUE(src_map.valid());
   ASSERT_TRUE(dst_map.valid());
 
+  mtl_test::ScopedUdma dma(mtl_udma_create(st, 128, MTL_PORT_P));
+  ASSERT_TRUE(dma);
+
   ASSERT_GE(mtl_udma_copy(dma.get(), dst_map.iova(), src_map.iova(),
                           static_cast<uint32_t>(copy_size)),
             0);
   ASSERT_TRUE(mtl_test::udma_submit_and_wait(dma.get(), 1));
+  dma.reset();
 
   EXPECT_EQ(memcmp(dst.data(), expected.data(), copy_size), 0)
       << "DMA map copy destination mismatch";
@@ -560,13 +571,12 @@ TEST(Dma, mem_alloc_copy) {
   MTL_TEST_REQUIRE_DMA(ctx);
 
   mtl_handle st = ctx->handle;
-  mtl_test::ScopedUdma dma(mtl_udma_create(st, 128, MTL_PORT_P));
-  ASSERT_TRUE(dma);
-
   for (uint32_t copy_size : {1024u, 65536u}) {
     mtl_test::ScopedDmaMem src(st, copy_size), dst(st, copy_size);
     ASSERT_NO_FATAL_FAILURE(assert_dma_mem_valid(src));
     ASSERT_NO_FATAL_FAILURE(assert_dma_mem_valid(dst));
+    mtl_test::ScopedUdma dma(mtl_udma_create(st, 128, MTL_PORT_P));
+    ASSERT_TRUE(dma);
 
     auto* src_bytes = static_cast<uint8_t*>(src.addr());
     auto* dst_bytes = static_cast<uint8_t*>(dst.addr());
@@ -588,12 +598,12 @@ TEST(Dma, create_default_desc_and_completed_edges) {
   MTL_TEST_REQUIRE_DMA(ctx);
 
   mtl_handle st = ctx->handle;
+  mtl_test::ScopedHpBuf dst(st, 1024);
+  mtl_test::ScopedHpBuf src(st, 1024);
   mtl_test::ScopedUdma dma(mtl_udma_create(st, 0, MTL_PORT_P));
   ASSERT_TRUE(dma);
   EXPECT_EQ(mtl_udma_completed(dma.get(), 32), 0u);
 
-  mtl_test::ScopedHpBuf dst(st, 1024);
-  mtl_test::ScopedHpBuf src(st, 1024);
   ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, true, 0, 1024, 0x5Au));
   EXPECT_EQ(mtl_udma_completed(dma.get(), 32), 0u);
 }

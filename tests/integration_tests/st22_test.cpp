@@ -52,9 +52,9 @@ inline void* get_handle(const tests_context* c) {
  *     50-59.94 fps (<= 2.0% edge error) and ~30 frames at 29.97 fps (<= 3.3%
  *     error), well inside the +/-10% FPS tolerance.
  */
-constexpr int kSt22RateWarmupFrames = 3;
-constexpr int kSt22RateMinDeltaFrames = 25;
-constexpr int kSt22RateMinWindowMs = 1000;
+constexpr int kSt22RateWarmupFrames = 6;
+constexpr int kSt22RateMinDeltaFrames = 50;
+constexpr int kSt22RateMinWindowMs = 2000;
 
 struct St22SessionSpec {
   enum st22_type type = ST22_TYPE_FRAME_LEVEL;
@@ -130,6 +130,9 @@ static int st22_rx_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
   void* h = get_handle(ctx);
   if (!h) return -EIO;
   check_st22_rx_meta(ctx, meta);
+  if (!meta || meta->status != ST_FRAME_STATUS_COMPLETE) {
+    atomic_inc(&ctx->incomplete_frame_cnt);
+  }
   atomic_inc(&ctx->fb_rec);
   st22_rx_put_framebuff((st22_rx_handle)h, frame);
   return 0;
@@ -951,7 +954,7 @@ static void st22_rx_digest_test(const std::vector<St22SessionSpec>& specs,
   cfg.on_tx_ops = [enable_rtcp](size_t, tests_context*, struct st22_tx_ops* ops) {
     if (enable_rtcp) {
       ops->flags |= ST22_TX_FLAG_ENABLE_RTCP;
-      ops->rtcp.buffer_size = 1024;
+      ops->rtcp.buffer_size = 512;
     }
   };
   cfg.on_tx_created = [](size_t, St22TxSession& s) {

@@ -107,13 +107,17 @@ TEST(St20_tx, query_params) {
   uint32_t vrx_pkts = 0;
   EXPECT_EQ(st20_tx_get_pacing_params(handle.get(), &tr_offset_ns, &trs_ns, &vrx_pkts),
             0);
-  EXPECT_GT(tr_offset_ns, trs_ns);
-  EXPECT_GE(tr_offset_ns, 500e3);
-  EXPECT_LE(tr_offset_ns, 800e3);
-  EXPECT_GE(trs_ns, 1e3);
-  EXPECT_LE(trs_ns, 15e3);
+  /* ST 2110-21:2022 §6.3.2 (p7): 1080p59.94 BPM T_FRAME = 1001/60000 s,
+   * R_ACTIVE = 1080/1125, N_PACKETS = ceil(5184000/1260) = 4115,
+   * T_R_OFFSET = (43/1125) * T_FRAME = 637674.07 ns,
+   * T_RS = T_FRAME * R_ACTIVE / 4115 = 3892.10 ns. */
+  const double frame_ns = static_cast<double>(NS_PER_S) * 1001.0 / 60000.0;
+  const double expect_tr_offset_ns = frame_ns * (43.0 / 1125.0);
+  const double expect_trs_ns = frame_ns * (1080.0 / 1125.0) / 4115.0;
+  EXPECT_NEAR(tr_offset_ns, expect_tr_offset_ns, 1.0);
+  EXPECT_NEAR(trs_ns, expect_trs_ns, 1.0);
   EXPECT_GE(vrx_pkts, 4u);
-  EXPECT_LE(vrx_pkts, 16u);
+  EXPECT_LE(vrx_pkts, 8u);
   const double expected_tr_offset_ns = tr_offset_ns;
   tr_offset_ns = -1.0;
   EXPECT_EQ(st20_tx_get_pacing_params(handle.get(), &tr_offset_ns, nullptr, nullptr), 0);
@@ -302,20 +306,22 @@ TEST(St20_rx, timing_parser_critical) {
   EXPECT_TRUE(mtl_test::wait_until(
       [&]() { return mtl_test::rx_frames(rx_ctx.get()) >= 5; }, kSt20WarmupTimeoutMs));
 
+  /* ST 2110-21:2022 §6.3.2 (p7), §7.1.2 (p12), §7.1.4 (p13) for 720p59.94 BPM. */
   struct st20_rx_tp_pass pass = {};
   EXPECT_EQ(st20_rx_timing_parser_critical(rx_handle.get(), &pass), 0);
-  EXPECT_GE(pass.cinst_max_narrow, 4);
-  EXPECT_GE(pass.cinst_max_wide, 16);
-  EXPECT_GE(pass.cinst_max_wide, pass.cinst_max_narrow);
-  EXPECT_GE(pass.vrx_max_narrow, 8);
-  EXPECT_GE(pass.vrx_max_wide, 720);
-  EXPECT_GE(pass.vrx_max_wide, pass.vrx_max_narrow);
-  EXPECT_GE(pass.tr_offset, 500000);
-  EXPECT_LE(pass.tr_offset, 750000);
-  EXPECT_GT(pass.latency_max, 0);
+  EXPECT_EQ(pass.cinst_max_narrow, 4);
+  EXPECT_EQ(pass.cinst_max_wide, 16);
+  EXPECT_EQ(pass.cinst_min, 0);
+  EXPECT_EQ(pass.vrx_max_narrow, 8);
+  EXPECT_EQ(pass.vrx_max_wide, 720);
+  EXPECT_EQ(pass.vrx_min, 0);
+  EXPECT_EQ(pass.tr_offset, 622844);
+  EXPECT_EQ(pass.latency_max, 1000000);
+  EXPECT_EQ(pass.latency_min, 0);
   EXPECT_EQ(pass.rtp_ts_delta_min, 1501);
   EXPECT_EQ(pass.rtp_ts_delta_max, 1502);
-  EXPECT_GT(pass.rtp_offset_max, 0);
+  EXPECT_EQ(pass.rtp_offset_max, 58);
+  EXPECT_EQ(pass.rtp_offset_min, -1);
 
   tx_ctx->ready.store(false, std::memory_order_release);
   EXPECT_GE(mtl_run.stop(), 0);

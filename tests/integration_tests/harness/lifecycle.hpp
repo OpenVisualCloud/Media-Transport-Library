@@ -124,6 +124,19 @@ inline void verify_create_free(OpsInitFn&& ops_init, AssertCntFn&& assert_cnt, i
           return batch;
         };
 
+        /* Exercise repeated 0 -> 1 -> 0 transitions so scheduler stop and free run
+         * multiple times before holding the persistent base sessions. */
+        if (base > 0) {
+          for (int c = 0; c < 3; c++) {
+            auto single = create_batch(1);
+            ASSERT_EQ(static_cast<int>(single.size()), 1);
+            single[0].reset();
+            assert_cnt(--expect_cnt);
+            assert_cnt(0);
+            EXPECT_EQ(st_test_sch_cnt(ctx), base_sch);
+          }
+        }
+
         auto base_handles = create_batch(base);
         ASSERT_EQ(static_cast<int>(base_handles.size()), base);
         for (int r = 0; r < repeat; r++) {

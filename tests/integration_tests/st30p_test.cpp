@@ -22,11 +22,11 @@
  * A 600ms window collects ~60 frames (<= 1.7% edge quantization error),
  * well inside the +/-10% FPS tolerance.
  */
-static constexpr int kSt30pRateWarmupFrames = 5;
-static constexpr int kSt30pRateMinDeltaFrames = 40;
-static constexpr int kSt30pRateMinWindowMs = 600;
-static constexpr int kSt30pPhaseTargetFrames = 30;
-static constexpr int kSt30pPhaseTimeoutMs = 5000;
+static constexpr int kSt30pRateWarmupFrames = 10;
+static constexpr int kSt30pRateMinDeltaFrames = 100;
+static constexpr int kSt30pRateMinWindowMs = 1500;
+static constexpr int kSt30pPhaseTargetFrames = 100;
+static constexpr int kSt30pPhaseTimeoutMs = 6000;
 
 static int test_st30p_frame_available(void* priv) {
   auto s = static_cast<tests_context*>(priv);
@@ -487,7 +487,7 @@ static void st30p_rx_digest_test(const std::vector<St30pStreamSpec>& specs,
     EXPECT_GT(mtl_test::tx_done_frames(raw_tx[i]), 0);
     EXPECT_EQ(mtl_test::relaxed_load(&raw_tx[i]->incomplete_frame_cnt), 0);
     EXPECT_GT(mtl_test::rx_frames(raw_rx[i]), 0);
-    EXPECT_LE(mtl_test::relaxed_load(&raw_rx[i]->incomplete_frame_cnt), 4);
+    EXPECT_EQ(mtl_test::relaxed_load(&raw_rx[i]->incomplete_frame_cnt), 0);
     EXPECT_GT(mtl_test::sha_checked_frames(raw_rx[i]), 0);
     EXPECT_EQ(mtl_test::relaxed_load(&raw_rx[i]->sha_fail_cnt), 0);
     if (opts.check_fps) {
@@ -512,9 +512,10 @@ TEST(St30p, digest_s3) {
 TEST(St30p, digest_s3_block) {
   St30pDigestOptions opts;
   opts.block_get = true;
+  /* ST 2110-31:2022 §6.1 (p9): AM824 channel count shall always be an even number. */
   st30p_rx_digest_test(
       {
-          {ST31_FMT_AM824, 3, ST31_SAMPLING_44K, ST31_PTIME_1_09MS},
+          {ST31_FMT_AM824, 4, ST31_SAMPLING_44K, ST31_PTIME_1_09MS},
           {ST30_FMT_PCM16, 5, ST30_SAMPLING_96K, ST30_PTIME_1MS},
           {ST30_FMT_PCM24, 7, ST30_SAMPLING_48K, ST30_PTIME_125US},
       },
@@ -852,12 +853,35 @@ TEST(St30p, update_source_and_destination) {
   const St30pStreamSpec spec;
   const uint16_t base_port = ST30P_TEST_UDP_PORT + 300;
   double expect_fps = 100.0;
+  constexpr uint8_t kPatTx0 = 0xA0;
+  constexpr uint8_t kPatTx1 = 0xB1;
 
-  /* TX0 + RX share St30pLoopback; TX1 provides a second multicast source. */
+  /* TX0 + RX share St30pLoopback; TX1 provides a second multicast source with distinct
+   * payload bytes so Phase 1 proves RX actually switched away from TX0. */
+  struct SigTracker {
+    std::atomic<int> tx0{0};
+    std::atomic<int> tx1{0};
+    std::atomic<int> other{0};
+    void reset() {
+      tx0.store(0, std::memory_order_relaxed);
+      tx1.store(0, std::memory_order_relaxed);
+      other.store(0, std::memory_order_relaxed);
+    }
+  } tracker;
+
   St30pLoopback lb(ctx);
   auto tx1_ctx = mtl_test::make_context(ctx, 1, 3);
   ScopedSt30pTx tx1;
   mtl_test::ScopedWorker tx1_worker;
+
+  auto fill_tx_pattern = [](st30p_tx_handle h, int fb_cnt, uint8_t pat) {
+    const size_t fsz = st30p_tx_frame_size(h);
+    for (int i = 0; i < fb_cnt; i++) {
+      void* fb = st30p_tx_get_fb_addr(h, static_cast<uint16_t>(i));
+      ASSERT_NE(fb, nullptr);
+      memset(fb, pat, fsz);
+    }
+  };
 
   struct st30p_tx_ops ops_tx0;
   init_st30p_tx_ops(&ops_tx0, lb.tx_ctx.get(), spec, "st30p_update_tx0", base_port,
@@ -866,6 +890,7 @@ TEST(St30p, update_source_and_destination) {
   lb.tx.reset(st30p_tx_create(st, &ops_tx0));
   ASSERT_TRUE(static_cast<bool>(lb.tx));
   EXPECT_EQ(st30p_tx_set_block_timeout(lb.tx.get(), NS_PER_S), 0);
+  ASSERT_NO_FATAL_FAILURE(fill_tx_pattern(lb.tx.get(), lb.tx_ctx->fb_cnt, kPatTx0));
   __atomic_store_n(&lb.tx_ctx->handle, lb.tx.get(), __ATOMIC_RELEASE);
 
   struct st30p_tx_ops ops_tx1;
@@ -876,6 +901,7 @@ TEST(St30p, update_source_and_destination) {
   tx1.reset(st30p_tx_create(st, &ops_tx1));
   ASSERT_TRUE(static_cast<bool>(tx1));
   EXPECT_EQ(st30p_tx_set_block_timeout(tx1.get(), NS_PER_S), 0);
+  ASSERT_NO_FATAL_FAILURE(fill_tx_pattern(tx1.get(), tx1_ctx->fb_cnt, kPatTx1));
   __atomic_store_n(&tx1_ctx->handle, tx1.get(), __ATOMIC_RELEASE);
 
   struct st30p_rx_ops ops_rx;
@@ -887,23 +913,57 @@ TEST(St30p, update_source_and_destination) {
   __atomic_store_n(&lb.rx_ctx->handle, lb.rx.get(), __ATOMIC_RELEASE);
 
   lb.start_tx();
-  lb.start_rx();
+  lb.rx_worker = mtl_test::ScopedWorker(
+      lb.rx_ctx.get(),
+      std::thread(
+          [&tracker](tests_context* s) {
+            auto handle = static_cast<st30p_rx_handle>(
+                __atomic_load_n(&s->handle, __ATOMIC_ACQUIRE));
+            while (!s->stop) {
+              struct st30_frame* frame = st30p_rx_get_frame(handle);
+              if (!frame) continue;
+              if (frame->addr && frame->data_size > 0) {
+                const auto* b = static_cast<const uint8_t*>(frame->addr);
+                const uint8_t first = b[0];
+                bool uniform = (first == kPatTx0 || first == kPatTx1);
+                for (size_t k = 1; uniform && k < frame->data_size; k++) {
+                  if (b[k] != first) uniform = false;
+                }
+                if (uniform && first == kPatTx0)
+                  tracker.tx0.fetch_add(1, std::memory_order_relaxed);
+                else if (uniform && first == kPatTx1)
+                  tracker.tx1.fetch_add(1, std::memory_order_relaxed);
+                else
+                  tracker.other.fetch_add(1, std::memory_order_relaxed);
+              }
+              st30p_rx_put_frame(handle, frame);
+              __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
+            }
+          },
+          lb.rx_ctx.get()),
+      [h = lb.rx.get()]() { st30p_rx_wake_block(h); });
   tx1_worker = mtl_test::ScopedWorker(
       tx1_ctx.get(), std::thread(test_st30p_tx_frame_thread, tx1_ctx.get()),
       [h = tx1.get()]() { st30p_tx_wake_block(h); });
 
   EXPECT_GE(lb.mtl.start(), 0);
   std::vector<tests_context*> rx_ctxs{lb.rx_ctx.get()};
-  EXPECT_TRUE(mtl_test::wait_for_all(rx_ctxs, mtl_test::rx_frames,
-                                     kSt30pPhaseTargetFrames, kSt30pPhaseTimeoutMs));
+  EXPECT_TRUE(
+      mtl_test::wait_for_all(rx_ctxs, mtl_test::rx_frames, 30, kSt30pPhaseTimeoutMs));
+  EXPECT_GT(tracker.tx0.load(std::memory_order_relaxed), 10) << "initial";
+  EXPECT_EQ(tracker.tx1.load(std::memory_order_relaxed), 0) << "initial";
+  EXPECT_EQ(tracker.other.load(std::memory_order_relaxed), 0) << "initial";
 
-  auto verify_switch = [&](const char* label, const uint8_t* src_ip, uint16_t udp_port) {
+  auto verify_switch = [&](const char* label, const uint8_t* src_ip, uint16_t udp_port,
+                           int expect_tx_idx) {
     struct st_rx_source_info src;
     memset(&src, 0, sizeof(src));
     src.udp_port[MTL_SESSION_PORT_P] = udp_port;
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], src_ip, MTL_IP_ADDR_LEN);
     EXPECT_GE(st30p_rx_update_source(lb.rx.get(), &src), 0);
 
+    st_usleep(150 * 1000);
+    tracker.reset();
     const int base = mtl_test::rx_frames(lb.rx_ctx.get());
     auto delta = [base](const tests_context* c) { return mtl_test::rx_frames(c) - base; };
     auto rate_res =
@@ -913,6 +973,14 @@ TEST(St30p, update_source_and_destination) {
     EXPECT_TRUE(rate_res.complete) << label;
     EXPECT_GT(mtl_test::rx_frames(lb.rx_ctx.get()), base);
     EXPECT_NEAR(rate_res.rate[0], expect_fps, expect_fps * 0.1) << label;
+    if (expect_tx_idx == 1) {
+      EXPECT_GT(tracker.tx1.load(std::memory_order_relaxed), 10) << label;
+      EXPECT_EQ(tracker.tx0.load(std::memory_order_relaxed), 0) << label;
+    } else {
+      EXPECT_GT(tracker.tx0.load(std::memory_order_relaxed), 10) << label;
+      EXPECT_EQ(tracker.tx1.load(std::memory_order_relaxed), 0) << label;
+    }
+    EXPECT_EQ(tracker.other.load(std::memory_order_relaxed), 0) << label;
   };
 
   auto update_tx0 = [&](const uint8_t* dip, uint16_t udp_port) {
@@ -923,13 +991,13 @@ TEST(St30p, update_source_and_destination) {
     EXPECT_GE(st30p_tx_update_destination(lb.tx.get(), &dst), 0);
   };
 
-  verify_switch("rx_src_mcast1", ctx->mcast_ip_addr[MTL_PORT_P], base_port + 2);
+  verify_switch("rx_src_mcast1", ctx->mcast_ip_addr[MTL_PORT_P], base_port + 2, 1);
 
   update_tx0(ctx->mcast_ip_addr[MTL_PORT_R], base_port + 4);
-  verify_switch("tx_dst_mcast2", ctx->mcast_ip_addr[MTL_PORT_R], base_port + 4);
+  verify_switch("tx_dst_mcast2", ctx->mcast_ip_addr[MTL_PORT_R], base_port + 4, 0);
 
   update_tx0(ctx->para.sip_addr[MTL_PORT_R], base_port);
-  verify_switch("back_to_init", ctx->para.sip_addr[MTL_PORT_P], base_port);
+  verify_switch("back_to_init", ctx->para.sip_addr[MTL_PORT_P], base_port, 0);
 
   tx1_worker.stop();
   lb.stop_all();

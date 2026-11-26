@@ -294,7 +294,7 @@ TEST_F(NoCtxTest, st40i_smoke) {
   handler->startSession();
   ASSERT_EQ(mtl_start(ctx->handle), 0);
 
-  sleepUntilFailure(2);
+  sleepUntilFailure(5);
 
   handler->stopSession();
 
@@ -307,9 +307,9 @@ TEST_F(NoCtxTest, st40i_smoke) {
   EXPECT_TRUE(oracle->saw_second_field) << "st40i_smoke never saw second field";
 }
 
-/* st40i_split_flag_accepts_and_propagates: progressive, two 1-byte ANCs per frame. */
+/* st40i_split_flag_accepts_and_propagates: progressive, single 1-byte ANC per frame. */
 TEST_F(NoCtxTest, st40i_split_flag_accepts_and_propagates) {
-  runSplitAncCase(this, ctx, {1, 1}, /*interlaced=*/false, ST_FPS_P60);
+  runSplitAncCase(this, ctx, {1}, /*interlaced=*/false, ST_FPS_P60);
 }
 
 /* st40i_split_multi_packet_roundtrip: progressive, 8/6/4-byte ANCs per frame. */

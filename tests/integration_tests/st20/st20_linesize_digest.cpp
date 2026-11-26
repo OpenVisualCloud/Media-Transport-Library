@@ -130,6 +130,21 @@ TEST(St20_rx, linesize_digest_s3) {
   st20_linesize_digest_test(sc);
 }
 
+TEST(St20_rx, linesize_digest_crosslines_s3) {
+  St20LinesizeScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
+       1280, 720, true, ST20_FMT_YUV_422_10BIT, 4096},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
+       1080, false, ST20_FMT_YUV_422_10BIT, 5120},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50,
+       1920, 1080, true, ST20_FMT_YUV_422_10BIT, 8192},
+  };
+  sc.check_fps = true;
+  sc.ext = false;
+  st20_linesize_digest_test(sc);
+}
+
 TEST(St20_rx, linesize_digest_ext_s3) {
   St20LinesizeScenario sc;
   sc.streams = {
