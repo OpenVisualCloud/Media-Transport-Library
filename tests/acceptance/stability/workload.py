@@ -948,7 +948,10 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         )
         rx.rx("st30p", g30.dip, st30p_session(g30, False))
         rx_worker.receives += [g20.sid, g30.sid]
-        common = f"dev-port={tx_ports[2]} dev-ip={ip}"
+        # pts-is-tai=false: the test sources give running time, not TAI.
+        # clock-tai=true: with no onboard PTP, MTL reads CLOCK_TAI as RxTxApp does,
+        # so the RTP time is TAI for EBU LIST.
+        common = f"dev-port={tx_ports[2]} dev-ip={ip} clock-tai=true pts-is-tai=false"
         pipeline = (
             # pattern=black: drawing the ball pattern of 1080p v210 made only ~57 fps
             # under the full load of VM 140, and each frame was late for its PTS. A

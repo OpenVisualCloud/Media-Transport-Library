@@ -494,3 +494,16 @@ def test_audio_and_anc_move_to_the_aux_worker_with_a_5th_tx_port():
     assert "rxtxapp-aux" not in {
         w.name for w in workload.build_plan(h4, "full", 600).workers
     }
+
+
+def test_gst_tx_asks_for_running_time_pts_and_clock_tai():
+    # pts-is-tai defaults to TRUE and clock-tai to FALSE, as before the PR: the
+    # videotestsrc and audiotestsrc PTS is running time, and EBU LIST reads TAI.
+    plan = workload.build_plan(_host(), "full", 600)
+    argv = next(w for w in plan.workers if w.name == "gst-tx").argv
+    for sink in ("mtl_st20p_tx", "mtl_st30p_tx"):
+        props = argv[argv.index(sink) + 1 :]
+        props = props[: props.index("!")] if "!" in props else props
+        props = [p for p in props if "=" in p and not p.startswith("audio")]
+        assert "pts-is-tai=false" in props, sink
+        assert "clock-tai=true" in props, sink
