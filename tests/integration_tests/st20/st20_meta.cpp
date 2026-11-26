@@ -181,9 +181,7 @@ void st20_rx_meta_test(const std::vector<St20MetaStream>& streams, enum st20_fmt
     rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
-    st20_set_handle(test_ctx_tx[i], tx_handle[i]);
     test_ctx_tx[i]->stop = false;
-    rtp_thread_tx[i] = std::thread(st20_rx_meta_feed_packet, test_ctx_tx[i]);
   }
 
   for (int i = 0; i < sessions; i++) {
@@ -221,13 +219,20 @@ void st20_rx_meta_test(const std::vector<St20MetaStream>& streams, enum st20_fmt
     st20_set_handle(test_ctx_rx[i], rx_handle[i]);
   }
 
+  /* Publish TX handles and start TX feeds only after every RX session is ready. */
+  for (int i = 0; i < sessions; i++) {
+    st20_set_handle(test_ctx_tx[i], tx_handle[i]);
+    rtp_thread_tx[i] = std::thread(st20_rx_meta_feed_packet, test_ctx_tx[i]);
+  }
+
   int ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
 
   /*
-   * Measure steady-state RX FPS over >=1000 ms (~60 frames at 59.94 fps):
-   * <=1.7% FPS edge error and >=63 total frames for the 50% incomplete ratio.
+   * Measure steady-state RX FPS: warmup=12, then >=35 frames over >=1500 ms
+   * (~90 frames at 59.94 fps): <=1.1% FPS edge error and >=102 total frames
+   * for the 50% incomplete ratio.
    */
   auto res = st20_wait_rx_window(test_ctx_rx, true, false);
   EXPECT_TRUE(res.warmed_up);

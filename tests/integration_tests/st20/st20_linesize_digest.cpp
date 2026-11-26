@@ -19,7 +19,6 @@ struct St20LinesizeStream {
 struct St20LinesizeScenario {
   std::vector<St20LinesizeStream> streams;
   bool check_fps = true;
-  enum st_test_level level = ST_TEST_LEVEL_MANDATORY;
   bool ext = false;
 };
 
@@ -28,7 +27,6 @@ void st20_linesize_digest_test(const St20LinesizeScenario& s) {
   auto m_handle = ctx->handle;
   const int sessions = static_cast<int>(s.streams.size());
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, s.level);
   if (s.ext) MTL_TEST_REQUIRE_IOVA_VA(ctx);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
@@ -208,28 +206,37 @@ void st20_linesize_digest_test(const St20LinesizeScenario& s) {
 }  // namespace
 
 TEST(St20_rx, linesize_digest_s3) {
-  st20_linesize_digest_test({
-      {{ST20_PACKING_GPM_SL, ST_FPS_P59_94, 1280, 720, 4096, false},
-       {ST20_PACKING_GPM_SL, ST_FPS_P50, 1920, 1080, 5120, true},
-       {ST20_PACKING_GPM_SL, ST_FPS_P50, 1920, 1080, 8192, false}},
-  });
+  St20LinesizeScenario sc;
+  sc.streams = {
+      {ST20_PACKING_GPM_SL, ST_FPS_P59_94, 1280, 720, 4096, false},
+      {ST20_PACKING_GPM_SL, ST_FPS_P50, 1920, 1080, 5120, true},
+      {ST20_PACKING_GPM_SL, ST_FPS_P50, 1920, 1080, 8192, false},
+  };
+  sc.check_fps = true;
+  sc.ext = false;
+  st20_linesize_digest_test(sc);
 }
 
 TEST(St20_rx, linesize_digest_crosslines_s3) {
-  st20_linesize_digest_test({
-      {{ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720, 4096, true},
-       {ST20_PACKING_GPM, ST_FPS_P50, 1920, 1080, 5120, false},
-       {ST20_PACKING_BPM, ST_FPS_P50, 1920, 1080, 8192, false}},
-  });
+  St20LinesizeScenario sc;
+  sc.streams = {
+      {ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720, 4096, true},
+      {ST20_PACKING_GPM, ST_FPS_P50, 1920, 1080, 5120, false},
+      {ST20_PACKING_BPM, ST_FPS_P50, 1920, 1080, 8192, false},
+  };
+  sc.check_fps = true;
+  sc.ext = false;
+  st20_linesize_digest_test(sc);
 }
 
 TEST(St20_rx, linesize_digest_ext_s3) {
-  st20_linesize_digest_test({
-      {{ST20_PACKING_GPM_SL, ST_FPS_P59_94, 1280, 720, 4096, true},
-       {ST20_PACKING_GPM_SL, ST_FPS_P50, 1920, 1080, 5120, false},
-       {ST20_PACKING_GPM_SL, ST_FPS_P50, 1920, 1080, 8192, false}},
-      true,
-      ST_TEST_LEVEL_MANDATORY,
-      true,
-  });
+  St20LinesizeScenario sc;
+  sc.streams = {
+      {ST20_PACKING_GPM_SL, ST_FPS_P59_94, 1280, 720, 4096, true},
+      {ST20_PACKING_GPM_SL, ST_FPS_P50, 1920, 1080, 5120, false},
+      {ST20_PACKING_GPM_SL, ST_FPS_P50, 1920, 1080, 8192, false},
+  };
+  sc.check_fps = true;
+  sc.ext = true;
+  st20_linesize_digest_test(sc);
 }

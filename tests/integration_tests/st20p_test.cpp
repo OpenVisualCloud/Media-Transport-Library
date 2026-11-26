@@ -2,15 +2,20 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <set>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "harness/mock_plugin.hpp"
 #include "log.h"
 #include "test_harness.hpp"
 #include "tests.hpp"
@@ -23,191 +28,103 @@ namespace {
 
 using ScopedSt20pTx = mtl_test::ScopedHandle<st20p_tx_handle, st20p_tx_free>;
 using ScopedSt20pRx = mtl_test::ScopedHandle<st20p_rx_handle, st20p_rx_free>;
+using ScopedStFrame = mtl_test::ScopedHandle<struct st_frame*, st_frame_free>;
 
-/* Move-only RAII wrapper that stops and joins a worker thread on exit. */
-class ScopedWorker {
- public:
-  ScopedWorker() = default;
-  ScopedWorker(tests_context* ctx, std::thread th,
-               std::function<void()> wake_fn = nullptr)
-      : ctx_(ctx), th_(std::move(th)), wake_fn_(std::move(wake_fn)) {
-  }
-  ~ScopedWorker() {
-    stop();
-  }
-  ScopedWorker(const ScopedWorker&) = delete;
-  ScopedWorker& operator=(const ScopedWorker&) = delete;
-  ScopedWorker(ScopedWorker&& other) noexcept
-      : ctx_(other.ctx_), th_(std::move(other.th_)), wake_fn_(std::move(other.wake_fn_)) {
-    other.ctx_ = nullptr;
-  }
-  ScopedWorker& operator=(ScopedWorker&& other) noexcept {
-    if (this != &other) {
-      stop();
-      ctx_ = other.ctx_;
-      th_ = std::move(other.th_);
-      wake_fn_ = std::move(other.wake_fn_);
-      other.ctx_ = nullptr;
-    }
-    return *this;
-  }
+inline void st20p_set_handle(tests_context* s, void* h) {
+  __atomic_store_n(&s->handle, h, __ATOMIC_RELEASE);
+}
 
-  void stop() {
-    if (ctx_) {
-      mtl_test::stop_worker(ctx_, th_, wake_fn_);
-      ctx_ = nullptr;
-    }
-  }
+inline void* st20p_get_handle(const tests_context* s) {
+  return __atomic_load_n(&s->handle, __ATOMIC_ACQUIRE);
+}
 
- private:
-  tests_context* ctx_ = nullptr;
-  std::thread th_;
-  std::function<void()> wake_fn_;
+/* Extended test context owning atomic, dynamically sized external frame slots. */
+struct St20pContext : public tests_context {
+  mtl_test::ScopedExtFrames ext_frames;
 };
 
-/* RAII guard that configures and resets global plugin fault-injection knobs. */
-class ScopedPluginParams {
- public:
-  ScopedPluginParams(struct st_tests_context* ctx, int fail_interval,
-                     int timeout_interval, int timeout_ms)
-      : ctx_(ctx) {
-    st_test_jxs_fail_interval(ctx_, fail_interval);
-    st_test_jxs_timeout_interval(ctx_, timeout_interval);
-    st_test_jxs_timeout_ms(ctx_, timeout_ms);
+struct St20pContextDeleter {
+  void operator()(St20pContext* c) const {
+    if (!c) return;
+    tests_context_unit(c);
+    delete c;
   }
-  ~ScopedPluginParams() {
-    st_test_jxs_fail_interval(ctx_, 0);
-    st_test_jxs_timeout_interval(ctx_, 0);
-    st_test_jxs_timeout_ms(ctx_, 0);
-  }
-  ScopedPluginParams(const ScopedPluginParams&) = delete;
-  ScopedPluginParams& operator=(const ScopedPluginParams&) = delete;
-
- private:
-  struct st_tests_context* ctx_;
 };
 
-/* RAII owner for page-aligned, DMA-mapped external frame buffers. */
-class ScopedExtFrames {
- public:
-  ScopedExtFrames() = default;
-  ~ScopedExtFrames() {
-    reset();
-  }
-  ScopedExtFrames(const ScopedExtFrames&) = delete;
-  ScopedExtFrames& operator=(const ScopedExtFrames&) = delete;
-  ScopedExtFrames(ScopedExtFrames&& other) noexcept
-      : st_(other.st_),
-        raw_(other.raw_),
-        aligned_(other.aligned_),
-        iova_(other.iova_),
-        map_sz_(other.map_sz_),
-        frame_size_(other.frame_size_),
-        frames_(std::move(other.frames_)) {
-    other.st_ = nullptr;
-    other.raw_ = nullptr;
-    other.aligned_ = nullptr;
-    other.iova_ = MTL_BAD_IOVA;
-    other.map_sz_ = 0;
-    other.frame_size_ = 0;
-  }
-  ScopedExtFrames& operator=(ScopedExtFrames&& other) noexcept {
-    if (this != &other) {
-      reset();
-      st_ = other.st_;
-      raw_ = other.raw_;
-      aligned_ = other.aligned_;
-      iova_ = other.iova_;
-      map_sz_ = other.map_sz_;
-      frame_size_ = other.frame_size_;
-      frames_ = std::move(other.frames_);
-      other.st_ = nullptr;
-      other.raw_ = nullptr;
-      other.aligned_ = nullptr;
-      other.iova_ = MTL_BAD_IOVA;
-      other.map_sz_ = 0;
-      other.frame_size_ = 0;
-    }
-    return *this;
+using ScopedSt20pContext = std::unique_ptr<St20pContext, St20pContextDeleter>;
+
+ScopedSt20pContext make_st20p_context(struct st_tests_context* global_ctx, int idx = 0,
+                                      uint16_t fb_cnt = 3, bool check_sha = false) {
+  ScopedSt20pContext c(new St20pContext());
+  c->ctx = global_ctx;
+  c->idx = idx;
+  c->fb_cnt = fb_cnt;
+  c->fb_idx = 0;
+  c->check_sha = check_sha;
+  return c;
+}
+
+struct ConverterTraits {
+  using SessionHandle = st20p_convert_session;
+  using PrivHandle = st20_convert_priv;
+  using CreateReq = struct st20_converter_create_req;
+  using FrameMeta = struct st20_convert_frame_meta;
+  static constexpr size_t kMaxSessions = MAX_TEST_CONVERTER_SESSIONS;
+
+  static bool use_block_get(struct st_tests_context* /*ctx*/) {
+    return false;
   }
 
-  bool init(mtl_handle st, enum st_frame_fmt fmt, int width, int height, bool interlaced,
-            int fb_cnt, size_t line_padding_size = 0) {
-    reset();
-    st_ = st;
-    const uint8_t planes = st_frame_fmt_planes(fmt);
-    frame_size_ = st_frame_size(fmt, width, height, interlaced) +
-                  line_padding_size * static_cast<size_t>(height) * planes;
-    const size_t pg_sz = mtl_page_size(st);
-    const size_t total_sz = frame_size_ * static_cast<size_t>(fb_cnt);
-    map_sz_ = mtl_size_page_align(total_sz, pg_sz);
-    raw_ = st_test_zmalloc(map_sz_ + pg_sz);
-    if (!raw_) return false;
-    aligned_ =
-        reinterpret_cast<uint8_t*>(MTL_ALIGN(reinterpret_cast<uint64_t>(raw_), pg_sz));
-    iova_ = mtl_dma_map(st, aligned_, map_sz_);
-    if (iova_ == MTL_BAD_IOVA) {
-      st_test_free(raw_);
-      raw_ = nullptr;
-      aligned_ = nullptr;
-      return false;
-    }
-
-    frames_.assign(static_cast<size_t>(fb_cnt), {});
-    for (int j = 0; j < fb_cnt; j++) {
-      auto& ef = frames_[static_cast<size_t>(j)];
-      for (uint8_t plane = 0; plane < planes; plane++) {
-        ef.linesize[plane] =
-            st_frame_least_linesize(fmt, width, plane) + line_padding_size;
-        if (plane == 0) {
-          ef.addr[plane] = aligned_ + static_cast<size_t>(j) * frame_size_;
-          ef.iova[plane] = iova_ + static_cast<size_t>(j) * frame_size_;
-        } else {
-          ef.addr[plane] = static_cast<uint8_t*>(ef.addr[plane - 1]) +
-                           ef.linesize[plane - 1] * static_cast<size_t>(height);
-          ef.iova[plane] =
-              ef.iova[plane - 1] + ef.linesize[plane - 1] * static_cast<size_t>(height);
-        }
-      }
-      ef.size = frame_size_;
-      ef.opaque = nullptr;
-    }
-    return true;
+  static void on_create_req(struct st_tests_context* /*ctx*/, CreateReq* req,
+                            int& sleep_time_us) {
+    double fps = st_frame_rate(req->fps);
+    if (!fps) fps = 60;
+    sleep_time_us = static_cast<int>(1000 * 1000 / fps / 2);
+    dbg("%s, sleep_time_us %d\n", __func__, sleep_time_us);
   }
 
-  void reset() {
-    if (st_ && aligned_ && iova_ != MTL_BAD_IOVA) {
-      mtl_dma_unmap(st_, aligned_, iova_, map_sz_);
-    }
-    if (raw_) st_test_free(raw_);
-    st_ = nullptr;
-    raw_ = nullptr;
-    aligned_ = nullptr;
-    iova_ = MTL_BAD_IOVA;
-    map_sz_ = 0;
-    frame_size_ = 0;
-    frames_.clear();
+  static void set_block_timeout(SessionHandle /*s*/, uint64_t /*ns*/) {
   }
 
-  uint8_t* data() const {
-    return aligned_;
-  }
-  size_t frame_size() const {
-    return frame_size_;
-  }
-  struct st_ext_frame* frames() {
-    return frames_.data();
+  static void wake_block(SessionHandle /*s*/) {
   }
 
- private:
-  mtl_handle st_ = nullptr;
-  void* raw_ = nullptr;
-  uint8_t* aligned_ = nullptr;
-  mtl_iova_t iova_ = MTL_BAD_IOVA;
-  size_t map_sz_ = 0;
-  size_t frame_size_ = 0;
-  std::vector<struct st_ext_frame> frames_;
+  static FrameMeta* get_frame(SessionHandle s) {
+    return st20_converter_get_frame(s);
+  }
+
+  static int put_frame(SessionHandle s, FrameMeta* f, int result) {
+    return st20_converter_put_frame(s, f, result);
+  }
+
+  static int process_frame(const CreateReq& req, FrameMeta* frame, int sleep_time_us,
+                           int /*rand_ratio*/, int& frame_cnt) {
+    /* check frame sanity */
+    if (frame->src->width != req.width) return -EIO;
+    if (frame->dst->width != req.width) return -EIO;
+    if (frame->src->height != req.height) return -EIO;
+    if (frame->dst->height != req.height) return -EIO;
+    if (frame->src->fmt != req.input_fmt) return -EIO;
+    if (frame->dst->fmt != req.output_fmt) return -EIO;
+
+    /* copy src sha to the start or end of convert frame */
+    if (req.input_fmt == ST_FRAME_FMT_YUV422PLANAR10LE)
+      memcpy(frame->dst->addr[0],
+             static_cast<uint8_t*>(frame->src->addr[0]) + frame->src->data_size -
+                 SHA256_DIGEST_LENGTH,
+             SHA256_DIGEST_LENGTH);
+    else
+      memcpy(static_cast<uint8_t*>(frame->dst->addr[0]) + frame->dst->data_size -
+                 SHA256_DIGEST_LENGTH,
+             frame->src->addr[0], SHA256_DIGEST_LENGTH);
+    st_usleep(static_cast<unsigned int>(sleep_time_us));
+
+    frame_cnt++;
+    return 0;
+  }
 };
+
+using MockConverterPool = mtl_test::MockPluginPool<ConverterTraits>;
 
 struct St20pStreamSpec {
   enum st_fps fps = ST_FPS_P59_94;
@@ -226,7 +143,6 @@ St20pStreamSpec make_stream(enum st_fps fps, int width, int height, enum st_fram
 struct St20pDigestScenario {
   std::vector<St20pStreamSpec> streams;
   enum st_plugin_device device = ST_PLUGIN_DEVICE_TEST;
-  enum st_test_level level = ST_TEST_LEVEL_MANDATORY;
   int fail_interval = 0;
   int timeout_interval = 0;
   int timeout_ms = 0;
@@ -238,7 +154,6 @@ struct St20pDigestScenario {
   bool vsync = true;
   bool pkt_convert = false;
   size_t line_padding_size = 0;
-  bool send_done_check = false;
   bool interlace = false;
   bool user_meta = false;
   bool rtcp = false;
@@ -253,135 +168,11 @@ struct St20pDigestScenario {
 
 /* Holds the first completed slot past notify_frame_done to verify MANUAL_RELEASE. */
 struct tx_ext_release_ctx {
-  st20p_tx_handle handle = nullptr;
+  std::atomic<st20p_tx_handle> handle{nullptr};
   std::atomic<struct st_frame*> held_frame{nullptr};
 };
 
 }  // namespace
-
-static int test_convert_frame(struct test_converter_session* s,
-                              struct st20_convert_frame_meta* frame) {
-  struct st20_converter_create_req* req = &s->req;
-
-  /* check frame sanity */
-  if (frame->src->width != req->width) return -EIO;
-  if (frame->dst->width != req->width) return -EIO;
-  if (frame->src->height != req->height) return -EIO;
-  if (frame->dst->height != req->height) return -EIO;
-  if (frame->src->fmt != req->input_fmt) return -EIO;
-  if (frame->dst->fmt != req->output_fmt) return -EIO;
-
-  /* copy src sha to the start or end of convert frame */
-  if (req->input_fmt == ST_FRAME_FMT_YUV422PLANAR10LE)
-    memcpy(frame->dst->addr[0],
-           (uint8_t*)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
-           SHA256_DIGEST_LENGTH);
-  else
-    memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
-           frame->src->addr[0], SHA256_DIGEST_LENGTH);
-  st_usleep(s->sleep_time_us);
-
-  s->frame_cnt++;
-
-  /* simulate fail and timeout */
-  if (s->fail_interval && !(s->frame_cnt % s->fail_interval)) return -EIO;
-  if (s->timeout_interval && !(s->frame_cnt % s->timeout_interval)) {
-    st_usleep(s->timeout_ms * 1000);
-  }
-
-  return 0;
-}
-
-static void* test_convert_thread(void* arg) {
-  struct test_converter_session* s = (struct test_converter_session*)arg;
-  st20p_convert_session session_p = s->session_p;
-
-  dbg("%s(%d), start\n", __func__, s->idx);
-  while (!s->stop) {
-    struct st20_convert_frame_meta* frame = st20_converter_get_frame(session_p);
-    if (!frame) {
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
-      continue;
-    }
-    int result = test_convert_frame(s, frame);
-    st20_converter_put_frame(session_p, frame, result);
-  }
-  dbg("%s(%d), stop\n", __func__, s->idx);
-  return NULL;
-}
-
-static st20_convert_priv test_converter_create_session(
-    void* priv, st20p_convert_session session_p, struct st20_converter_create_req* req) {
-  struct st_tests_context* ctx = (struct st_tests_context*)priv;
-
-  for (int i = 0; i < MAX_TEST_CONVERTER_SESSIONS; i++) {
-    if (ctx->converter_sessions[i]) continue;
-    auto* session = static_cast<struct test_converter_session*>(
-        calloc(1, sizeof(struct test_converter_session)));
-    if (!session) return NULL;
-    session->idx = i;
-    st_pthread_mutex_init(&session->wake_mutex, NULL);
-    st_pthread_cond_init(&session->wake_cond, NULL);
-
-    session->req = *req;
-    session->session_p = session_p;
-    double fps = st_frame_rate(req->fps);
-    if (!fps) fps = 60;
-    session->sleep_time_us = static_cast<int>(1000 * 1000 / fps / 2);
-    dbg("%s(%d), sleep_time_us %d\n", __func__, i, session->sleep_time_us);
-    session->fail_interval = ctx->plugin_fail_interval;
-    session->timeout_interval = ctx->plugin_timeout_interval;
-    session->timeout_ms = ctx->plugin_timeout_ms;
-
-    int ret =
-        pthread_create(&session->convert_thread, NULL, test_convert_thread, session);
-    if (ret < 0) {
-      err("%s(%d), thread create fail %d\n", __func__, i, ret);
-      st_pthread_mutex_destroy(&session->wake_mutex);
-      st_pthread_cond_destroy(&session->wake_cond);
-      free(session);
-      return NULL;
-    }
-
-    ctx->converter_sessions[i] = session;
-    dbg("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
-        st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
-    return session;
-  }
-
-  dbg("%s, all session slot are used\n", __func__);
-  return NULL;
-}
-
-static int test_converter_free_session(void* priv, st20_convert_priv session) {
-  struct st_tests_context* ctx = (struct st_tests_context*)priv;
-  struct test_converter_session* s = (struct test_converter_session*)session;
-  int idx = s->idx;
-
-  s->stop = true;
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-  pthread_join(s->convert_thread, NULL);
-
-  st_pthread_mutex_destroy(&s->wake_mutex);
-  st_pthread_cond_destroy(&s->wake_cond);
-
-  dbg("%s(%d), total %d convert frames\n", __func__, idx, s->frame_cnt);
-  free(s);
-  ctx->converter_sessions[idx] = NULL;
-  return 0;
-}
-
-static int test_converter_frame_available(void* priv) {
-  struct test_converter_session* s = (struct test_converter_session*)priv;
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-  return 0;
-}
 
 int st_test_convert_plugin_unregister(struct st_tests_context* ctx) {
   if (ctx->converter_dev_handle) {
@@ -400,13 +191,13 @@ int st_test_convert_plugin_register(struct st_tests_context* ctx) {
   c_dev.target_device = ST_PLUGIN_DEVICE_TEST;
   c_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422RFC4175PG2BE10;
   c_dev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422RFC4175PG2BE10;
-  c_dev.create_session = test_converter_create_session;
-  c_dev.free_session = test_converter_free_session;
-  c_dev.notify_frame_available = test_converter_frame_available;
+  c_dev.create_session = MockConverterPool::create_session;
+  c_dev.free_session = MockConverterPool::free_session;
+  c_dev.notify_frame_available = MockConverterPool::notify_frame_available;
   ctx->converter_dev_handle = st20_converter_register(st, &c_dev);
   if (!ctx->converter_dev_handle) {
     err("%s, converter register fail\n", __func__);
-    return 0;
+    return -EIO;
   }
 
   info("%s, succ\n", __func__);
@@ -446,34 +237,38 @@ static int test_st20p_frame_available(void* priv) {
 }
 
 static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
-  tests_context* s = (tests_context*)priv;
+  auto* s = static_cast<St20pContext*>(priv);
+  auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
 
-  if (!s->handle) return -EIO; /* not ready */
+  if (!handle) return -EIO; /* not ready */
 
   __atomic_fetch_add(&s->fb_send_done, 1, __ATOMIC_RELAXED);
 
   if (!(frame->flags & ST_FRAME_FLAG_EXT_BUF)) return 0;
 
-  for (int i = 0; i < s->fb_cnt; ++i) {
-    if (frame->addr[0] == s->ext_fb + static_cast<size_t>(i) * s->frame_size) {
-      s->ext_fb_in_use[i] = false;
-      dbg("%s(%d), frame done at %d\n", __func__, i, s->idx);
-      st20p_tx_notify_ext_frame_free((st20p_tx_handle)s->handle, frame);
+  const size_t n = s->ext_frames.count();
+  for (size_t i = 0; i < n; ++i) {
+    if (frame->addr[0] == s->ext_frames.frames()[i].addr[0]) {
+      s->ext_frames.release_slot(i);
+      dbg("%s(%zu), frame done at %d\n", __func__, i, s->idx);
+      st20p_tx_notify_ext_frame_free(handle, frame);
       return 0;
     }
   }
 
   err("%s(%d), unknown frame_addr %p\n", __func__, s->idx, frame->addr[0]);
-  st20p_tx_notify_ext_frame_free((st20p_tx_handle)s->handle, frame);
+  st20p_tx_notify_ext_frame_free(handle, frame);
   return 0;
 }
 
 static int test_tx_ext_release_frame_done(void* priv, struct st_frame* frame) {
   auto* s = (tx_ext_release_ctx*)priv;
+  auto handle = s->handle.load(std::memory_order_acquire);
+  if (!handle) return -EIO;
   struct st_frame* expected = nullptr;
   if (s->held_frame.compare_exchange_strong(expected, frame)) return 0;
 
-  st20p_tx_notify_ext_frame_free(s->handle, frame);
+  st20p_tx_notify_ext_frame_free(handle, frame);
   return 0;
 }
 
@@ -544,46 +339,70 @@ static void st20p_rx_assert_cnt(int expect_st20_rx_cnt) {
 }
 
 TEST(St20p, tx_create_free_single) {
-  pipeline_create_free_test(st20p_tx, 0, 1, 1);
+  mtl_test::verify_create_free<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
+                               st20p_tx_free>(st20p_tx_ops_init, st20p_tx_assert_cnt, 0,
+                                              1, 1);
 }
 TEST(St20p, tx_create_free_multi) {
-  pipeline_create_free_test(st20p_tx, 0, 1, 6);
+  mtl_test::verify_create_free<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
+                               st20p_tx_free>(st20p_tx_ops_init, st20p_tx_assert_cnt, 0,
+                                              1, 6);
 }
 TEST(St20p, tx_create_free_mix) {
-  pipeline_create_free_test(st20p_tx, 2, 3, 4);
+  mtl_test::verify_create_free<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
+                               st20p_tx_free>(st20p_tx_ops_init, st20p_tx_assert_cnt, 2,
+                                              3, 4);
 }
 TEST(St20p, rx_create_free_single) {
-  pipeline_create_free_test(st20p_rx, 0, 1, 1);
+  mtl_test::verify_create_free<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
+                               st20p_rx_free>(st20p_rx_ops_init, st20p_rx_assert_cnt, 0,
+                                              1, 1);
 }
 TEST(St20p, rx_create_free_multi) {
-  pipeline_create_free_test(st20p_rx, 0, 1, 6);
+  mtl_test::verify_create_free<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
+                               st20p_rx_free>(st20p_rx_ops_init, st20p_rx_assert_cnt, 0,
+                                              1, 6);
 }
 TEST(St20p, rx_create_free_mix) {
-  pipeline_create_free_test(st20p_rx, 2, 3, 4);
+  mtl_test::verify_create_free<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
+                               st20p_rx_free>(st20p_rx_ops_init, st20p_rx_assert_cnt, 2,
+                                              3, 4);
 }
 TEST(St20p, tx_create_free_max) {
-  pipeline_create_free_max(st20p_tx, TEST_CREATE_FREE_MAX);
+  mtl_test::verify_create_free_max<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
+                                   st20p_tx_free>(st20p_tx_ops_init, st20p_tx_assert_cnt,
+                                                  TEST_CREATE_FREE_MAX);
 }
 TEST(St20p, rx_create_free_max) {
-  pipeline_create_free_max(st20p_rx, TEST_CREATE_FREE_MAX);
+  mtl_test::verify_create_free_max<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
+                                   st20p_rx_free>(st20p_rx_ops_init, st20p_rx_assert_cnt,
+                                                  TEST_CREATE_FREE_MAX);
 }
 TEST(St20p, tx_create_expect_fail) {
-  pipeline_expect_fail_test(st20p_tx);
+  mtl_test::verify_invalid_ports<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
+                                 st20p_tx_free>(st20p_tx_ops_init);
 }
 TEST(St20p, rx_create_expect_fail) {
-  pipeline_expect_fail_test(st20p_rx);
+  mtl_test::verify_invalid_ports<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
+                                 st20p_rx_free>(st20p_rx_ops_init);
 }
 TEST(St20p, tx_create_expect_fail_fb_cnt) {
-  pipeline_expect_fail_test_fb_cnt(st20p_tx, 1);
-  pipeline_expect_fail_test_fb_cnt(st20p_tx, ST20_FB_MAX_COUNT + 1);
+  mtl_test::verify_invalid_fb_cnt<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
+                                  st20p_tx_free>(st20p_tx_ops_init, 1);
+  mtl_test::verify_invalid_fb_cnt<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
+                                  st20p_tx_free>(st20p_tx_ops_init,
+                                                 ST20_FB_MAX_COUNT + 1);
 }
 TEST(St20p, rx_create_expect_fail_fb_cnt) {
-  pipeline_expect_fail_test_fb_cnt(st20p_rx, 1);
-  pipeline_expect_fail_test_fb_cnt(st20p_rx, ST20_FB_MAX_COUNT + 1);
+  mtl_test::verify_invalid_fb_cnt<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
+                                  st20p_rx_free>(st20p_rx_ops_init, 1);
+  mtl_test::verify_invalid_fb_cnt<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
+                                  st20p_rx_free>(st20p_rx_ops_init,
+                                                 ST20_FB_MAX_COUNT + 1);
 }
 
-static void test_st20p_tx_frame_thread(tests_context* s) {
-  auto handle = (st20p_tx_handle)s->handle;
+static void test_st20p_tx_frame_thread(St20pContext* s) {
+  auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
   struct test_user_meta meta;
   std::unique_lock<std::mutex> lck(s->mtx, std::defer_lock);
 
@@ -617,14 +436,34 @@ static void test_st20p_tx_frame_thread(tests_context* s) {
       frame->user_meta = &meta;
       frame->user_meta_size = sizeof(meta);
     }
-    if (s->p_ext_frames) {
-      int ret = st20p_tx_put_ext_frame(handle, frame, &s->p_ext_frames[s->ext_idx]);
+    if (s->ext_frames.count() > 0) {
+      const size_t n = s->ext_frames.count();
+      size_t slot = static_cast<size_t>(s->ext_idx) % n;
+      bool acquired = false;
+      while (!s->stop) {
+        for (size_t attempt = 0; attempt < n; attempt++) {
+          const size_t cand = (slot + attempt) % n;
+          if (s->ext_frames.try_acquire_slot(cand)) {
+            slot = cand;
+            acquired = true;
+            break;
+          }
+        }
+        if (acquired) break;
+        std::this_thread::yield();
+      }
+      if (!acquired) {
+        st20p_tx_put_frame_abort(handle, frame);
+        break;
+      }
+      int ret = st20p_tx_put_ext_frame(handle, frame, &s->ext_frames.frames()[slot]);
       if (ret < 0) {
-        err("%s, put ext framebuffer fail %d fb_idx %d\n", __func__, ret, s->ext_idx);
+        st20p_tx_put_frame_abort(handle, frame);
+        s->ext_frames.release_slot(slot);
+        err("%s, put ext framebuffer fail %d fb_idx %zu\n", __func__, ret, slot);
         continue;
       }
-      s->ext_fb_in_use[s->ext_idx] = true;
-      if (++s->ext_idx >= s->fb_cnt) s->ext_idx = 0;
+      s->ext_idx = static_cast<int>((slot + 1) % n);
     } else {
       st20p_tx_put_frame(handle, frame);
     }
@@ -710,8 +549,8 @@ static void test_st20p_rx_check_field_phase(tests_context* s, struct st_frame* f
   s->field_phase_fail_cnt++;
 }
 
-static void test_st20p_rx_frame_thread(tests_context* s, bool internal_sha) {
-  auto handle = (st20p_rx_handle)s->handle;
+static void test_st20p_rx_frame_thread(St20pContext* s, bool internal_sha) {
+  auto handle = static_cast<st20p_rx_handle>(st20p_get_handle(s));
   std::unique_lock<std::mutex> lck(s->mtx, std::defer_lock);
   uint64_t timestamp = 0;
   unsigned char computed_sha[SHA256_DIGEST_LENGTH];
@@ -728,18 +567,20 @@ static void test_st20p_rx_frame_thread(tests_context* s, bool internal_sha) {
       continue;
     }
 
-    if (frame->opaque) {
-      /* free dynamic ext frame */
-      bool* in_use = (bool*)frame->opaque;
-      EXPECT_TRUE(*in_use);
-      *in_use = false;
-    }
+    auto* in_use = static_cast<std::atomic<bool>*>(frame->opaque);
+    auto release_ext = [&]() {
+      if (in_use) {
+        EXPECT_TRUE(in_use->exchange(false, std::memory_order_acq_rel));
+        in_use = nullptr;
+      }
+    };
 
     if (s->user_meta) test_st20p_rx_user_meta(s, frame);
 
     if (!st_is_frame_complete(frame->status)) {
       s->incomplete_frame_cnt++;
       st20p_rx_put_frame(handle, frame);
+      release_ext();
       continue;
     }
 
@@ -782,7 +623,9 @@ static void test_st20p_rx_frame_thread(tests_context* s, bool internal_sha) {
       s->sha_fail_cnt++;
     }
 
+    /* Return frame to MTL before releasing the dynamic ext slot for reuse. */
     st20p_rx_put_frame(handle, frame);
+    release_ext();
     __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
     if (!s->start_time) s->start_time = st_test_get_monotonic_time();
   }
@@ -791,42 +634,47 @@ static void test_st20p_rx_frame_thread(tests_context* s, bool internal_sha) {
 
 static int test_st20p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
                                          struct st20_rx_frame_meta* /*meta*/) {
-  tests_context* s = (tests_context*)priv;
-  int i = s->ext_idx;
+  auto* s = static_cast<St20pContext*>(priv);
+  const size_t n = s->ext_frames.count();
+  if (n == 0) return -EIO;
 
-  if (s->ext_fb_in_use[i]) {
-    err("%s(%d), ext frame %d in use\n", __func__, s->idx, i);
-    return -EIO;
+  const size_t start = static_cast<size_t>(s->ext_idx) % n;
+  for (size_t attempt = 0; attempt < n; attempt++) {
+    const size_t i = (start + attempt) % n;
+    if (s->ext_frames.try_acquire_slot(i)) {
+      *ext_frame = s->ext_frames.frames()[i];
+      ext_frame->opaque = s->ext_frames.in_use_slot(i);
+      s->ext_idx = static_cast<int>((i + 1) % n);
+      return 0;
+    }
   }
 
-  *ext_frame = s->p_ext_frames[i];
-  s->ext_fb_in_use[i] = true;
-  ext_frame->opaque = &s->ext_fb_in_use[i];
-
-  if (++s->ext_idx >= s->fb_cnt) s->ext_idx = 0;
-  return 0;
+  err("%s(%d), all %zu ext frames in use\n", __func__, s->idx, n);
+  return -EIO;
 }
 
-static void populate_tx_frames(tests_context* s, st20p_tx_handle handle,
+static void populate_tx_frames(St20pContext* s, st20p_tx_handle handle,
                                const St20pStreamSpec& spec,
                                const St20pDigestScenario& sc) {
   const uint8_t planes = st_frame_fmt_planes(spec.tx_fmt);
   const size_t frame_size = s->frame_size;
 
   for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
-    uint8_t* fb = sc.tx_ext ? (s->ext_fb + static_cast<size_t>(frame) * frame_size)
-                            : static_cast<uint8_t*>(st20p_tx_get_fb_addr(handle, frame));
+    uint8_t* fb = sc.tx_ext
+                      ? (s->ext_frames.data() + static_cast<size_t>(frame) * frame_size)
+                      : static_cast<uint8_t*>(st20p_tx_get_fb_addr(handle, frame));
     ASSERT_TRUE(fb != nullptr);
 
     if (!sc.line_padding_size) {
       st_test_rand_data(fb, frame_size, frame);
     } else {
+      const int data_h = sc.interlace ? spec.height / 2 : spec.height;
       for (uint8_t plane = 0; plane < planes; plane++) {
         const size_t least_line = st_frame_least_linesize(spec.tx_fmt, spec.width, plane);
-        uint8_t* start = static_cast<uint8_t*>(s->p_ext_frames[frame].addr[plane]);
-        for (int line = 0; line < spec.height; line++) {
-          uint8_t* cur =
-              start + s->p_ext_frames[frame].linesize[plane] * static_cast<size_t>(line);
+        uint8_t* start = static_cast<uint8_t*>(s->ext_frames.frames()[frame].addr[plane]);
+        for (int line = 0; line < data_h; line++) {
+          uint8_t* cur = start + s->ext_frames.frames()[frame].linesize[plane] *
+                                     static_cast<size_t>(line);
           st_test_rand_data(cur, least_line, frame);
         }
       }
@@ -857,29 +705,26 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
   auto st = ctx->handle;
 
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
-  MTL_TEST_REQUIRE_LEVEL(ctx, sc.level);
   if (sc.tx_ext || sc.rx_ext) MTL_TEST_REQUIRE_IOVA_VA(ctx);
   if (sc.pkt_convert) MTL_TEST_REQUIRE_DPDK_PMD(ctx, MTL_PORT_R);
 
   /* Mutate plugin knobs only after all GTEST_SKIP preconditions pass. */
-  ScopedPluginParams plugin_guard(ctx, sc.fail_interval, sc.timeout_interval,
-                                  sc.timeout_ms);
+  mtl_test::ScopedPluginFaults plugin_guard(ctx, sc.fail_interval, sc.timeout_interval,
+                                            sc.timeout_ms);
 
   const size_t sessions = sc.streams.size();
   const uint8_t pt = sc.zero_payload_type ? 0 : ST20P_TEST_PAYLOAD_TYPE;
 
   /* Declaration order guarantees reverse RAII teardown on any ASSERT_* failure:
-   * workers stop -> mtl_stop -> handles free -> contexts free -> DMA unmap -> plugin
+   * workers stop -> mtl_stop -> handles free -> contexts + ext DMA unmap -> plugin
    * reset. */
-  std::vector<ScopedExtFrames> tx_ext_bufs(sessions);
-  std::vector<ScopedExtFrames> rx_ext_bufs(sessions);
-  std::vector<mtl_test::ScopedContext> tx_ctxs;
-  std::vector<mtl_test::ScopedContext> rx_ctxs;
+  std::vector<ScopedSt20pContext> tx_ctxs;
+  std::vector<ScopedSt20pContext> rx_ctxs;
   std::vector<ScopedSt20pTx> tx_handles(sessions);
   std::vector<ScopedSt20pRx> rx_handles(sessions);
   mtl_test::ScopedMtlStart mtl_run(st);
-  std::vector<ScopedWorker> tx_workers;
-  std::vector<ScopedWorker> rx_workers;
+  std::vector<mtl_test::ScopedWorker> tx_workers;
+  std::vector<mtl_test::ScopedWorker> rx_workers;
   std::vector<double> expect_fps_tx(sessions, 0.0);
   std::vector<double> expect_fps_rx(sessions, 0.0);
 
@@ -896,11 +741,11 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
           expect_fps_tx[i] * (sc.timeout_interval - 1) / sc.timeout_interval;
     }
 
-    auto s = mtl_test::make_context(ctx, static_cast<int>(i), TEST_SHA_HIST_NUM);
+    auto s = make_st20p_context(ctx, static_cast<int>(i), TEST_SHA_HIST_NUM);
     ASSERT_TRUE(s != nullptr);
     /* Store in tx_ctxs before st20p_tx_create so contexts outlive handles on ASSERT_*. */
     tx_ctxs.push_back(std::move(s));
-    tests_context* raw_tx = tx_ctxs.back().get();
+    St20pContext* raw_tx = tx_ctxs.back().get();
     raw_tx->width = spec.width;
     raw_tx->height = spec.height;
     raw_tx->fmt = spec.tx_fmt;
@@ -942,9 +787,11 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     }
 
     const uint8_t planes = st_frame_fmt_planes(spec.tx_fmt);
+    const size_t data_h =
+        static_cast<size_t>(sc.interlace ? spec.height / 2 : spec.height);
     raw_tx->frame_size =
         st_frame_size(spec.tx_fmt, spec.width, spec.height, sc.interlace) +
-        sc.line_padding_size * static_cast<size_t>(spec.height) * planes;
+        sc.line_padding_size * data_h * planes;
 
     tx_handles[i].reset(st20p_tx_create(st, &ops_tx));
     ASSERT_TRUE(static_cast<bool>(tx_handles[i]));
@@ -957,18 +804,17 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     EXPECT_GE(mtl_sch_enable_sleep(st, sch, false), 0);
 
     if (sc.tx_ext) {
-      ASSERT_TRUE(tx_ext_bufs[i].init(st, spec.tx_fmt, spec.width, spec.height,
-                                      sc.interlace, raw_tx->fb_cnt,
-                                      sc.line_padding_size));
-      raw_tx->ext_fb = tx_ext_bufs[i].data();
-      raw_tx->p_ext_frames = tx_ext_bufs[i].frames();
-      info("%s, session %zu ext_fb %p\n", __func__, i, raw_tx->ext_fb);
+      ASSERT_TRUE(raw_tx->ext_frames.init(st, spec.tx_fmt, spec.width, spec.height,
+                                          sc.interlace, raw_tx->fb_cnt,
+                                          sc.line_padding_size));
+      raw_tx->frame_size = raw_tx->ext_frames.frame_size();
+      info("%s, session %zu ext_fb %p\n", __func__, i, raw_tx->ext_frames.data());
     }
 
     populate_tx_frames(raw_tx, tx_handles[i].get(), spec, sc);
     if (::testing::Test::HasFatalFailure()) return;
 
-    raw_tx->handle = tx_handles[i].get();
+    st20p_set_handle(raw_tx, tx_handles[i].get());
     st20p_tx_handle raw_tx_h = tx_handles[i].get();
     tx_workers.emplace_back(raw_tx, std::thread(test_st20p_tx_frame_thread, raw_tx),
                             sc.block_get ? std::function<void()>([raw_tx_h]() {
@@ -984,11 +830,11 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     }
     expect_fps_rx[i] = expect_fps_tx[i];
 
-    auto s = mtl_test::make_context(ctx, static_cast<int>(i), TEST_SHA_HIST_NUM);
+    auto s = make_st20p_context(ctx, static_cast<int>(i), TEST_SHA_HIST_NUM);
     ASSERT_TRUE(s != nullptr);
     /* Store in rx_ctxs before st20p_rx_create so contexts outlive handles on ASSERT_*. */
     rx_ctxs.push_back(std::move(s));
-    tests_context* raw_rx = rx_ctxs.back().get();
+    St20pContext* raw_rx = rx_ctxs.back().get();
     raw_rx->width = spec.width;
     raw_rx->height = spec.height;
     raw_rx->fmt = spec.rx_fmt;
@@ -1001,13 +847,11 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     memcpy(raw_rx->shas, tx_ctxs[i]->shas, TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
 
     if (sc.rx_ext) {
-      ASSERT_TRUE(rx_ext_bufs[i].init(st, spec.rx_fmt, spec.width, spec.height,
-                                      sc.interlace, raw_rx->fb_cnt,
-                                      sc.line_padding_size));
-      raw_rx->ext_fb = rx_ext_bufs[i].data();
-      raw_rx->p_ext_frames = rx_ext_bufs[i].frames();
-      raw_rx->frame_size = rx_ext_bufs[i].frame_size();
-      info("%s, session %zu ext_fb %p\n", __func__, i, raw_rx->ext_fb);
+      ASSERT_TRUE(raw_rx->ext_frames.init(st, spec.rx_fmt, spec.width, spec.height,
+                                          sc.interlace, raw_rx->fb_cnt,
+                                          sc.line_padding_size));
+      raw_rx->frame_size = raw_rx->ext_frames.frame_size();
+      info("%s, session %zu ext_fb %p\n", __func__, i, raw_rx->ext_frames.data());
     }
 
     struct st20p_rx_ops ops_rx;
@@ -1037,7 +881,7 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     ops_rx.notify_event = test_ctx_notify_event;
     if (sc.rx_ext) {
       if (sc.rx_dedicated_ext) {
-        ops_rx.ext_frames = raw_rx->p_ext_frames;
+        ops_rx.ext_frames = raw_rx->ext_frames.frames();
       } else {
         ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
         ops_rx.query_ext_frame = test_st20p_rx_query_ext_frame;
@@ -1067,7 +911,7 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     EXPECT_GE(sch, 0);
     EXPECT_GE(mtl_sch_enable_sleep(st, sch, false), 0);
 
-    raw_rx->handle = rx_handles[i].get();
+    st20p_set_handle(raw_rx, rx_handles[i].get());
     st20p_rx_handle raw_rx_h = rx_handles[i].get();
     const bool internal_sha = (sc.device == ST_PLUGIN_DEVICE_TEST_INTERNAL);
     rx_workers.emplace_back(
@@ -1103,46 +947,31 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     info("%s, measurement window timed out before min_delta_frames\n", __func__);
   }
 
-  if (!sc.send_done_check) {
-    EXPECT_GE(mtl_run.stop(), 0);
-  }
+  for (size_t i = 0; i < sessions; i++) tx_workers[i].stop();
+  for (size_t i = 0; i < sessions; i++) rx_workers[i].stop();
+  EXPECT_GE(mtl_run.stop(), 0);
 
-  for (size_t i = 0; i < sessions; i++) {
-    const double nominal_fps = st_frame_rate(sc.streams[i].fps);
-    dbg("%s(%zu,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, raw_tx_ctxs[i],
-        mtl_test::vsync_count(raw_tx_ctxs[i]), win.tx_vsync[i]);
-    EXPECT_GT(mtl_test::vsync_count(raw_tx_ctxs[i]), 0);
-    EXPECT_NEAR(win.tx_vsync[i], nominal_fps, nominal_fps * 0.1);
-
-    tx_workers[i].stop();
-    if (sc.send_done_check) {
-      mtl_test::wait_until(
-          [&]() {
-            return mtl_test::tx_done_frames(raw_tx_ctxs[i]) >=
-                   mtl_test::tx_frames(raw_tx_ctxs[i]);
-          },
-          1000);
-      EXPECT_EQ(mtl_test::tx_frames(raw_tx_ctxs[i]),
-                mtl_test::tx_done_frames(raw_tx_ctxs[i]));
+  if (sc.vsync) {
+    for (size_t i = 0; i < sessions; i++) {
+      const double nominal_fps = st_frame_rate(sc.streams[i].fps);
+      dbg("%s(%zu,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, raw_tx_ctxs[i],
+          mtl_test::vsync_count(raw_tx_ctxs[i]), win.tx_vsync[i]);
+      EXPECT_GT(mtl_test::vsync_count(raw_tx_ctxs[i]), 0);
+      EXPECT_NEAR(win.tx_vsync[i], nominal_fps, nominal_fps * 0.1);
     }
-  }
 
-  if (sc.send_done_check) {
-    EXPECT_GE(mtl_run.stop(), 0);
-  }
-
-  const bool kernel_lo = mtl_test::is_kernel_loopback(ctx);
-  for (size_t i = 0; i < sessions; i++) {
-    const double nominal_fps = st_frame_rate(sc.streams[i].fps);
-    dbg("%s(%zu,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, raw_rx_ctxs[i],
-        mtl_test::vsync_count(raw_rx_ctxs[i]), win.rx_vsync[i]);
-    EXPECT_GT(mtl_test::vsync_count(raw_rx_ctxs[i]), 0);
-    if (!kernel_lo) {
-      EXPECT_NEAR(win.rx_vsync[i], nominal_fps, nominal_fps * 0.1);
-    } else {
-      info("%s, skip vsync check as it's kernel:lo\n", __func__);
+    const bool kernel_lo = mtl_test::is_kernel_loopback(ctx);
+    for (size_t i = 0; i < sessions; i++) {
+      const double nominal_fps = st_frame_rate(sc.streams[i].fps);
+      dbg("%s(%zu,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, raw_rx_ctxs[i],
+          mtl_test::vsync_count(raw_rx_ctxs[i]), win.rx_vsync[i]);
+      EXPECT_GT(mtl_test::vsync_count(raw_rx_ctxs[i]), 0);
+      if (!kernel_lo) {
+        EXPECT_NEAR(win.rx_vsync[i], nominal_fps, nominal_fps * 0.1);
+      } else {
+        info("%s, skip vsync check as it's kernel:lo\n", __func__);
+      }
     }
-    rx_workers[i].stop();
   }
 
   for (size_t i = 0; i < sessions; i++) {
@@ -1203,26 +1032,6 @@ TEST(St20p, digest_1080i_s2) {
   st20p_rx_digest_test(sc);
 }
 
-TEST(St20p, digest_1080p_internal_s1) {
-  St20pDigestScenario sc;
-  sc.streams = {make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE)};
-  sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  sc.level = ST_TEST_LEVEL_ALL;
-  sc.check_fps = false;
-  st20p_rx_digest_test(sc);
-}
-
-TEST(St20p, digest_s2) {
-  St20pDigestScenario sc;
-  sc.streams = {
-      make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE),
-      make_stream(ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE),
-  };
-  sc.level = ST_TEST_LEVEL_ALL;
-  sc.check_fps = false;
-  st20p_rx_digest_test(sc);
-}
-
 TEST(St20p, digest_1080p_fail_interval) {
   St20pDigestScenario sc;
   sc.streams = {make_stream(ST_FPS_P25, 1280, 720, ST_FRAME_FMT_YUV422PLANAR10LE)};
@@ -1245,7 +1054,6 @@ TEST(St20p, digest_1080p_internal_s2) {
       make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_Y210),
   };
   sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  sc.level = ST_TEST_LEVEL_ALL;
   sc.check_fps = false;
   st20p_rx_digest_test(sc);
 }
@@ -1258,7 +1066,8 @@ TEST(St20p, digest_1080p_no_convert_s2) {
       make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT),
   };
   sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  sc.level = ST_TEST_LEVEL_ALL;
+  /* Dual 1080p59.94 (~6.56 Gbps incl. RGB8) + SHA256 exceeds single-lcore TSC pacing. */
+  if (st_test_ctx()->para.pacing == ST21_TX_PACING_WAY_TSC) sc.check_fps = false;
   st20p_rx_digest_test(sc);
 }
 
@@ -1282,7 +1091,6 @@ TEST(St20p, tx_ext_digest_1080p_no_convert_s2) {
   };
   sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   sc.tx_ext = true;
-  sc.level = ST_TEST_LEVEL_ALL;
   st20p_rx_digest_test(sc);
 }
 
@@ -1294,7 +1102,7 @@ TEST(St20p, tx_ext_digest_1080p_convert_s2) {
   };
   sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   sc.tx_ext = true;
-  sc.level = ST_TEST_LEVEL_ALL;
+  sc.check_fps = false;
   st20p_rx_digest_test(sc);
 }
 
@@ -1327,7 +1135,7 @@ TEST(St20p, rx_ext_digest_1080p_convert_s2) {
  * dynamic ext frame can only be lent once its frame is known to be delivered. */
 TEST(St20p, rx_create_expect_fail_packet_convert_ext_frame) {
   auto ctx = st_test_ctx();
-  auto test_ctx = mtl_test::make_context(ctx, 0, 2);
+  auto test_ctx = make_st20p_context(ctx, 0, 2);
   ASSERT_TRUE(test_ctx != nullptr);
 
   struct st20p_rx_ops ops;
@@ -1452,7 +1260,6 @@ TEST(St20p, transport_yuv422p10le) {
   St20pDigestScenario sc;
   sc.streams = {make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE,
                             ST20_FMT_YUV_422_PLANAR10LE)};
-  sc.level = ST_TEST_LEVEL_ALL;
   sc.packing = ST20_PACKING_BPM;
   st20p_rx_digest_test(sc);
 }
@@ -1477,7 +1284,7 @@ TEST(St20p, tx_ext_frame_manual_release_two_phase) {
   const enum st_frame_fmt fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
 
   tx_ext_release_ctx tctx;
-  ScopedExtFrames ext_bufs;
+  mtl_test::ScopedExtFrames ext_bufs;
   ASSERT_TRUE(ext_bufs.init(st, fmt, width, height, false, fb_cnt));
 
   struct st20p_tx_ops ops_tx;
@@ -1504,7 +1311,7 @@ TEST(St20p, tx_ext_frame_manual_release_two_phase) {
 
   ScopedSt20pTx tx_handle(st20p_tx_create(st, &ops_tx));
   ASSERT_TRUE(static_cast<bool>(tx_handle));
-  tctx.handle = tx_handle.get();
+  tctx.handle.store(tx_handle.get(), std::memory_order_release);
   EXPECT_EQ(st20p_tx_set_block_timeout(tx_handle.get(), NS_PER_S / 5), 0); /* 200ms */
 
   mtl_test::ScopedMtlStart mtl_run(st);
@@ -1576,13 +1383,9 @@ TEST(St20p, tx_put_frame_abort) {
 
   /* Get a frame then abort it instead of normal put. */
   struct st_frame* frame = st20p_tx_get_frame(tx_handle.get());
-  if (frame) {
-    EXPECT_GE(st20p_tx_put_frame_abort(tx_handle.get(), frame), 0);
-    info("%s, st20p_tx_put_frame_abort succeeded\n", __func__);
-  } else {
-    info("%s, no frame available for TX abort test (expected in some configs)\n",
-         __func__);
-  }
+  ASSERT_NE(frame, nullptr);
+  EXPECT_GE(st20p_tx_put_frame_abort(tx_handle.get(), frame), 0);
+  info("%s, st20p_tx_put_frame_abort succeeded\n", __func__);
 }
 
 TEST(St20p, rx_put_frame_abort) {
@@ -1606,7 +1409,7 @@ TEST(St20p, rx_put_frame_abort) {
 
   ScopedSt20pTx tx_handle(st20p_tx_create(st, &ops_tx));
   ASSERT_TRUE(static_cast<bool>(tx_handle));
-  tx_ctx->handle = tx_handle.get();
+  st20p_set_handle(tx_ctx.get(), tx_handle.get());
 
   struct st20p_rx_ops ops_rx;
   st20p_rx_ops_init(rx_ctx.get(), &ops_rx);
@@ -1621,32 +1424,37 @@ TEST(St20p, rx_put_frame_abort) {
   EXPECT_EQ(st20p_rx_set_block_timeout(rx_handle.get(), NS_PER_S), 0);
 
   mtl_test::ScopedMtlStart mtl_run(st);
-  ScopedWorker tx_worker(tx_ctx.get(),
-                         std::thread(
-                             [](tests_context* s) {
-                               auto handle = (st20p_tx_handle)s->handle;
-                               while (!s->stop) {
-                                 auto frame = st20p_tx_get_frame(handle);
-                                 if (!frame) continue;
-                                 st20p_tx_put_frame(handle, frame);
-                                 __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
-                               }
-                             },
-                             tx_ctx.get()),
-                         [&]() { st20p_tx_wake_block(tx_handle.get()); });
+  mtl_test::ScopedWorker tx_worker(
+      tx_ctx.get(),
+      std::thread(
+          [](tests_context* s) {
+            auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
+            while (!s->stop) {
+              auto frame = st20p_tx_get_frame(handle);
+              if (!frame) continue;
+              st20p_tx_put_frame(handle, frame);
+              __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
+            }
+          },
+          tx_ctx.get()),
+      [&]() { st20p_tx_wake_block(tx_handle.get()); });
 
   EXPECT_GE(mtl_run.start(), 0);
   /* Wait for TX to pace >= 10 frames (~0.17 s at 59.94 fps vs legacy sleep(2))
    * before calling st20p_rx_get_frame. */
-  mtl_test::wait_until([&]() { return mtl_test::tx_frames(tx_ctx.get()) >= 10; }, 5000);
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return mtl_test::tx_frames(tx_ctx.get()) >= 10; }, 5000));
 
-  struct st_frame* frame = st20p_rx_get_frame(rx_handle.get());
-  if (frame) {
-    EXPECT_GE(st20p_rx_put_frame_abort(rx_handle.get(), frame), 0);
-    info("%s, st20p_rx_put_frame_abort succeeded\n", __func__);
-  } else {
-    info("%s, no rx frame available for abort test\n", __func__);
-  }
+  struct st_frame* frame = nullptr;
+  mtl_test::wait_until(
+      [&]() {
+        frame = st20p_rx_get_frame(rx_handle.get());
+        return frame != nullptr;
+      },
+      5000);
+  ASSERT_NE(frame, nullptr);
+  EXPECT_GE(st20p_rx_put_frame_abort(rx_handle.get(), frame), 0);
+  info("%s, st20p_rx_put_frame_abort succeeded\n", __func__);
 
   tx_worker.stop();
   EXPECT_GE(mtl_run.stop(), 0);
@@ -1689,8 +1497,8 @@ TEST(St20p, redundant_stats) {
   MTL_TEST_REQUIRE_PORTS(ctx, 4);
 
   const uint16_t udp_port = ST20P_TEST_UDP_PORT + 100;
-  auto tx_ctx = mtl_test::make_context(ctx, 0, 3);
-  auto rx_ctx = mtl_test::make_context(ctx, 0, 3);
+  auto tx_ctx = make_st20p_context(ctx, 0, 3);
+  auto rx_ctx = make_st20p_context(ctx, 0, 3);
   ASSERT_TRUE(tx_ctx != nullptr);
   ASSERT_TRUE(rx_ctx != nullptr);
 
@@ -1710,7 +1518,7 @@ TEST(St20p, redundant_stats) {
   ScopedSt20pTx tx_handle(st20p_tx_create(st, &ops_tx));
   ASSERT_TRUE(static_cast<bool>(tx_handle));
   EXPECT_EQ(st20p_tx_set_block_timeout(tx_handle.get(), NS_PER_S), 0);
-  tx_ctx->handle = tx_handle.get();
+  st20p_set_handle(tx_ctx.get(), tx_handle.get());
 
   struct st20p_rx_ops ops_rx;
   st20p_rx_ops_init(rx_ctx.get(), &ops_rx);
@@ -1728,28 +1536,27 @@ TEST(St20p, redundant_stats) {
   ScopedSt20pRx rx_handle(st20p_rx_create(st, &ops_rx));
   ASSERT_TRUE(static_cast<bool>(rx_handle));
   EXPECT_EQ(st20p_rx_set_block_timeout(rx_handle.get(), NS_PER_S), 0);
-  rx_ctx->handle = rx_handle.get();
+  st20p_set_handle(rx_ctx.get(), rx_handle.get());
 
   mtl_test::ScopedMtlStart mtl_run(st);
-  ScopedWorker tx_worker(tx_ctx.get(),
-                         std::thread(test_st20p_tx_frame_thread, tx_ctx.get()),
-                         [&]() { st20p_tx_wake_block(tx_handle.get()); });
-  ScopedWorker rx_worker(rx_ctx.get(),
-                         std::thread(
-                             [](tests_context* s) {
-                               auto handle = (st20p_rx_handle)s->handle;
-                               while (!s->stop) {
-                                 auto frame = st20p_rx_get_frame(handle);
-                                 if (!frame) continue;
-                                 const bool complete =
-                                     st_is_frame_complete(frame->status);
-                                 st20p_rx_put_frame(handle, frame);
-                                 if (complete)
-                                   __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
-                               }
-                             },
-                             rx_ctx.get()),
-                         [&]() { st20p_rx_wake_block(rx_handle.get()); });
+  mtl_test::ScopedWorker tx_worker(tx_ctx.get(),
+                                   std::thread(test_st20p_tx_frame_thread, tx_ctx.get()),
+                                   [&]() { st20p_tx_wake_block(tx_handle.get()); });
+  mtl_test::ScopedWorker rx_worker(
+      rx_ctx.get(),
+      std::thread(
+          [](tests_context* s) {
+            auto handle = static_cast<st20p_rx_handle>(st20p_get_handle(s));
+            while (!s->stop) {
+              auto frame = st20p_rx_get_frame(handle);
+              if (!frame) continue;
+              const bool complete = st_is_frame_complete(frame->status);
+              st20p_rx_put_frame(handle, frame);
+              if (complete) __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
+            }
+          },
+          rx_ctx.get()),
+      [&]() { st20p_rx_wake_block(rx_handle.get()); });
 
   EXPECT_GE(mtl_run.start(), 0);
   /* Wait until both redundant RX legs report traffic so startup skew on leg R
@@ -1778,27 +1585,7 @@ TEST(St20p, redundant_stats) {
   struct st20_rx_user_stats rx_stats;
   EXPECT_GE(st20p_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
 
-  uint64_t tx_frames_p = tx_stats.common.port[MTL_SESSION_PORT_P].frames;
-  uint64_t tx_frames_r = tx_stats.common.port[MTL_SESSION_PORT_R].frames;
-  EXPECT_GT(tx_frames_p, static_cast<uint64_t>(0)) << "TX port 0 frames must be > 0";
-  EXPECT_GT(tx_frames_r, static_cast<uint64_t>(0)) << "TX port 1 frames must be > 0";
-  EXPECT_EQ(tx_frames_p, tx_frames_r)
-      << "TX port frames should be equal (port0=" << tx_frames_p
-      << " port1=" << tx_frames_r << ")";
-  info("%s, TX frames port0=%" PRIu64 " port1=%" PRIu64 "\n", __func__, tx_frames_p,
-       tx_frames_r);
-
-  uint64_t rx_bytes_p = rx_stats.common.port[MTL_SESSION_PORT_P].bytes;
-  uint64_t rx_bytes_r = rx_stats.common.port[MTL_SESSION_PORT_R].bytes;
-  EXPECT_GT(rx_bytes_p, static_cast<uint64_t>(0)) << "RX port 0 bytes must be > 0";
-  EXPECT_GT(rx_bytes_r, static_cast<uint64_t>(0)) << "RX port 1 bytes must be > 0";
-  uint64_t rx_max_bytes = std::max(rx_bytes_p, rx_bytes_r);
-  uint64_t rx_min_bytes = std::min(rx_bytes_p, rx_bytes_r);
-  EXPECT_GT(rx_min_bytes, rx_max_bytes * 80 / 100)
-      << "RX port bytes should be approximately equal (port0=" << rx_bytes_p
-      << " port1=" << rx_bytes_r << ")";
-  info("%s, RX bytes port0=%" PRIu64 " port1=%" PRIu64 "\n", __func__, rx_bytes_p,
-       rx_bytes_r);
+  mtl_test::expect_redundant_port_stats(tx_stats, rx_stats);
 
   EXPECT_GT(mtl_test::rx_frames(rx_ctx.get()), 0) << "Must have received frames";
   info("%s, TX sent %d, RX received %d frames\n", __func__,
@@ -1887,11 +1674,11 @@ static void st20p_rx_stats_concurrent_free_test(bool reset, int reader_threads =
        reset ? "reset_stats" : "get_stats", calls.load(), iterations, reader_threads);
 }
 
-TEST(St20s, rx_get_stats_concurrent_free_no_uaf) {
+TEST(St20p, rx_get_stats_concurrent_free_no_uaf) {
   st20p_rx_stats_concurrent_free_test(false);
 }
 
-TEST(St20s, rx_reset_stats_concurrent_free_no_uaf) {
+TEST(St20p, rx_reset_stats_concurrent_free_no_uaf) {
   st20p_rx_stats_concurrent_free_test(true);
 }
 
@@ -1923,26 +1710,27 @@ static void st20p_tx_epoch_drop_test(bool user_pacing) {
   ASSERT_TRUE(static_cast<bool>(tx_handle));
   EXPECT_EQ(st20p_tx_set_block_timeout(tx_handle.get(), NS_PER_S), 0);
 
-  test_ctx->handle = tx_handle.get();
-  ScopedWorker tx_worker(test_ctx.get(),
-                         std::thread(
-                             [user_pacing](tests_context* s) {
-                               auto handle = (st20p_tx_handle)s->handle;
-                               auto m_handle = s->ctx->handle;
-                               while (!s->stop) {
-                                 auto frame = st20p_tx_get_frame(handle);
-                                 if (!frame) continue;
-                                 if (user_pacing) {
-                                   frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
-                                   frame->timestamp = mtl_ptp_read_time(m_handle) +
-                                                      20 * 1000 * 1000; /* +20ms */
-                                 }
-                                 st20p_tx_put_frame(handle, frame);
-                                 __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
-                               }
-                             },
-                             test_ctx.get()),
-                         [&]() { st20p_tx_wake_block(tx_handle.get()); });
+  st20p_set_handle(test_ctx.get(), tx_handle.get());
+  mtl_test::ScopedWorker tx_worker(
+      test_ctx.get(),
+      std::thread(
+          [user_pacing](tests_context* s) {
+            auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
+            auto m_handle = s->ctx->handle;
+            while (!s->stop) {
+              auto frame = st20p_tx_get_frame(handle);
+              if (!frame) continue;
+              if (user_pacing) {
+                frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+                frame->timestamp =
+                    mtl_ptp_read_time(m_handle) + 20 * 1000 * 1000; /* +20ms */
+              }
+              st20p_tx_put_frame(handle, frame);
+              __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
+            }
+          },
+          test_ctx.get()),
+      [&]() { st20p_tx_wake_block(tx_handle.get()); });
 
   /* Wait for >= 40 paced frames (~0.67 s at 59.94 fps vs legacy sleep(5)):
    * 40 frames exercises >13 wraparounds of the 3-slot framebuffer ring. */
@@ -1967,4 +1755,337 @@ TEST(St20p, tx_no_epoch_drop) {
 
 TEST(St20p, tx_user_pacing_no_epoch_drop) {
   st20p_tx_epoch_drop_test(true);
+}
+
+namespace {
+
+/* Lightweight RAII loopback pair for ST20p control/stats/pcap API tests. */
+struct St20pLoopbackPair {
+  ScopedSt20pContext tx_ctx;
+  ScopedSt20pContext rx_ctx;
+  ScopedSt20pTx tx;
+  ScopedSt20pRx rx;
+  mtl_test::ScopedMtlStart mtl_run;
+  mtl_test::ScopedWorker tx_worker;
+  mtl_test::ScopedWorker rx_worker;
+
+  explicit St20pLoopbackPair(mtl_handle st) : mtl_run(st) {
+  }
+
+  void init(struct st_tests_context* ctx, uint16_t udp_port, uint32_t rx_extra_flags = 0,
+            int width = 1280, int height = 720, enum st_fps fps = ST_FPS_P59_94) {
+    tx_ctx = make_st20p_context(ctx, 0, 3);
+    rx_ctx = make_st20p_context(ctx, 0, 3);
+    ASSERT_TRUE(tx_ctx != nullptr);
+    ASSERT_TRUE(rx_ctx != nullptr);
+
+    struct st20p_tx_ops ops_tx;
+    st20p_tx_ops_init(tx_ctx.get(), &ops_tx);
+    ops_tx.name = "st20p_api_tx";
+    mtl_test::fill_tx_port(ops_tx.port, ctx, udp_port, ST20P_TEST_PAYLOAD_TYPE);
+    ops_tx.width = width;
+    ops_tx.height = height;
+    ops_tx.fps = fps;
+    ops_tx.input_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+    ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+    ops_tx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+    ops_tx.notify_frame_available = nullptr;
+    ops_tx.notify_event = nullptr;
+    ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+
+    tx.reset(st20p_tx_create(ctx->handle, &ops_tx));
+    ASSERT_TRUE(static_cast<bool>(tx));
+    EXPECT_EQ(st20p_tx_set_block_timeout(tx.get(), NS_PER_S), 0);
+    st20p_set_handle(tx_ctx.get(), tx.get());
+
+    struct st20p_rx_ops ops_rx;
+    st20p_rx_ops_init(rx_ctx.get(), &ops_rx);
+    ops_rx.name = "st20p_api_rx";
+    mtl_test::fill_rx_port(ops_rx.port, ctx, udp_port, ST20P_TEST_PAYLOAD_TYPE);
+    ops_rx.width = width;
+    ops_rx.height = height;
+    ops_rx.fps = fps;
+    ops_rx.output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+    ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+    ops_rx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+    ops_rx.notify_frame_available = nullptr;
+    ops_rx.notify_event = nullptr;
+    ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET | rx_extra_flags;
+
+    rx.reset(st20p_rx_create(ctx->handle, &ops_rx));
+    ASSERT_TRUE(static_cast<bool>(rx));
+    EXPECT_EQ(st20p_rx_set_block_timeout(rx.get(), NS_PER_S), 0);
+    st20p_set_handle(rx_ctx.get(), rx.get());
+
+    st20p_tx_handle tx_h = tx.get();
+    tx_worker = mtl_test::ScopedWorker(
+        tx_ctx.get(),
+        std::thread(
+            [](tests_context* s) {
+              auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
+              while (!s->stop) {
+                auto* frame = st20p_tx_get_frame(handle);
+                if (!frame) continue;
+                st20p_tx_put_frame(handle, frame);
+                __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
+              }
+            },
+            tx_ctx.get()),
+        [tx_h]() { st20p_tx_wake_block(tx_h); });
+
+    st20p_rx_handle rx_h = rx.get();
+    rx_worker = mtl_test::ScopedWorker(
+        rx_ctx.get(),
+        std::thread(
+            [](tests_context* s) {
+              auto handle = static_cast<st20p_rx_handle>(st20p_get_handle(s));
+              while (!s->stop) {
+                auto* frame = st20p_rx_get_frame(handle);
+                if (!frame) continue;
+                const bool complete = st_is_frame_complete(frame->status);
+                st20p_rx_put_frame(handle, frame);
+                if (complete) __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
+              }
+            },
+            rx_ctx.get()),
+        [rx_h]() { st20p_rx_wake_block(rx_h); });
+
+    EXPECT_GE(mtl_run.start(), 0);
+  }
+
+  void stop_all() {
+    tx_worker.stop();
+    rx_worker.stop();
+    EXPECT_GE(mtl_run.stop(), 0);
+  }
+};
+
+}  // namespace
+
+TEST(St20p, query_params) {
+  auto ctx = st_test_ctx();
+  auto st = ctx->handle;
+  const uint16_t fb_cnt = 3;
+
+  auto tx_ctx = mtl_test::make_context(ctx, 0, fb_cnt);
+  auto rx_ctx = mtl_test::make_context(ctx, 1, fb_cnt);
+  ASSERT_TRUE(tx_ctx != nullptr);
+  ASSERT_TRUE(rx_ctx != nullptr);
+
+  struct st20p_tx_ops ops_tx;
+  st20p_tx_ops_init(tx_ctx.get(), &ops_tx);
+  ScopedSt20pTx tx_handle(st20p_tx_create(st, &ops_tx));
+  ASSERT_TRUE(static_cast<bool>(tx_handle));
+
+  const size_t expected_tx_size =
+      st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, ops_tx.interlaced);
+  EXPECT_EQ(st20p_tx_frame_size(tx_handle.get()), expected_tx_size);
+  EXPECT_GE(st20p_tx_get_sch_idx(tx_handle.get()), 0);
+  for (uint16_t idx = 0; idx < fb_cnt; idx++) {
+    EXPECT_NE(st20p_tx_get_fb_addr(tx_handle.get(), idx), nullptr);
+  }
+  EXPECT_EQ(st20p_tx_get_fb_addr(tx_handle.get(), fb_cnt), nullptr);
+
+  double tr_offset_ns = 0.0;
+  double trs_ns = 0.0;
+  uint32_t vrx_pkts = 0;
+  EXPECT_EQ(
+      st20p_tx_get_pacing_params(tx_handle.get(), &tr_offset_ns, &trs_ns, &vrx_pkts), 0);
+  EXPECT_GT(tr_offset_ns, 0.0);
+  EXPECT_GT(trs_ns, 0.0);
+  EXPECT_GT(vrx_pkts, 0u);
+  EXPECT_EQ(st20p_tx_get_pacing_params(tx_handle.get(), &tr_offset_ns, nullptr, nullptr),
+            0);
+  EXPECT_LT(st20p_tx_get_pacing_params(nullptr, &tr_offset_ns, &trs_ns, &vrx_pkts), 0);
+
+  struct st20p_rx_ops ops_rx;
+  st20p_rx_ops_init(rx_ctx.get(), &ops_rx);
+  snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  ScopedSt20pRx rx_handle(st20p_rx_create(st, &ops_rx));
+  ASSERT_TRUE(static_cast<bool>(rx_handle));
+
+  const size_t expected_rx_size =
+      st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, ops_rx.interlaced);
+  EXPECT_EQ(st20p_rx_frame_size(rx_handle.get()), expected_rx_size);
+  EXPECT_GE(st20p_rx_get_sch_idx(rx_handle.get()), 0);
+  for (uint16_t idx = 0; idx < fb_cnt; idx++) {
+    EXPECT_NE(st20p_rx_get_fb_addr(rx_handle.get(), idx), nullptr);
+  }
+  EXPECT_EQ(st20p_rx_get_fb_addr(rx_handle.get(), fb_cnt), nullptr);
+  EXPECT_EQ(st20p_rx_get_fb_addr(rx_handle.get(), static_cast<uint16_t>(fb_cnt * 2)),
+            nullptr);
+
+  struct st20_rx_tp_pass pass = {};
+  EXPECT_LT(st20p_rx_timing_parser_critical(rx_handle.get(), &pass), 0);
+
+  ScopedStFrame hp_frame(
+      st_frame_create(st, ST_FRAME_FMT_YUV422PLANAR10LE, 640, 360, false));
+  ASSERT_TRUE(static_cast<bool>(hp_frame));
+  EXPECT_EQ(st_frame_sanity_check(hp_frame.get()), 0);
+  EXPECT_NE(st_frame_addr(hp_frame.get(), 0), nullptr);
+  EXPECT_NE(st_frame_addr(hp_frame.get(), 1), nullptr);
+  EXPECT_NE(st_frame_addr(hp_frame.get(), 2), nullptr);
+  EXPECT_EQ(st_frame_iova(hp_frame.get(), 0),
+            mtl_hp_virt2iova(st, st_frame_addr(hp_frame.get(), 0)));
+  EXPECT_EQ(hp_frame.get()->buffer_size,
+            st_frame_size(ST_FRAME_FMT_YUV422PLANAR10LE, 640, 360, false));
+  EXPECT_EQ(hp_frame.get()->data_size, hp_frame.get()->buffer_size);
+  hp_frame.reset();
+}
+
+TEST(St20p, session_stats_reset) {
+  auto ctx = st_test_ctx();
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+
+  St20pLoopbackPair pair(ctx->handle);
+  pair.init(ctx, ST20P_TEST_UDP_PORT + 110);
+  if (::testing::Test::HasFatalFailure()) return;
+
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= 5; }, 6000));
+  pair.stop_all();
+
+  struct st20_tx_user_stats tx_stats = {};
+  struct st20_rx_user_stats rx_stats = {};
+  ASSERT_GE(st20p_tx_get_session_stats(pair.tx.get(), &tx_stats), 0);
+  EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
+  EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_GE(st20p_tx_reset_session_stats(pair.tx.get()), 0);
+  ASSERT_GE(st20p_tx_get_session_stats(pair.tx.get(), &tx_stats), 0);
+  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
+  EXPECT_EQ(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+
+  /* Free TX before resetting RX stats so no packets arrive under auto-start mode. */
+  pair.tx.reset();
+
+  ASSERT_GE(st20p_rx_get_session_stats(pair.rx.get(), &rx_stats), 0);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_GE(st20p_rx_reset_session_stats(pair.rx.get()), 0);
+  ASSERT_GE(st20p_rx_get_session_stats(pair.rx.get(), &rx_stats), 0);
+  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+}
+
+TEST(St20p, update_source_and_destination) {
+  auto ctx = st_test_ctx();
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+
+  const uint16_t udp_port_1 = ST20P_TEST_UDP_PORT + 120;
+  const uint16_t udp_port_2 = ST20P_TEST_UDP_PORT + 122;
+  const bool use_mcast_phase2 = ctx->mcast_only || !mtl_test::is_kernel_loopback(ctx);
+
+  St20pLoopbackPair pair(ctx->handle);
+  pair.init(ctx, udp_port_1);
+  if (::testing::Test::HasFatalFailure()) return;
+
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= 5; }, 6000));
+
+  /* Switch TX destination and RX source to a new UDP port / IP. */
+  struct st_tx_dest_info dst = {};
+  struct st_rx_source_info src = {};
+  dst.udp_port[MTL_SESSION_PORT_P] = udp_port_2;
+  src.udp_port[MTL_SESSION_PORT_P] = udp_port_2;
+  if (use_mcast_phase2) {
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+  } else {
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+  }
+  EXPECT_GE(st20p_tx_update_destination(pair.tx.get(), &dst), 0);
+  EXPECT_GE(st20p_rx_update_source(pair.rx.get(), &src), 0);
+
+  const int base_rx_1 = mtl_test::rx_frames(pair.rx_ctx.get());
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= base_rx_1 + 5; }, 6000));
+
+  /* Switch back to initial UDP port / IP. */
+  memset(&dst, 0, sizeof(dst));
+  memset(&src, 0, sizeof(src));
+  dst.udp_port[MTL_SESSION_PORT_P] = udp_port_1;
+  src.udp_port[MTL_SESSION_PORT_P] = udp_port_1;
+  if (ctx->mcast_only) {
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+  } else {
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+  }
+  EXPECT_GE(st20p_tx_update_destination(pair.tx.get(), &dst), 0);
+  EXPECT_GE(st20p_rx_update_source(pair.rx.get(), &src), 0);
+
+  const int base_rx_2 = mtl_test::rx_frames(pair.rx_ctx.get());
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= base_rx_2 + 5; }, 6000));
+  pair.stop_all();
+}
+
+TEST(St20p, rx_timing_parser_critical) {
+  auto ctx = st_test_ctx();
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+
+  St20pLoopbackPair pair(ctx->handle);
+  pair.init(ctx, ST20P_TEST_UDP_PORT + 130, ST20P_RX_FLAG_TIMING_PARSER_META);
+  if (::testing::Test::HasFatalFailure()) return;
+
+  /* Timing parser initializes after stream auto-detection on first received frames. */
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= 5; }, 6000));
+
+  struct st20_rx_tp_pass pass = {};
+  EXPECT_EQ(st20p_rx_timing_parser_critical(pair.rx.get(), &pass), 0);
+  EXPECT_GT(pass.cinst_max_narrow, 0);
+  EXPECT_GE(pass.cinst_max_wide, pass.cinst_max_narrow);
+  EXPECT_GT(pass.vrx_max_narrow, 0);
+  EXPECT_GE(pass.vrx_max_wide, pass.vrx_max_narrow);
+  EXPECT_GT(pass.tr_offset, 0);
+  EXPECT_GT(pass.latency_max, 0);
+  EXPECT_GE(pass.rtp_ts_delta_max, pass.rtp_ts_delta_min);
+
+  pair.stop_all();
+}
+
+TEST(St20p, rx_pcapng_dump) {
+  auto ctx = st_test_ctx();
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+  if (!mtl_pmd_is_dpdk_based(ctx->handle, MTL_PORT_R)) {
+    GTEST_SKIP() << "MTL_PORT_R is not a DPDK-based PMD";
+  }
+
+  St20pLoopbackPair pair(ctx->handle);
+  pair.init(ctx, ST20P_TEST_UDP_PORT + 140);
+  if (::testing::Test::HasFatalFailure()) return;
+
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= 5; }, 6000));
+
+  const uint32_t max_dump_packets = 100;
+  struct st_pcap_dump_meta meta = {};
+  int ret = st20p_rx_pcapng_dump(pair.rx.get(), max_dump_packets, true, &meta);
+
+  struct UnlinkGuard {
+    const char* path = nullptr;
+    ~UnlinkGuard() {
+      if (path && path[0] != '\0') unlink(path);
+    }
+  } unlink_guard{ret >= 0 ? meta.file_name[MTL_SESSION_PORT_P] : nullptr};
+
+  EXPECT_GE(ret, 0);
+  EXPECT_EQ(meta.dumped_packets[MTL_SESSION_PORT_P], max_dump_packets);
+  if (ret >= 0) {
+    struct stat st_buf = {};
+    EXPECT_EQ(stat(meta.file_name[MTL_SESSION_PORT_P], &st_buf), 0);
+    EXPECT_GT(st_buf.st_size, 0);
+  }
+
+  pair.stop_all();
 }

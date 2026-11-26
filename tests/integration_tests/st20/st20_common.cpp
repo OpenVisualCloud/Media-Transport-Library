@@ -4,6 +4,7 @@
 
 #include "st20_common.h"
 
+#include <algorithm>
 #include <cmath>
 
 uint16_t udp_port_for_idx(int idx, bool hdr_split, int base) {
@@ -29,7 +30,7 @@ tests_context* init_test_ctx(struct st_tests_context* global_ctx, int idx,
 
 bool st20_alloc_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t frame_size) {
   tctx->ext_frames =
-      (struct st20_ext_frame*)malloc(sizeof(*tctx->ext_frames) * tctx->fb_cnt);
+      (struct st20_ext_frame*)st_test_zmalloc(sizeof(*tctx->ext_frames) * tctx->fb_cnt);
   if (!tctx->ext_frames) return false;
   size_t pg_sz = mtl_page_size(m_handle);
   size_t fb_size = frame_size * tctx->fb_cnt;
@@ -51,7 +52,7 @@ bool st20_alloc_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t fram
 
 bool st20_alloc_dma_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t fb_size) {
   tctx->ext_frames =
-      (struct st20_ext_frame*)malloc(sizeof(*tctx->ext_frames) * tctx->fb_cnt);
+      (struct st20_ext_frame*)st_test_zmalloc(sizeof(*tctx->ext_frames) * tctx->fb_cnt);
   if (!tctx->ext_frames) return false;
   mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(m_handle, fb_size * tctx->fb_cnt);
   if (!dma_mem) return false;
@@ -165,7 +166,14 @@ int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
   auto handle = (st20_tx_handle)st20_get_handle(ctx);
   if (!handle) return -EIO; /* not ready */
 
-  if (ctx->ext_fb_in_use[ctx->fb_idx]) {
+  constexpr int max_slots =
+      static_cast<int>(sizeof(ctx->ext_fb_in_use) / sizeof(ctx->ext_fb_in_use[0]));
+  if (static_cast<int>(ctx->fb_idx) >= max_slots) {
+    err("%s, fb_idx %d exceeds ext_fb_in_use capacity %d\n", __func__, ctx->fb_idx,
+        max_slots);
+    return -EIO;
+  }
+  if (__atomic_load_n(&ctx->ext_fb_in_use[ctx->fb_idx], __ATOMIC_ACQUIRE)) {
     err("%s, ext frame %d not available\n", __func__, ctx->fb_idx);
     return -EIO;
   }
@@ -175,7 +183,7 @@ int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
     err("%s, set ext framebuffer fail %d fb_idx %d\n", __func__, ret, ctx->fb_idx);
     return -EIO;
   }
-  ctx->ext_fb_in_use[ctx->fb_idx] = true;
+  __atomic_store_n(&ctx->ext_fb_in_use[ctx->fb_idx], true, __ATOMIC_RELEASE);
 
   *next_frame_idx = ctx->fb_idx;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
@@ -194,7 +202,14 @@ int tx_next_ext_video_field(void* priv, uint16_t* next_frame_idx,
   auto handle = (st20_tx_handle)st20_get_handle(ctx);
   if (!handle) return -EIO; /* not ready */
 
-  if (ctx->ext_fb_in_use[ctx->fb_idx]) {
+  constexpr int max_slots =
+      static_cast<int>(sizeof(ctx->ext_fb_in_use) / sizeof(ctx->ext_fb_in_use[0]));
+  if (static_cast<int>(ctx->fb_idx) >= max_slots) {
+    err("%s, fb_idx %d exceeds ext_fb_in_use capacity %d\n", __func__, ctx->fb_idx,
+        max_slots);
+    return -EIO;
+  }
+  if (__atomic_load_n(&ctx->ext_fb_in_use[ctx->fb_idx], __ATOMIC_ACQUIRE)) {
     err("%s, ext frame %d not available\n", __func__, ctx->fb_idx);
     return -EIO;
   }
@@ -204,7 +219,7 @@ int tx_next_ext_video_field(void* priv, uint16_t* next_frame_idx,
     err("%s, set ext framebuffer fail %d fb_idx %d\n", __func__, ret, ctx->fb_idx);
     return -EIO;
   }
-  ctx->ext_fb_in_use[ctx->fb_idx] = true;
+  __atomic_store_n(&ctx->ext_fb_in_use[ctx->fb_idx], true, __ATOMIC_RELEASE);
 
   *next_frame_idx = ctx->fb_idx;
   int fb_send = __atomic_load_n(&ctx->fb_send, __ATOMIC_RELAXED);
@@ -223,11 +238,15 @@ int tx_notify_ext_frame_done(void* priv, uint16_t frame_idx,
 
   auto handle = (st20_tx_handle)st20_get_handle(ctx);
   if (!handle) return -EIO; /* not ready */
+  if (!ctx->ext_frames) return -EIO;
 
+  constexpr int max_slots =
+      static_cast<int>(sizeof(ctx->ext_fb_in_use) / sizeof(ctx->ext_fb_in_use[0]));
+  const int cnt = std::min(ctx->fb_cnt, max_slots);
   void* frame_addr = st20_tx_get_framebuffer(handle, frame_idx);
-  for (int i = 0; i < ctx->fb_cnt; ++i) {
+  for (int i = 0; i < cnt; ++i) {
     if (frame_addr == ctx->ext_frames[i].buf_addr) {
-      ctx->ext_fb_in_use[i] = false;
+      __atomic_store_n(&ctx->ext_fb_in_use[i], false, __ATOMIC_RELEASE);
       return 0;
     }
   }
@@ -483,6 +502,7 @@ void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr, bool newf
   }
 
   frame = s->frame_buf[0];
+  if (!frame) return;
   payload = (uint8_t*)hdr + sizeof(*hdr);
   row_number = ntohs(hdr->row_number);
   row_offset = ntohs(hdr->row_offset);
@@ -713,6 +733,25 @@ void init_single_port_rx(struct st20_rx_ops& ops, tests_context* tctx, const cha
   ops.rtp_ring_size = 1024;
 }
 
+static void st20_release_rx_ext_frame(tests_context* ctx, void* frame,
+                                      void* opaque = nullptr) {
+  if (opaque) {
+    bool* in_use = static_cast<bool*>(opaque);
+    EXPECT_TRUE(__atomic_exchange_n(in_use, false, __ATOMIC_ACQ_REL));
+    return;
+  }
+  if (!ctx->ext_frames) return;
+  const int max_slots =
+      static_cast<int>(sizeof(ctx->ext_fb_in_use) / sizeof(ctx->ext_fb_in_use[0]));
+  const int cnt = std::min(ctx->fb_cnt, max_slots);
+  for (int j = 0; j < cnt; j++) {
+    if (ctx->ext_frames[j].buf_addr == frame) {
+      __atomic_store_n(&ctx->ext_fb_in_use[j], false, __ATOMIC_RELEASE);
+      return;
+    }
+  }
+}
+
 void st20_rx_drain_bufq_put_framebuff(tests_context* ctx) {
   if (!ctx) return;
   std::unique_lock<std::mutex> lck(ctx->mtx);
@@ -724,6 +763,7 @@ void st20_rx_drain_bufq_put_framebuff(tests_context* ctx) {
     if (handle) {
       st20_rx_put_framebuff(handle, frame);
     }
+    st20_release_rx_ext_frame(ctx, frame);
   }
 }
 
@@ -826,7 +866,6 @@ St20DeinitGuard::St20DeinitGuard(mtl_handle handle, std::vector<tests_context*>&
       stopped_(false),
       sessions_released_(false),
       cleaned_(false),
-      ext_buf_(false),
       tx_ctx_(tx_ctx),
       rx_ctx_(rx_ctx),
       tx_handle_(tx_handle),
@@ -841,10 +880,6 @@ St20DeinitGuard::~St20DeinitGuard() {
 
 void St20DeinitGuard::set_started(bool started) {
   started_ = started;
-}
-
-void St20DeinitGuard::set_ext_buf(bool ext_buf) {
-  ext_buf_ = ext_buf;
 }
 
 void St20DeinitGuard::add_thread_group(std::vector<std::thread>& threads) {
@@ -920,7 +955,7 @@ void St20DeinitGuard::cleanup() {
 
   for (auto*& c : rx_ctx_) {
     if (!c) continue;
-    if (ext_buf_ && m_handle_ && c->ext_fb && c->ext_fb_iova_map_sz &&
+    if (m_handle_ && c->ext_fb && c->ext_fb_iova_map_sz &&
         c->ext_fb_iova != MTL_BAD_IOVA) {
       mtl_dma_unmap(m_handle_, c->ext_fb, c->ext_fb_iova, c->ext_fb_iova_map_sz);
     }
@@ -931,7 +966,7 @@ void St20DeinitGuard::cleanup() {
 
   for (auto*& c : tx_ctx_) {
     if (!c) continue;
-    if (ext_buf_ && m_handle_ && c->ext_fb && c->ext_fb_iova_map_sz &&
+    if (m_handle_ && c->ext_fb && c->ext_fb_iova_map_sz &&
         c->ext_fb_iova != MTL_BAD_IOVA) {
       mtl_dma_unmap(m_handle_, c->ext_fb, c->ext_fb_iova, c->ext_fb_iova_map_sz);
     }
@@ -945,50 +980,54 @@ void St20DeinitGuard::cleanup() {
 
 int st20_digest_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
-  dbg("%s(%d), frame %p, opaque %p\n", __func__, ctx->idx, frame, meta->opaque);
-
-  if (meta->opaque) {
-    /* free dynamic ext frame */
-    bool* in_use = (bool*)meta->opaque;
-    EXPECT_TRUE(*in_use);
-    *in_use = false;
-  }
+  void* opaque = meta->opaque;
+  dbg("%s(%d), frame %p, opaque %p\n", __func__, ctx->idx, frame, opaque);
 
   auto handle = (st20_rx_handle)st20_get_handle(ctx);
-  if (!handle) return -EIO;
+  if (!handle) {
+    if (opaque) st20_release_rx_ext_frame(ctx, frame, opaque);
+    return -EIO;
+  }
+
+  auto put_and_release = [&]() {
+    st20_rx_put_framebuff(handle, frame);
+    if (opaque) st20_release_rx_ext_frame(ctx, frame, opaque);
+  };
 
   ctx->slice_recv_timestamp = 0;
   ctx->slice_recv_lines = 0;
 
   if (!st_is_frame_complete(meta->status)) {
     ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff(handle, frame);
+    put_and_release();
     return 0;
   }
   if (meta->frame_total_size != ctx->frame_size) {
     ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff(handle, frame);
+    put_and_release();
     return 0;
   }
   if (meta->uframe_total_size != ctx->uframe_size) {
     ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff(handle, frame);
+    put_and_release();
     return 0;
   }
   if (meta->frame_total_size != meta->frame_recv_size) {
     ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff(handle, frame);
+    put_and_release();
     return 0;
   }
-  if (meta->fpt > (ctx->frame_time / 10)) {
-    ctx->meta_timing_fail_cnt++;
-    dbg("%s(%d), fpt %" PRId64 ", frame time %fms\n", __func__, ctx->idx, meta->fpt,
-        ctx->frame_time / NS_PER_MS);
-  }
-  double rx_time = (double)meta->timestamp_last_pkt - meta->timestamp_first_pkt;
-  if (rx_time > ctx->frame_time) {
-    ctx->meta_timing_fail_cnt++;
-    dbg("%s(%d), rx_time %fms\n", __func__, ctx->idx, rx_time / NS_PER_MS);
+  if (ctx->frame_time > 0) {
+    if (meta->fpt > (ctx->frame_time / 10)) {
+      ctx->meta_timing_fail_cnt++;
+      dbg("%s(%d), fpt %" PRId64 ", frame time %fms\n", __func__, ctx->idx, meta->fpt,
+          ctx->frame_time / NS_PER_MS);
+    }
+    double rx_time = (double)meta->timestamp_last_pkt - meta->timestamp_first_pkt;
+    if (rx_time > ctx->frame_time) {
+      ctx->meta_timing_fail_cnt++;
+      dbg("%s(%d), rx_time %fms\n", __func__, ctx->idx, rx_time / NS_PER_MS);
+    }
   }
 
   if (ctx->user_timestamp && !ctx->user_pacing) {
@@ -1001,13 +1040,20 @@ int st20_digest_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_met
     ctx->pre_timestamp = (uint32_t)meta->timestamp;
   }
 
-  std::unique_lock<std::mutex> lck(ctx->mtx);
-  if (ctx->buf_q.empty()) {
-    ctx->buf_q.push(frame);
-    ctx->cv.notify_all();
-  } else {
-    st20_rx_put_framebuff(handle, frame);
+  bool pushed = false;
+  {
+    std::unique_lock<std::mutex> lck(ctx->mtx);
+    if (!ctx->stop.load(std::memory_order_acquire) && ctx->buf_q.empty()) {
+      /* Keep dynamic ext slot marked in_use until the SHA worker finishes hashing. */
+      if (opaque) {
+        EXPECT_TRUE(__atomic_load_n(static_cast<bool*>(opaque), __ATOMIC_ACQUIRE));
+      }
+      ctx->buf_q.push(frame);
+      ctx->cv.notify_all();
+      pushed = true;
+    }
   }
+  if (!pushed) put_and_release();
   __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
 
@@ -1076,42 +1122,57 @@ int st20_digest_rx_slice_ready(void* priv, void* /*frame*/,
 
 int st20_digest_rx_field_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
+  void* opaque = meta->opaque;
 
   auto handle = (st20_rx_handle)st20_get_handle(ctx);
-  if (!handle) return -EIO;
+  if (!handle) {
+    if (opaque) st20_release_rx_ext_frame(ctx, frame, opaque);
+    return -EIO;
+  }
+
+  auto put_and_release = [&]() {
+    st20_rx_put_framebuff(handle, frame);
+    if (opaque) st20_release_rx_ext_frame(ctx, frame, opaque);
+  };
 
   ctx->slice_recv_timestamp = 0;
   ctx->slice_recv_lines = 0;
 
   if (!st_is_frame_complete(meta->status)) {
     ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff(handle, frame);
+    put_and_release();
     return 0;
   }
   if (meta->frame_total_size != ctx->frame_size) {
     ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff(handle, frame);
+    put_and_release();
     return 0;
   }
   if (meta->uframe_total_size != ctx->uframe_size) {
     ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff(handle, frame);
+    put_and_release();
     return 0;
   }
   if (meta->frame_total_size != meta->frame_recv_size) {
     ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff(handle, frame);
+    put_and_release();
     return 0;
   }
 
-  std::unique_lock<std::mutex> lck(ctx->mtx);
-  if (ctx->buf_q.empty()) {
-    ctx->buf_q.push(frame);
-    ctx->second_field_q.push(meta->second_field);
-    ctx->cv.notify_all();
-  } else {
-    st20_rx_put_framebuff(handle, frame);
+  bool pushed = false;
+  {
+    std::unique_lock<std::mutex> lck(ctx->mtx);
+    if (!ctx->stop.load(std::memory_order_acquire) && ctx->buf_q.empty()) {
+      if (opaque) {
+        EXPECT_TRUE(__atomic_load_n(static_cast<bool*>(opaque), __ATOMIC_ACQUIRE));
+      }
+      ctx->buf_q.push(frame);
+      ctx->second_field_q.push(meta->second_field);
+      ctx->cv.notify_all();
+      pushed = true;
+    }
   }
+  if (!pushed) put_and_release();
   __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   dbg("%s, frame %p\n", __func__, frame);
@@ -1127,8 +1188,8 @@ void st20_digest_rx_frame_check(void* args) {
       std::unique_lock<std::mutex> lck(ctx->mtx);
       ctx->cv.wait(lck, [ctx] { return ctx->stop || !ctx->buf_q.empty(); });
       if (ctx->stop) return;
+      /* Keep entry in buf_q until hashing finishes so at most 1 RX buffer is held. */
       frame = ctx->buf_q.front();
-      ctx->buf_q.pop();
     }
     dbg("%s, frame %p\n", __func__, frame);
     int i;
@@ -1143,7 +1204,13 @@ void st20_digest_rx_frame_check(void* args) {
       ctx->sha_fail_cnt++;
     }
     __atomic_fetch_add(&ctx->check_sha_frame_cnt, 1, __ATOMIC_RELAXED);
-    st20_rx_put_framebuff((st20_rx_handle)st20_get_handle(ctx), frame);
+    auto handle = (st20_rx_handle)st20_get_handle(ctx);
+    if (handle) st20_rx_put_framebuff(handle, frame);
+    st20_release_rx_ext_frame(ctx, frame);
+    {
+      std::unique_lock<std::mutex> lck(ctx->mtx);
+      ctx->buf_q.pop();
+    }
   }
 }
 
@@ -1159,8 +1226,6 @@ void st20_digest_rx_field_check(void* args) {
       if (ctx->stop) return;
       frame = ctx->buf_q.front();
       second_field = ctx->second_field_q.front();
-      ctx->buf_q.pop();
-      ctx->second_field_q.pop();
     }
     dbg("%s, frame %p\n", __func__, frame);
     int i;
@@ -1180,6 +1245,13 @@ void st20_digest_rx_field_check(void* args) {
       ctx->rx_field_fail_cnt++;
     }
     __atomic_fetch_add(&ctx->check_sha_frame_cnt, 1, __ATOMIC_RELAXED);
-    st20_rx_put_framebuff((st20_rx_handle)st20_get_handle(ctx), frame);
+    auto handle = (st20_rx_handle)st20_get_handle(ctx);
+    if (handle) st20_rx_put_framebuff(handle, frame);
+    st20_release_rx_ext_frame(ctx, frame);
+    {
+      std::unique_lock<std::mutex> lck(ctx->mtx);
+      ctx->buf_q.pop();
+      ctx->second_field_q.pop();
+    }
   }
 }

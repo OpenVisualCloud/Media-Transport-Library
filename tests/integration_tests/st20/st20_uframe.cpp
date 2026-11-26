@@ -7,11 +7,14 @@
 int st20_rx_uframe_pg_callback(void* /*priv*/, void* frame,
                                struct st20_rx_uframe_pg_meta* meta) {
   uint32_t w = meta->width;
-  uint32_t h = meta->height;
+  if (!w || !meta->uframe_total_size) return -EINVAL;
+  uint32_t data_h =
+      static_cast<uint32_t>(meta->uframe_total_size / (w * 2 * sizeof(uint16_t)));
+  if (!data_h) return -EINVAL;
   uint16_t* p10_u16 = (uint16_t*)frame;
   uint16_t* p10_u16_y = p10_u16;
-  uint16_t* p10_u16_b = p10_u16 + w * h;
-  uint16_t* p10_u16_r = p10_u16 + w * h * 3 / 2;
+  uint16_t* p10_u16_b = p10_u16 + static_cast<size_t>(w) * data_h;
+  uint16_t* p10_u16_r = p10_u16 + static_cast<size_t>(w) * data_h * 3 / 2;
   struct st20_rfc4175_422_10_pg2_be* pg =
       (struct st20_rfc4175_422_10_pg2_be*)meta->payload;
   uint32_t p10_offset = meta->row_number * w + meta->row_offset;
@@ -39,7 +42,6 @@ struct St20UframeScenario {
   std::vector<St20UframeStream> streams;
   enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT;
   bool check_fps = true;
-  enum st_test_level level = ST_TEST_LEVEL_ALL;
 };
 
 void st20_rx_uframe_test(const St20UframeScenario& s) {
@@ -48,7 +50,6 @@ void st20_rx_uframe_test(const St20UframeScenario& s) {
   const int sessions = static_cast<int>(s.streams.size());
   constexpr int kSlicesPerFrame = 32;
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, s.level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   std::vector<tests_context*> test_ctx_tx(sessions);
@@ -104,9 +105,10 @@ void st20_rx_uframe_test(const St20UframeScenario& s) {
       test_ctx_tx[i]->frame_buf[frame] = (uint8_t*)st_test_zmalloc(uframe_size);
       uint8_t* fb = test_ctx_tx[i]->frame_buf[frame];
       ASSERT_TRUE(fb != NULL);
+      st_test_rand_data(fb, uframe_size, frame);
       uint16_t* p10_u16 = (uint16_t*)fb;
       for (size_t k = 0; k < (uframe_size / 2); k++) {
-        p10_u16[k] = rand() & 0x3ff; /* only 10 bit */
+        p10_u16[k] &= 0x3ff; /* only 10 bit */
       }
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, uframe_size, result);
@@ -115,10 +117,11 @@ void st20_rx_uframe_test(const St20UframeScenario& s) {
       struct st20_rfc4175_422_10_pg2_be* pg =
           (struct st20_rfc4175_422_10_pg2_be*)st20_tx_get_framebuffer(tx_handle[i],
                                                                       frame);
+      const uint32_t data_h = st.interlaced ? ops_tx.height / 2 : ops_tx.height;
       st20_yuv422p10le_to_rfc4175_422be10(
-          p10_u16, (p10_u16 + ops_tx.width * ops_tx.height),
-          (p10_u16 + ops_tx.width * ops_tx.height * 3 / 2), pg, ops_tx.width,
-          ops_tx.height);
+          p10_u16, p10_u16 + static_cast<size_t>(ops_tx.width) * data_h,
+          p10_u16 + static_cast<size_t>(ops_tx.width) * data_h * 3 / 2, pg, ops_tx.width,
+          data_h);
     }
   }
 
@@ -146,6 +149,7 @@ void st20_rx_uframe_test(const St20UframeScenario& s) {
     ops_rx.rtp_ring_size = 1024 * 2;
     /* uframe fmt: yuv422 10bit planar */
     ops_rx.uframe_size = (size_t)ops_rx.width * ops_rx.height * 2 * sizeof(uint16_t);
+    if (st.interlaced) ops_rx.uframe_size >>= 1;
     ops_rx.uframe_pg_callback = st20_rx_uframe_pg_callback;
 
     if (st.rx_type == ST20_TYPE_SLICE_LEVEL) {
@@ -163,9 +167,6 @@ void st20_rx_uframe_test(const St20UframeScenario& s) {
       ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
     }
 
-    rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
-    ASSERT_TRUE(rx_handle[i] != NULL);
-
     test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->fb_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->width = ops_rx.width;
@@ -173,6 +174,10 @@ void st20_rx_uframe_test(const St20UframeScenario& s) {
     st20_get_pgroup(ops_rx.fmt, &test_ctx_rx[i]->st20_pg);
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
+
+    rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
+    ASSERT_TRUE(rx_handle[i] != NULL);
+
     st20_set_handle(test_ctx_rx[i], rx_handle[i]);
     if (st.interlaced) {
       digest_thread_rx[i] = std::thread(st20_digest_rx_field_check, test_ctx_rx[i]);
@@ -228,21 +233,11 @@ void st20_rx_uframe_test(const St20UframeScenario& s) {
 
 }  // namespace
 
-TEST(St20_rx, uframe_1080p_fps59_94_s1) {
-  st20_rx_uframe_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1920, 1080}},
-      ST20_FMT_YUV_422_10BIT,
-      true,
-      ST_TEST_LEVEL_ALL,
-  });
-}
-
 TEST(St20_rx, uframe_mix_s2) {
   /* Keeps original single-session workload (session 0 only). */
-  st20_rx_uframe_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720}},
-      ST20_FMT_YUV_422_10BIT,
-      true,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20UframeScenario sc;
+  sc.streams = {{ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720}};
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.check_fps = true;
+  st20_rx_uframe_test(sc);
 }

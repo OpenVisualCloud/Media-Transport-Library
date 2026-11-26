@@ -2,6 +2,8 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <sys/stat.h>
+
 #include "st20_common.h"
 
 namespace {
@@ -37,6 +39,7 @@ void st20_rx_dump_test(const std::vector<St20DumpStream>& streams, enum st20_fmt
     const auto& st = streams[i];
     test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
+    test_ctx_tx[i]->ready.store(false, std::memory_order_relaxed);
     test_ctx_tx[i]->stop = false;
 
     struct st20_tx_ops ops_tx;
@@ -54,10 +57,6 @@ void st20_rx_dump_test(const std::vector<St20DumpStream>& streams, enum st20_fmt
     }
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
-    st20_set_handle(test_ctx_tx[i], tx_handle[i]);
-    if (st.type == ST20_TYPE_RTP_LEVEL) {
-      rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
-    }
   }
 
   for (int i = 0; i < sessions; i++) {
@@ -87,6 +86,15 @@ void st20_rx_dump_test(const std::vector<St20DumpStream>& streams, enum st20_fmt
     }
   }
 
+  /* Publish TX handles and start TX feeds only after every RX session is ready. */
+  for (int i = 0; i < sessions; i++) {
+    st20_set_handle(test_ctx_tx[i], tx_handle[i]);
+    test_ctx_tx[i]->ready.store(true, std::memory_order_release);
+    if (streams[i].type == ST20_TYPE_RTP_LEVEL) {
+      rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
+    }
+  }
+
   int ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
@@ -102,9 +110,16 @@ void st20_rx_dump_test(const std::vector<St20DumpStream>& streams, enum st20_fmt
     EXPECT_GE(ret, 0);
     EXPECT_EQ(meta.dumped_packets[MTL_SESSION_PORT_P], max_dump_packets);
     dbg("%s, file_name %s\n", __func__, meta.file_name[MTL_SESSION_PORT_P]);
-    if (ret >= 0) remove(meta.file_name[MTL_SESSION_PORT_P]);
+    if (ret >= 0) {
+      struct stat st_buf = {};
+      EXPECT_EQ(stat(meta.file_name[MTL_SESSION_PORT_P], &st_buf), 0);
+      EXPECT_GT(st_buf.st_size, 0);
+      remove(meta.file_name[MTL_SESSION_PORT_P]);
+    }
   }
 
+  for (int i = 0; i < sessions; i++)
+    test_ctx_tx[i]->ready.store(false, std::memory_order_release);
   guard.release_sessions();
 }
 

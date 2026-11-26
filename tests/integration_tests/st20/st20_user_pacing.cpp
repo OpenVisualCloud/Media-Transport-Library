@@ -18,13 +18,11 @@ struct St20UserPacingStream {
   bool user_timestamp;
 };
 
-void st20_tx_user_pacing_test(const std::vector<St20UserPacingStream>& streams,
-                              enum st_test_level level) {
+void st20_tx_user_pacing_test(const std::vector<St20UserPacingStream>& streams) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   const int sessions = static_cast<int>(streams.size());
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   std::vector<tests_context*> test_ctx_tx(sessions);
@@ -129,9 +127,9 @@ void st20_tx_user_pacing_test(const std::vector<St20UserPacingStream>& streams,
   guard.set_started(ret >= 0);
 
   /*
-   * Measure TX and RX FPS over one >=1000 ms steady-state window:
-   * warmup=3 absorbs RL pacing training, >=25 frames (~30 at half-rate 29.97 fps)
-   * keeps edge error <=3.3% vs +/-10% tolerance.
+   * Measure TX and RX FPS over one >=1500 ms steady-state window:
+   * warmup=12 absorbs RL pacing training, >=35 frames (~45 at half-rate 29.97 fps)
+   * keeps edge error <=2.2% vs +/-10% tolerance.
    */
   auto res = mtl_test::measure_pipeline_window(
       test_ctx_tx, test_ctx_rx, kSt20WarmupFrames, kSt20MinRateFrames,
@@ -159,12 +157,13 @@ void st20_tx_user_pacing_test(const std::vector<St20UserPacingStream>& streams,
   }
 }
 
-/* first-packet arrival minus target TAI of each complete frame, one session */
-struct RtpExactPacingRx {
+/* Per-run RX state for exact pacing; must be declared before St20DeinitGuard so
+ * guard frees rx_handle before rx_state is destroyed on normal exit or ASSERT_*. */
+struct RtpExactPacingRxCtx {
+  tests_context* ctx = nullptr;
   std::mutex mtx;
   std::vector<int64_t> deltas;
 };
-RtpExactPacingRx rtp_exact_pacing_rx;
 
 /* frame k carries RTP timestamp k + 1, the feed starting at 1 */
 uint64_t rtp_exact_target_tai(tests_context* s, uint32_t rtp_ts) {
@@ -197,15 +196,17 @@ void tx_feed_packet_tai(void* args) {
 
 int rx_exact_pacing_frame_ready(void* priv, void* frame,
                                 struct st20_rx_frame_meta* meta) {
-  auto ctx = (tests_context*)priv;
+  auto* rx_state = static_cast<RtpExactPacingRxCtx*>(priv);
+  if (!rx_state || !rx_state->ctx) return -EIO;
+  auto* ctx = rx_state->ctx;
   auto handle = (st20_rx_handle)st20_get_handle(ctx);
   if (!handle) return -EIO;
   if (st_is_frame_complete(meta->status)) {
     int64_t delta = (int64_t)(meta->timestamp_first_pkt -
                               rtp_exact_target_tai(ctx, meta->rtp_timestamp));
     {
-      std::lock_guard<std::mutex> lck(rtp_exact_pacing_rx.mtx);
-      rtp_exact_pacing_rx.deltas.push_back(delta);
+      std::lock_guard<std::mutex> lck(rx_state->mtx);
+      rx_state->deltas.push_back(delta);
     }
     __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELEASE);
   }
@@ -216,7 +217,7 @@ int rx_exact_pacing_frame_ready(void* priv, void* frame,
 /* An RTP-level session with EXACT_USER_PACING sends each frame at the TAI of
  * st20_tx_put_mbuf_tai(): across session restarts, the RX-measured first-packet arrival
  * keeps the same offset from that target, whatever the epoch grid. */
-void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level level) {
+void st20_tx_rtp_exact_user_pacing_test(int restarts) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   enum st_fps fps = ST_FPS_P59_94;
@@ -228,13 +229,13 @@ void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level level) 
   const int target_frames = static_cast<int>(st_frame_rate(fps)) + 5;
   std::vector<int64_t> run_offsets;
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   mtl_test::ScopedMtlStart mtl_guard(m_handle);
   ASSERT_GE(mtl_guard.start(), 0);
 
   for (int r = 0; r < restarts; r++) {
+    RtpExactPacingRxCtx rx_state;
     std::vector<tests_context*> test_ctx_tx(1);
     std::vector<tests_context*> test_ctx_rx(1);
     std::vector<st20_tx_handle> tx_handle(1);
@@ -245,15 +246,12 @@ void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level level) 
     struct st20_tx_ops ops_tx;
     struct st20_rx_ops ops_rx;
 
-    {
-      std::lock_guard<std::mutex> lck(rtp_exact_pacing_rx.mtx);
-      rtp_exact_pacing_rx.deltas.clear();
-    }
-
     test_ctx_rx[0] = init_test_ctx(ctx, 0, 3);
     ASSERT_TRUE(test_ctx_rx[0] != nullptr);
+    rx_state.ctx = test_ctx_rx[0];
     init_single_port_rx(ops_rx, test_ctx_rx[0], "st20_rtp_exact_pacing",
                         udp_port_for_idx(0));
+    ops_rx.priv = &rx_state;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = 1280;
     ops_rx.height = 720;
@@ -301,11 +299,7 @@ void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level level) 
     /* a frame that fell back to the default pacing would skew the offsets */
     EXPECT_EQ(stats.common.stat_error_user_timestamp, 0u);
 
-    std::vector<int64_t> deltas;
-    {
-      std::lock_guard<std::mutex> lck(rtp_exact_pacing_rx.mtx);
-      deltas = rtp_exact_pacing_rx.deltas;
-    }
+    auto& deltas = rx_state.deltas;
     ASSERT_GT(deltas.size(), (size_t)st_frame_rate(fps));
     std::nth_element(deltas.begin(),
                      deltas.begin() + static_cast<std::ptrdiff_t>(deltas.size() / 2),
@@ -326,15 +320,13 @@ void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level level) 
 }  // namespace
 
 TEST(St20_tx, tx_user_pacing) {
-  st20_tx_user_pacing_test(
-      {
-          {1280, 720, ST20_FMT_YUV_422_10BIT, false, true},
-          {1920, 1080, ST20_FMT_YUV_422_10BIT, true, false},
-          {1280, 720, ST20_FMT_YUV_422_10BIT, true, true},
-      },
-      ST_TEST_LEVEL_MANDATORY);
+  st20_tx_user_pacing_test({
+      {1280, 720, ST20_FMT_YUV_422_10BIT, false, true},
+      {1920, 1080, ST20_FMT_YUV_422_10BIT, true, false},
+      {1280, 720, ST20_FMT_YUV_422_10BIT, true, true},
+  });
 }
 
 TEST(St20_tx, rtp_exact_user_pacing_repeatable) {
-  st20_tx_rtp_exact_user_pacing_test(3, ST_TEST_LEVEL_ALL);
+  st20_tx_rtp_exact_user_pacing_test(3);
 }

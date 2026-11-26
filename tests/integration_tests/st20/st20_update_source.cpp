@@ -22,8 +22,8 @@ void verify_switch_phase(const std::vector<tests_context*>& test_ctx_rx,
 
   /*
    * Measure steady-state RX FPS relative to base_rec[i] without resetting fb_rec:
-   * warmup=3 (~50 ms) absorbs the switch transition, then >=25 frames over
-   * >=1000 ms (~60 frames at 59.94 fps, <=1.7% edge error vs +/-10% tolerance).
+   * warmup=12 (~200 ms at 59.94 fps) absorbs the switch transition, then >=35 frames
+   * over >=1500 ms (~90 frames at 59.94 fps, <=1.1% edge error vs +/-10% tolerance).
    */
   auto rel_rx_frames = [&base_rec](const tests_context* c) {
     return mtl_test::rx_frames(c) - base_rec[c->idx];
@@ -48,13 +48,11 @@ void verify_switch_phase(const std::vector<tests_context*>& test_ctx_rx,
   }
 }
 
-void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
-                             enum st_test_level level = ST_TEST_LEVEL_ALL) {
+void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
 
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
-  MTL_TEST_REQUIRE_LEVEL(ctx, level);
   ASSERT_TRUE(tx_sessions >= 1);
 
   const bool tx_update_dst = (tx_sessions == 1);
@@ -158,14 +156,14 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   struct st_rx_source_info src;
   /* switch to mcast port p(tx_session:1) */
   memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
+  src.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(1);
   memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   if (tx_update_dst) {
     __atomic_store_n(&test_ctx_tx[0]->seq_id, 0, __ATOMIC_RELAXED); /* reset seq id */
     struct st_tx_dest_info dst;
     memset(&dst, 0, sizeof(dst));
-    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
+    dst.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(1);
     memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     EXPECT_GE(st20_tx_update_destination(tx_handle[0], &dst), 0);
@@ -178,7 +176,7 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   if (tx_sessions > 2) {
     /* switch to mcast port r(tx_session:2) */
     memset(&src, 0, sizeof(src));
-    src.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
+    src.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(2);
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     __atomic_store_n(&test_ctx_tx[2]->seq_id, rand(),
@@ -189,16 +187,20 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
 
   /* switch to unicast(tx_session:0) */
   memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
-  memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
+  src.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(0);
+  memcpy(
+      src.ip_addr[MTL_SESSION_PORT_P],
+      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P],
+      MTL_IP_ADDR_LEN);
   __atomic_store_n(&test_ctx_tx[0]->seq_id, rand(), __ATOMIC_RELAXED); /* random seq id */
   if (tx_update_dst) {
     struct st_tx_dest_info dst;
     memset(&dst, 0, sizeof(dst));
-    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
-    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
+    dst.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(0);
+    memcpy(
+        dst.dip_addr[MTL_SESSION_PORT_P],
+        ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R],
+        MTL_IP_ADDR_LEN);
     EXPECT_GE(st20_tx_update_destination(tx_handle[0], &dst), 0);
   }
   verify_switch_phase(test_ctx_rx, rx_handle, expect_framerate, src, type, kMaxRtpDelta,

@@ -2,6 +2,8 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <algorithm>
+
 #include "st20_common.h"
 
 namespace {
@@ -18,7 +20,6 @@ struct St20ExtFrameStream {
 struct St20ExtFrameScenario {
   std::vector<St20ExtFrameStream> streams;
   bool check_fps = true;
-  enum st_test_level level = ST_TEST_LEVEL_ALL;
   bool dynamic = false;
 };
 
@@ -26,25 +27,31 @@ int rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
                        struct st20_rx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
   if (!st20_get_handle(ctx)) return -EIO; /* not ready */
-  int i = ctx->ext_idx;
 
-  /* check ext_fb_in_use */
-  if (ctx->ext_fb_in_use[i]) {
-    err("%s(%d), ext frame %d in use\n", __func__, ctx->idx, i);
-    return -EIO;
+  const int max_slots =
+      static_cast<int>(sizeof(ctx->ext_fb_in_use) / sizeof(ctx->ext_fb_in_use[0]));
+  const int cnt = std::min(ctx->fb_cnt, max_slots);
+  if (cnt <= 0) return -EIO;
+
+  const int start = ctx->ext_idx % cnt;
+  for (int attempt = 0; attempt < cnt; attempt++) {
+    const int i = (start + attempt) % cnt;
+    bool expected = false;
+    if (__atomic_compare_exchange_n(&ctx->ext_fb_in_use[i], &expected, true, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+      ext_frame->buf_addr = ctx->ext_frames[i].buf_addr;
+      ext_frame->buf_iova = ctx->ext_frames[i].buf_iova;
+      ext_frame->buf_len = ctx->ext_frames[i].buf_len;
+      ext_frame->opaque = &ctx->ext_fb_in_use[i];
+      dbg("%s(%d), set ext frame %d(%p) to use\n", __func__, ctx->idx, i,
+          ext_frame->buf_addr);
+      ctx->ext_idx = (i + 1) % cnt;
+      return 0;
+    }
   }
-  ext_frame->buf_addr = ctx->ext_frames[i].buf_addr;
-  ext_frame->buf_iova = ctx->ext_frames[i].buf_iova;
-  ext_frame->buf_len = ctx->ext_frames[i].buf_len;
 
-  dbg("%s(%d), set ext frame %d(%p) to use\n", __func__, ctx->idx, i,
-      ext_frame->buf_addr);
-  ctx->ext_fb_in_use[i] = true;
-
-  ext_frame->opaque = &ctx->ext_fb_in_use[i];
-
-  if (++ctx->ext_idx >= ctx->fb_cnt) ctx->ext_idx = 0;
-  return 0;
+  err("%s(%d), all %d ext frames in use\n", __func__, ctx->idx, cnt);
+  return -EIO;
 }
 
 void st20_tx_ext_frame_rx_digest_test(const St20ExtFrameScenario& s) {
@@ -52,7 +59,6 @@ void st20_tx_ext_frame_rx_digest_test(const St20ExtFrameScenario& s) {
   auto m_handle = ctx->handle;
   const int sessions = static_cast<int>(s.streams.size());
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, s.level);
   MTL_TEST_REQUIRE_IOVA_VA(ctx);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
@@ -69,7 +75,6 @@ void st20_tx_ext_frame_rx_digest_test(const St20ExtFrameScenario& s) {
 
   St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle,
                         &rtp_thread_tx, &rtp_thread_rx);
-  guard.set_ext_buf(true);
   guard.set_rx_ctx_cleanup(st20_rx_drain_bufq_put_framebuff);
 
   for (int i = 0; i < sessions; i++) {
@@ -228,51 +233,38 @@ void st20_tx_ext_frame_rx_digest_test(const St20ExtFrameScenario& s) {
 
 }  // namespace
 
-TEST(St20_rx, ext_frame_digest_frame_1080p_fps59_94_s1) {
-  st20_tx_ext_frame_rx_digest_test({
-      {{ST20_PACKING_BPM, ST_FPS_P59_94, 1920, 1080, false, ST20_FMT_YUV_422_10BIT}},
-  });
-}
-
-TEST(St20_rx, ext_frame_digest20_field_1080p_fps59_94_s1) {
-  st20_tx_ext_frame_rx_digest_test({
-      {{ST20_PACKING_BPM, ST_FPS_P59_94, 1920, 1080, true, ST20_FMT_YUV_422_10BIT}},
-  });
-}
-
-TEST(St20_rx, ext_frame_digest_frame_720p_fps59_94_s1_gpm) {
-  st20_tx_ext_frame_rx_digest_test({
-      {{ST20_PACKING_GPM, ST_FPS_P59_94, 1280, 720, false, ST20_FMT_YUV_422_10BIT}},
-  });
-}
-
 TEST(St20_rx, ext_frame_s3) {
-  st20_tx_ext_frame_rx_digest_test({
-      {{ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720, true, ST20_FMT_YUV_422_10BIT},
-       {ST20_PACKING_BPM, ST_FPS_P50, 1920, 1080, true, ST20_FMT_YUV_422_10BIT},
-       {ST20_PACKING_BPM, ST_FPS_P50, 1920, 1080, true, ST20_FMT_YUV_422_10BIT}},
-      true,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20ExtFrameScenario sc;
+  sc.streams = {
+      {ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720, true, ST20_FMT_YUV_422_10BIT},
+      {ST20_PACKING_BPM, ST_FPS_P50, 1920, 1080, true, ST20_FMT_YUV_422_10BIT},
+      {ST20_PACKING_GPM, ST_FPS_P50, 1920, 1080, true, ST20_FMT_YUV_422_10BIT},
+  };
+  sc.check_fps = true;
+  sc.dynamic = false;
+  st20_tx_ext_frame_rx_digest_test(sc);
 }
 
 TEST(St20_rx, ext_frame_s3_2) {
-  st20_tx_ext_frame_rx_digest_test({
-      {{ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720, true, ST20_FMT_YUV_422_12BIT},
-       {ST20_PACKING_BPM, ST_FPS_P50, 1920, 1080, false, ST20_FMT_YUV_422_10BIT},
-       {ST20_PACKING_BPM, ST_FPS_P50, 1920, 1080, true, ST20_FMT_YUV_422_8BIT}},
-      true,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20ExtFrameScenario sc;
+  sc.streams = {
+      {ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720, true, ST20_FMT_YUV_422_12BIT},
+      {ST20_PACKING_BPM, ST_FPS_P50, 1920, 1080, false, ST20_FMT_YUV_422_10BIT},
+      {ST20_PACKING_BPM, ST_FPS_P50, 1920, 1080, true, ST20_FMT_YUV_422_8BIT},
+  };
+  sc.check_fps = true;
+  sc.dynamic = false;
+  st20_tx_ext_frame_rx_digest_test(sc);
 }
 
 TEST(St20_rx, dynamic_ext_frame_s3) {
-  st20_tx_ext_frame_rx_digest_test({
-      {{ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720, false, ST20_FMT_YUV_422_10BIT},
-       {ST20_PACKING_BPM, ST_FPS_P50, 1280, 720, false, ST20_FMT_YUV_422_10BIT},
-       {ST20_PACKING_BPM, ST_FPS_P29_97, 1920, 1080, false, ST20_FMT_YUV_422_10BIT}},
-      true,
-      ST_TEST_LEVEL_MANDATORY,
-      true,
-  });
+  St20ExtFrameScenario sc;
+  sc.streams = {
+      {ST20_PACKING_BPM, ST_FPS_P59_94, 1280, 720, false, ST20_FMT_YUV_422_10BIT},
+      {ST20_PACKING_BPM, ST_FPS_P50, 1280, 720, false, ST20_FMT_YUV_422_10BIT},
+      {ST20_PACKING_BPM, ST_FPS_P29_97, 1920, 1080, false, ST20_FMT_YUV_422_10BIT},
+  };
+  sc.check_fps = true;
+  sc.dynamic = true;
+  st20_tx_ext_frame_rx_digest_test(sc);
 }

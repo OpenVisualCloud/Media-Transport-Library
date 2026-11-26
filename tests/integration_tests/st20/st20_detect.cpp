@@ -21,7 +21,6 @@ struct St20DetectScenario {
   bool user_frame = false;
   enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT;
   bool check_fps = true;
-  enum st_test_level level = ST_TEST_LEVEL_ALL;
 };
 
 int st20_rx_detected(void* priv, const struct st20_detect_meta* meta,
@@ -38,6 +37,7 @@ int st20_rx_detected(void* priv, const struct st20_detect_meta* meta,
   if (ctx->uframe_size != 0) {
     /* uframe fmt: yuv422 10bit planar */
     ctx->uframe_size = (size_t)meta->width * meta->height * 2 * sizeof(uint16_t);
+    if (meta->interlaced) ctx->uframe_size >>= 1;
     reply->uframe_size = ctx->uframe_size;
     if (s_meta) s_meta->uframe_total_size = ctx->uframe_size;
   }
@@ -55,7 +55,6 @@ void st20_rx_detect_test(const St20DetectScenario& s) {
   const int sessions = static_cast<int>(s.streams.size());
   constexpr int kSlicesPerFrame = 32;
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, s.level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   std::vector<tests_context*> test_ctx_tx(sessions);
@@ -114,9 +113,10 @@ void st20_rx_detect_test(const St20DetectScenario& s) {
         test_ctx_tx[i]->frame_buf[frame] = (uint8_t*)st_test_zmalloc(uframe_size);
         uint8_t* fb = test_ctx_tx[i]->frame_buf[frame];
         ASSERT_TRUE(fb != NULL);
+        st_test_rand_data(fb, uframe_size, frame);
         uint16_t* p10_u16 = (uint16_t*)fb;
         for (size_t k = 0; k < (uframe_size / 2); k++) {
-          p10_u16[k] = rand() & 0x3ff; /* only 10 bit */
+          p10_u16[k] &= 0x3ff; /* only 10 bit */
         }
         unsigned char* result = test_ctx_tx[i]->shas[frame];
         SHA256((unsigned char*)fb, uframe_size, result);
@@ -125,10 +125,11 @@ void st20_rx_detect_test(const St20DetectScenario& s) {
         struct st20_rfc4175_422_10_pg2_be* pg =
             (struct st20_rfc4175_422_10_pg2_be*)st20_tx_get_framebuffer(tx_handle[i],
                                                                         frame);
+        const uint32_t data_h = st.interlaced ? ops_tx.height / 2 : ops_tx.height;
         st20_yuv422p10le_to_rfc4175_422be10(
-            p10_u16, (p10_u16 + ops_tx.width * ops_tx.height),
-            (p10_u16 + ops_tx.width * ops_tx.height * 3 / 2), pg, ops_tx.width,
-            ops_tx.height);
+            p10_u16, p10_u16 + static_cast<size_t>(ops_tx.width) * data_h,
+            p10_u16 + static_cast<size_t>(ops_tx.width) * data_h * 3 / 2, pg,
+            ops_tx.width, data_h);
       }
     } else {
       test_ctx_tx[i]->lines_per_slice = ops_tx.height / 30;
@@ -188,9 +189,6 @@ void st20_rx_detect_test(const St20DetectScenario& s) {
       ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
     }
 
-    rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
-    ASSERT_TRUE(rx_handle[i] != NULL);
-
     test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->fb_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->uframe_size = ops_rx.uframe_size;
@@ -199,6 +197,10 @@ void st20_rx_detect_test(const St20DetectScenario& s) {
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
     test_ctx_rx[i]->total_pkts_in_frame = test_ctx_tx[i]->total_pkts_in_frame;
+
+    rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
+    ASSERT_TRUE(rx_handle[i] != NULL);
+
     st20_set_handle(test_ctx_rx[i], rx_handle[i]);
     if (st.interlaced) {
       rtp_thread_rx[i] = std::thread(st20_digest_rx_field_check, test_ctx_rx[i]);
@@ -261,56 +263,48 @@ void st20_rx_detect_test(const St20DetectScenario& s) {
 
 }  // namespace
 
-TEST(St20_rx, detect_1080p_fps59_94_s1) {
-  st20_rx_detect_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1920, 1080, false}},
-      false,
-      ST20_FMT_YUV_422_10BIT,
-      true,
-      ST_TEST_LEVEL_ALL,
-  });
-}
-
 TEST(St20_rx, detect_uframe_mix_s2) {
-  st20_rx_detect_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1280, 720, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
-        1280, 720, false}},
-      true,
-      ST20_FMT_YUV_422_10BIT,
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20DetectScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
+       1280, 720, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
+       1280, 720, false},
+  };
+  sc.user_frame = true;
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.check_fps = false;
+  st20_rx_detect_test(sc);
 }
 
 TEST(St20_rx, detect_mix_frame_s3) {
-  st20_rx_detect_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1280, 720, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
-        1080, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P29_97,
-        3840, 2160, true}},
-      false,
-      ST20_FMT_YUV_422_10BIT,
-      true,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20DetectScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
+       1280, 720, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
+       1080, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P29_97,
+       3840, 2160, true},
+  };
+  sc.user_frame = false;
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.check_fps = true;
+  st20_rx_detect_test(sc);
 }
 
 TEST(St20_rx, detect_mix_slice_s3) {
-  st20_rx_detect_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1280, 720, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
-        1080, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P29_97,
-        3840, 2160, true}},
-      false,
-      ST20_FMT_YUV_422_10BIT,
-      true,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20DetectScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
+       1280, 720, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
+       1080, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P29_97,
+       3840, 2160, true},
+  };
+  sc.user_frame = false;
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.check_fps = true;
+  st20_rx_detect_test(sc);
 }

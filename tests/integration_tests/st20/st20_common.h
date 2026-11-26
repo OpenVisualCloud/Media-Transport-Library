@@ -140,7 +140,6 @@ class St20DeinitGuard {
   St20DeinitGuard& operator=(const St20DeinitGuard&) = delete;
 
   void set_started(bool started);
-  void set_ext_buf(bool ext_buf);
   void add_thread_group(std::vector<std::thread>& threads);
   void set_tx_ctx_cleanup(CtxCleanupFn fn);
   void set_rx_ctx_cleanup(CtxCleanupFn fn);
@@ -160,7 +159,6 @@ class St20DeinitGuard {
   bool stopped_;
   bool sessions_released_;
   bool cleaned_;
-  bool ext_buf_;
 
   std::vector<tests_context*>& tx_ctx_;
   std::vector<tests_context*>& rx_ctx_;

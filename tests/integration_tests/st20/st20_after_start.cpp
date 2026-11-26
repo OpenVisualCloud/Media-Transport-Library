@@ -17,7 +17,6 @@ struct St20AfterStartScenario {
   std::vector<St20AfterStartStream> streams;
   enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT;
   int repeat = 1;
-  enum st_test_level level = ST_TEST_LEVEL_ALL;
 };
 
 void st20_rx_after_start_test(const St20AfterStartScenario& s) {
@@ -25,7 +24,6 @@ void st20_rx_after_start_test(const St20AfterStartScenario& s) {
   auto m_handle = ctx->handle;
   const int sessions = static_cast<int>(s.streams.size());
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, s.level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   mtl_test::ScopedMtlStart mtl_guard(m_handle);
@@ -107,8 +105,8 @@ void st20_rx_after_start_test(const St20AfterStartScenario& s) {
     }
 
     /*
-     * Measure steady-state RX FPS: warmup=3 absorbs pacing startup, >=25 frames
-     * over >=1000 ms gives <=3.3% quantization error at 29.97 fps vs +/-10%.
+     * Measure steady-state RX FPS: warmup=12 absorbs pacing startup, >=35 frames
+     * over >=1500 ms gives <=2.2% quantization error at 29.97 fps vs +/-10%.
      */
     auto res = st20_wait_rx_window(test_ctx_rx, true, false);
     EXPECT_TRUE(res.warmed_up);
@@ -129,19 +127,17 @@ void st20_rx_after_start_test(const St20AfterStartScenario& s) {
 }  // namespace
 
 TEST(St20_rx, after_start_frame_720p_fps50_s1_r1) {
-  st20_rx_after_start_test({
-      {{ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1280, 720}},
-      ST20_FMT_YUV_422_10BIT,
-      1,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20AfterStartScenario sc;
+  sc.streams = {{ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1280, 720}};
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.repeat = 1;
+  st20_rx_after_start_test(sc);
 }
 
 TEST(St20_rx, after_start_frame_720p_fps29_97_s1_r2) {
-  st20_rx_after_start_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1280, 720}},
-      ST20_FMT_YUV_422_10BIT,
-      2,
-      ST_TEST_LEVEL_ALL,
-  });
+  St20AfterStartScenario sc;
+  sc.streams = {{ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1280, 720}};
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.repeat = 2;
+  st20_rx_after_start_test(sc);
 }

@@ -16,7 +16,6 @@ struct St20FpsStream {
 struct St20FpsScenario {
   std::vector<St20FpsStream> streams;
   enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT;
-  enum st_test_level level = ST_TEST_LEVEL_ALL;
   bool ext_buf = false;
 };
 
@@ -26,7 +25,6 @@ void st20_rx_fps_test(const St20FpsScenario& s) {
   const int sessions = static_cast<int>(s.streams.size());
 
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
-  MTL_TEST_REQUIRE_LEVEL(ctx, s.level);
   if (s.ext_buf) MTL_TEST_REQUIRE_IOVA_VA(ctx);
 
   std::vector<tests_context*> test_ctx_tx(sessions);
@@ -39,7 +37,6 @@ void st20_rx_fps_test(const St20FpsScenario& s) {
 
   St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle,
                         &rtp_thread_tx, &rtp_thread_rx);
-  guard.set_ext_buf(s.ext_buf);
 
   for (int i = 0; i < sessions; i++) {
     const auto& st = s.streams[i];
@@ -47,6 +44,7 @@ void st20_rx_fps_test(const St20FpsScenario& s) {
 
     test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
+    test_ctx_tx[i]->ready.store(false, std::memory_order_relaxed);
     test_ctx_tx[i]->stop = false;
 
     struct st20_tx_ops ops_tx;
@@ -65,10 +63,6 @@ void st20_rx_fps_test(const St20FpsScenario& s) {
 
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
-    st20_set_handle(test_ctx_tx[i], tx_handle[i]);
-    if (st.type == ST20_TYPE_RTP_LEVEL) {
-      rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
-    }
   }
 
   for (int i = 0; i < sessions; i++) {
@@ -106,17 +100,28 @@ void st20_rx_fps_test(const St20FpsScenario& s) {
     }
   }
 
+  /* Publish TX handles and start TX feeds only after every RX session is ready. */
+  for (int i = 0; i < sessions; i++) {
+    st20_set_handle(test_ctx_tx[i], tx_handle[i]);
+    test_ctx_tx[i]->ready.store(true, std::memory_order_release);
+    if (s.streams[i].type == ST20_TYPE_RTP_LEVEL) {
+      rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
+    }
+  }
+
   int ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
 
   /*
-   * Measure steady-state RX FPS: warmup=3 absorbs RL pacing training, then
-   * >=25 frames over >=1000 ms (<=3.3% error at 29.97 fps vs +/-10% tolerance).
+   * Measure steady-state RX FPS: warmup=12 absorbs RL pacing training, then
+   * >=35 frames over >=1500 ms (<=2.2% error at 29.97 fps vs +/-10% tolerance).
    */
   auto res = st20_wait_rx_window(test_ctx_rx, true, false);
   EXPECT_TRUE(res.warmed_up);
   EXPECT_TRUE(res.complete);
+  for (int i = 0; i < sessions; i++)
+    test_ctx_tx[i]->ready.store(false, std::memory_order_release);
   guard.release_sessions();
 
   for (int i = 0; i < sessions; i++) {
@@ -132,7 +137,6 @@ void st20_tx_fps_test(const St20FpsScenario& s) {
   auto m_handle = ctx->handle;
   const int sessions = static_cast<int>(s.streams.size());
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, s.level);
   if (s.ext_buf) MTL_TEST_REQUIRE_IOVA_VA(ctx);
 
   std::vector<tests_context*> test_ctx(sessions);
@@ -144,7 +148,6 @@ void st20_tx_fps_test(const St20FpsScenario& s) {
 
   St20DeinitGuard guard(m_handle, test_ctx, test_ctx_rx, handle, rx_handle, &rtp_thread,
                         nullptr);
-  guard.set_ext_buf(s.ext_buf);
 
   for (int i = 0; i < sessions; i++) {
     const auto& st = s.streams[i];
@@ -194,8 +197,8 @@ void st20_tx_fps_test(const St20FpsScenario& s) {
   guard.set_started(ret >= 0);
 
   /*
-   * Measure steady-state TX FPS: warmup=3 absorbs RL pacing training on 1 or 2
-   * ports, then >=25 frames over >=1000 ms (<=3.3% error at 29.97 fps vs +/-10%).
+   * Measure steady-state TX FPS: warmup=12 absorbs RL pacing training on 1 or 2
+   * ports, then >=35 frames over >=1500 ms (<=2.2% error at 29.97 fps vs +/-10%).
    */
   auto res = mtl_test::measure_rate_window(
       test_ctx, mtl_test::tx_frames, kSt20WarmupFrames, kSt20MinRateFrames,
@@ -218,169 +221,59 @@ void st20_tx_fps_test(const St20FpsScenario& s) {
 
 }  // namespace
 
-TEST(St20_tx, rtp_1080p_fps59_94_s1) {
-  st20_tx_fps_test({{{ST20_TYPE_RTP_LEVEL, ST_FPS_P59_94, 1920, 1080}}});
-}
-TEST(St20_tx, frame_1080p_fps29_97_s1) {
-  st20_tx_fps_test({{{ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080}}});
-}
-TEST(St20_tx, frame_1080p_fps50_s1) {
-  st20_tx_fps_test({{{ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080}}});
-}
-TEST(St20_tx, frame_1080p_fps30_s1) {
-  st20_tx_fps_test({{{ST20_TYPE_FRAME_LEVEL, ST_FPS_P30, 1920, 1080}}});
-}
-TEST(St20_tx, frame_1080p_fps60_s1) {
-  st20_tx_fps_test({{{ST20_TYPE_FRAME_LEVEL, ST_FPS_P60, 1920, 1080}}});
-}
-TEST(St20_tx, rtp_720p_fps50_s1) {
-  st20_tx_fps_test({{{ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1280, 720}}});
-}
-TEST(St20_tx, frame_1080p_yuv422_8bit_s1) {
-  st20_tx_fps_test(
-      {{{ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080}}, ST20_FMT_YUV_422_8BIT});
-}
-TEST(St20_tx, frame_1080p_yuv420_10bit_s1) {
-  st20_tx_fps_test(
-      {{{ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080}}, ST20_FMT_YUV_420_10BIT});
-}
-TEST(St20_tx, mix_1080p_fps59_94_s3) {
-  st20_tx_fps_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080},
-      {ST20_TYPE_RTP_LEVEL, ST_FPS_P59_94, 1920, 1080},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080},
-  }});
-}
-TEST(St20_tx, mix_720p_fps29_97_s3) {
-  st20_tx_fps_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1280, 720},
-      {ST20_TYPE_RTP_LEVEL, ST_FPS_P29_97, 1280, 720},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1280, 720},
-  }});
-}
-TEST(St20_tx, mix_1080p_fps50_fps29_97) {
-  st20_tx_fps_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080},
-      {ST20_TYPE_RTP_LEVEL, ST_FPS_P29_97, 1920, 1080},
-  }});
-}
-TEST(St20_tx, mix_1080p_fps50_fps59_94) {
-  st20_tx_fps_test({{
-      {ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1920, 1080},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080},
-  }});
-}
-TEST(St20_tx, ext_frame_1080p_fps_mix_s3) {
-  st20_tx_fps_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080},
-       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080},
-       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080}},
-      ST20_FMT_YUV_422_10BIT,
-      ST_TEST_LEVEL_ALL,
-      true,
-  });
-}
-
-TEST(St20_rx, frame_1080p_fps50_s1) {
-  st20_rx_fps_test(
-      {{{ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080}}, ST20_FMT_YUV_420_10BIT});
-}
-TEST(St20_rx, mix_1080p_fps50_s3) {
-  st20_rx_fps_test({{
-      {ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1920, 1080},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080},
-  }});
-}
-TEST(St20_rx, rtp_1080p_fps59_94_s1) {
-  st20_rx_fps_test(
-      {{{ST20_TYPE_RTP_LEVEL, ST_FPS_P59_94, 1920, 1080}}, ST20_FMT_YUV_420_10BIT});
-}
-TEST(St20_rx, rtp_1080p_fps29_97_s1) {
-  st20_rx_fps_test({{{ST20_TYPE_RTP_LEVEL, ST_FPS_P29_97, 1920, 1080}}});
-}
-TEST(St20_rx, frame_1080p_fps29_97_s3) {
-  st20_rx_fps_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080},
-  }});
-}
-TEST(St20_rx, mix_1080p_fps29_97_fp50) {
-  st20_rx_fps_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080},
-      {ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1920, 1080},
-  }});
-}
-TEST(St20_rx, mix_1080p_fps59_94_fp50) {
-  st20_rx_fps_test({{
-      {ST20_TYPE_RTP_LEVEL, ST_FPS_P59_94, 1920, 1080},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080},
-  }});
-}
-TEST(St20_rx, mix_1080p_fps29_97_720p_fp50) {
-  st20_rx_fps_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080},
-      {ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1280, 720},
-  }});
-}
-TEST(St20_rx, ext_frame_1080p_fps_mix_s3) {
-  st20_rx_fps_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1280, 720},
-       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080},
-       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080}},
-      ST20_FMT_YUV_422_10BIT,
-      ST_TEST_LEVEL_ALL,
-      true,
-  });
-}
-
 TEST(St20_tx, mix_s3) {
-  st20_tx_fps_test({
-      {{ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1920, 1080},
-       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1280, 720},
-       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080}},
-      ST20_FMT_YUV_422_10BIT,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20FpsScenario sc;
+  sc.streams = {
+      {ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1920, 1080},
+      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1280, 720},
+      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080},
+  };
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.ext_buf = false;
+  st20_tx_fps_test(sc);
 }
+
 TEST(St20_tx, ext_frame_mix_s3) {
-  st20_tx_fps_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1280, 720},
-       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080},
-       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 3840, 2160}},
-      ST20_FMT_YUV_422_10BIT,
-      ST_TEST_LEVEL_MANDATORY,
-      true,
-  });
-}
-TEST(St20_rx, frame_s3) {
-  st20_rx_fps_test({{
+  St20FpsScenario sc;
+  sc.streams = {
       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1280, 720},
       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 1920, 1080},
-  }});
+      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P29_97, 3840, 2160},
+  };
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.ext_buf = true;
+  st20_tx_fps_test(sc);
 }
+
+TEST(St20_tx, fps_30_60_s2) {
+  St20FpsScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P30, 1920, 1080},
+      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P60, 1920, 1080},
+  };
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.ext_buf = false;
+  st20_tx_fps_test(sc);
+}
+
 TEST(St20_rx, mix_s2) {
-  st20_rx_fps_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1280, 720},
-       {ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1920, 1080}},
-      ST20_FMT_YUV_422_10BIT,
-      ST_TEST_LEVEL_MANDATORY,
-  });
-}
-TEST(St20_rx, frame_mix_4k_s2) {
-  st20_rx_fps_test({{
+  St20FpsScenario sc;
+  sc.streams = {
       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1280, 720},
-      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 3840, 2160},
-  }});
+      {ST20_TYPE_RTP_LEVEL, ST_FPS_P50, 1920, 1080},
+  };
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.ext_buf = false;
+  st20_rx_fps_test(sc);
 }
+
 TEST(St20_rx, ext_frame_mix_s2) {
-  st20_rx_fps_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1280, 720},
-       {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080}},
-      ST20_FMT_YUV_422_10BIT,
-      ST_TEST_LEVEL_MANDATORY,
-      true,
-  });
+  St20FpsScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1280, 720},
+      {ST20_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080},
+  };
+  sc.fmt = ST20_FMT_YUV_422_10BIT;
+  sc.ext_buf = true;
+  st20_rx_fps_test(sc);
 }

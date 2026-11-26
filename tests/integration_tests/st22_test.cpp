@@ -2,7 +2,11 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <cinttypes>
+#include <functional>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -31,28 +35,6 @@ inline void* get_handle(const tests_context* c) {
   return __atomic_load_n(&c->handle, __ATOMIC_ACQUIRE);
 }
 
-/* RAII guard declared AFTER ScopedMtlStart so worker threads are always stopped
- * and joined BEFORE mtl_stop() even on early ASSERT_* or exception unwind. */
-class ScopedStop {
- public:
-  explicit ScopedStop(std::function<void()> fn) : fn_(std::move(fn)) {
-  }
-  ~ScopedStop() {
-    stop();
-  }
-  void stop() {
-    if (done_) return;
-    done_ = true;
-    if (fn_) fn_();
-  }
-  ScopedStop(const ScopedStop&) = delete;
-  ScopedStop& operator=(const ScopedStop&) = delete;
-
- private:
-  std::function<void()> fn_;
-  bool done_ = false;
-};
-
 /*
  * Steady-state rate window parameters for ST 2110-22 (25-59.94 fps):
  *   - warmup_frames = 3 absorbs TX/RX startup and RL pacing training.
@@ -74,46 +56,15 @@ struct St22SessionSpec {
   int total_pkts = 540;
 };
 
+/* Member order guarantees session handle is freed before context teardown. */
 struct St22TxSession {
   mtl_test::ScopedContext ctx;
   ScopedSt22Tx handle;
-  std::thread worker;
-
-  St22TxSession() = default;
-  St22TxSession(St22TxSession&&) noexcept = default;
-  St22TxSession& operator=(St22TxSession&&) noexcept = default;
-  St22TxSession(const St22TxSession&) = delete;
-  St22TxSession& operator=(const St22TxSession&) = delete;
-
-  void stop() {
-    mtl_test::stop_worker(ctx.get(), worker);
-  }
-
-  ~St22TxSession() {
-    stop();
-    handle.reset();
-  }
 };
 
 struct St22RxSession {
   mtl_test::ScopedContext ctx;
   ScopedSt22Rx handle;
-  std::thread worker;
-
-  St22RxSession() = default;
-  St22RxSession(St22RxSession&&) noexcept = default;
-  St22RxSession& operator=(St22RxSession&&) noexcept = default;
-  St22RxSession(const St22RxSession&) = delete;
-  St22RxSession& operator=(const St22RxSession&) = delete;
-
-  void stop() {
-    mtl_test::stop_worker(ctx.get(), worker);
-  }
-
-  ~St22RxSession() {
-    stop();
-    handle.reset();
-  }
 };
 
 template <typename SessionVec>
@@ -133,7 +84,6 @@ static int st22_tx_rtp_done(void* args) {
 
   std::unique_lock<std::mutex> lck(ctx->mtx);
   ctx->cv.notify_all();
-  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
 
@@ -144,7 +94,6 @@ static int st22_rx_rtp_ready(void* args) {
 
   std::unique_lock<std::mutex> lck(ctx->mtx);
   ctx->cv.notify_all();
-  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
 
@@ -161,7 +110,6 @@ static int st22_next_video_frame(void* priv, uint16_t* next_frame_idx,
   ctx->fb_idx++;
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
   atomic_inc(&ctx->fb_send);
-  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
 
@@ -180,7 +128,6 @@ static int st22_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   ctx->fb_idx++;
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
   atomic_inc(&ctx->fb_send);
-  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
 
@@ -189,18 +136,13 @@ static int st22_frame_done(void* /*priv*/, uint16_t /*frame_idx*/,
   return 0;
 }
 
-static int st22_rx_frame_ready(void* priv, void* frame, struct st22_rx_frame_meta* meta) {
+static int st22_rx_frame_ready(void* priv, void* frame,
+                               struct st22_rx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
   void* h = get_handle(ctx);
   if (!h) return -EIO;
 
   atomic_inc(&ctx->fb_rec);
-  if (!ctx->start_time) {
-    ctx->rtp_delta = meta->timestamp - ctx->rtp_tmstamp;
-    ctx->start_time = st_test_get_monotonic_time();
-  }
-
-  if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) ctx->rtp_tmstamp = meta->timestamp;
   st22_rx_put_framebuff((st22_rx_handle)h, frame);
   return 0;
 }
@@ -373,69 +315,188 @@ static void st22_rx_assert_cnt(int expect_s22_rx_cnt) {
 }
 
 TEST(St22_tx, create_free_single) {
-  create_free_test(st22_tx, 0, 1, 1);
+  mtl_test::verify_create_free<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                               st22_tx_free>(st22_tx_ops_init, st22_tx_assert_cnt, 0, 1,
+                                             1);
 }
 TEST(St22_tx, create_free_multi) {
-  create_free_test(st22_tx, 0, 1, 6);
+  mtl_test::verify_create_free<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                               st22_tx_free>(st22_tx_ops_init, st22_tx_assert_cnt, 0, 1,
+                                             6);
 }
 TEST(St22_tx, create_free_mix) {
-  create_free_test(st22_tx, 2, 3, 4);
+  mtl_test::verify_create_free<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                               st22_tx_free>(st22_tx_ops_init, st22_tx_assert_cnt, 2, 3,
+                                             4);
 }
 TEST(St22_tx, create_free_max) {
-  create_free_max(st22_tx, TEST_CREATE_FREE_MAX);
+  mtl_test::verify_create_free_max<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                   st22_tx_free>(st22_tx_ops_init, st22_tx_assert_cnt,
+                                                 TEST_CREATE_FREE_MAX);
 }
 TEST(St22_tx, create_expect_fail) {
-  expect_fail_test(st22_tx);
+  mtl_test::verify_invalid_ports<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                 st22_tx_free>(st22_tx_ops_init);
 }
 TEST(St22_tx, create_expect_fail_ring_sz) {
-  uint16_t ring_size = 0;
-  expect_fail_test_rtp_ring(st22_tx, ST22_TYPE_RTP_LEVEL, ring_size);
-  ring_size = 128 + 1;
-  expect_fail_test_rtp_ring(st22_tx, ST22_TYPE_RTP_LEVEL, ring_size);
+  mtl_test::verify_rtp_ring_invalid<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                    st22_tx_free>(st22_tx_ops_init, ST22_TYPE_RTP_LEVEL,
+                                                  0);
+  mtl_test::verify_rtp_ring_invalid<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                    st22_tx_free>(st22_tx_ops_init, ST22_TYPE_RTP_LEVEL,
+                                                  128 + 1);
 }
 /* RTP-level create takes rtp_pkt_size in [1:1452], so a 1396-byte ST 2022-6 pkt fits */
 TEST(St22_tx, rtp_pkt_size) {
-  uint16_t rtp_pkt_size = 0;
-  expect_test_rtp_pkt_size(st22_tx, ST22_TYPE_RTP_LEVEL, rtp_pkt_size, false);
+  mtl_test::verify_rtp_pkt_size<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                st22_tx_free>(st22_tx_ops_init, ST22_TYPE_RTP_LEVEL, 0,
+                                              false, /*set_total_pkts=*/true);
   /* the video TX limit: the 1494-byte TX frame minus the 42-byte Ethernet/IPv4/UDP hdr */
-  rtp_pkt_size = 1452;
-  expect_test_rtp_pkt_size(st22_tx, ST22_TYPE_RTP_LEVEL, rtp_pkt_size, true);
-  rtp_pkt_size = 1452 + 1;
-  expect_test_rtp_pkt_size(st22_tx, ST22_TYPE_RTP_LEVEL, rtp_pkt_size, false);
+  mtl_test::verify_rtp_pkt_size<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                st22_tx_free>(st22_tx_ops_init, ST22_TYPE_RTP_LEVEL, 1452,
+                                              true, /*set_total_pkts=*/true);
+  mtl_test::verify_rtp_pkt_size<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                st22_tx_free>(st22_tx_ops_init, ST22_TYPE_RTP_LEVEL,
+                                              1452 + 1, false, /*set_total_pkts=*/true);
 }
 TEST(St22_tx, create_expect_fail_fb_cnt) {
-  uint16_t fbcnt = 1;
-  expect_fail_test_fb_cnt(st22_tx, fbcnt);
-  fbcnt = ST22_FB_MAX_COUNT + 1;
-  expect_fail_test_fb_cnt(st22_tx, fbcnt);
+  mtl_test::verify_invalid_fb_cnt<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                  st22_tx_free>(st22_tx_ops_init, 1);
+  mtl_test::verify_invalid_fb_cnt<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                  st22_tx_free>(st22_tx_ops_init, ST22_FB_MAX_COUNT + 1);
+}
+TEST(St22_tx, get_fb_addr) {
+  mtl_test::verify_get_framebuffer<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                   st22_tx_free>(st22_tx_ops_init, st22_tx_get_fb_addr,
+                                                 3);
+}
+TEST(St22_tx, get_fb_addr_expect_fail) {
+  mtl_test::verify_get_framebuffer_oob<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
+                                       st22_tx_free>(st22_tx_ops_init,
+                                                     st22_tx_get_fb_addr, 3);
+}
+TEST(St22_tx, get_sch_idx) {
+  auto* ctx = st_test_ctx();
+  auto test_ctx = mtl_test::make_context(ctx, 0, 3);
+  ASSERT_TRUE(test_ctx != nullptr);
+
+  struct st22_tx_ops ops;
+  st22_tx_ops_init(test_ctx.get(), &ops);
+  ops.num_port = 1;
+  ScopedSt22Tx handle(st22_tx_create(ctx->handle, &ops));
+  ASSERT_TRUE(static_cast<bool>(handle));
+
+  int sch_idx = st22_tx_get_sch_idx(handle.get());
+  EXPECT_GE(sch_idx, 0);
+}
+TEST(St22_tx, put_mbuf_validation) {
+  auto* ctx = st_test_ctx();
+  auto test_ctx = mtl_test::make_context(ctx, 0, 3);
+  ASSERT_TRUE(test_ctx != nullptr);
+
+  struct st22_tx_ops ops;
+  st22_tx_ops_init(test_ctx.get(), &ops);
+  ops.num_port = 1;
+  ops.type = ST22_TYPE_RTP_LEVEL;
+  ops.flags |= ST22_TX_FLAG_USER_PACING;
+  ops.rtp_frame_total_pkts = 540;
+  ScopedSt22Tx handle(st22_tx_create(ctx->handle, &ops));
+  ASSERT_TRUE(static_cast<bool>(handle));
+
+  void* usrptr = nullptr;
+  void* mbuf = st22_tx_get_mbuf(handle.get(), &usrptr);
+  ASSERT_NE(mbuf, nullptr);
+  ASSERT_NE(usrptr, nullptr);
+  /* Zero length must be rejected (and the mbuf freed by the API). */
+  EXPECT_LT(st22_tx_put_mbuf(handle.get(), mbuf, 0), 0);
+
+  mbuf = st22_tx_get_mbuf(handle.get(), &usrptr);
+  ASSERT_NE(mbuf, nullptr);
+  /* Length above rtp_pkt_size must be rejected. */
+  EXPECT_LT(st22_tx_put_mbuf(handle.get(), mbuf, ops.rtp_pkt_size + 1), 0);
+
+  mbuf = st22_tx_get_mbuf(handle.get(), &usrptr);
+  ASSERT_NE(mbuf, nullptr);
+  /* Valid packet length within [1, rtp_pkt_size] must succeed. */
+  EXPECT_EQ(st22_tx_put_mbuf(handle.get(), mbuf, ops.rtp_pkt_size), 0);
+
+  mbuf = st22_tx_get_mbuf(handle.get(), &usrptr);
+  ASSERT_NE(mbuf, nullptr);
+  /* Zero length must be rejected by TAI put API. */
+  EXPECT_LT(st22_tx_put_mbuf_tai(handle.get(), mbuf, 0, NS_PER_S), 0);
+
+  mbuf = st22_tx_get_mbuf(handle.get(), &usrptr);
+  ASSERT_NE(mbuf, nullptr);
+  /* Length above rtp_pkt_size must be rejected by TAI put API. */
+  EXPECT_LT(st22_tx_put_mbuf_tai(handle.get(), mbuf, ops.rtp_pkt_size + 1, NS_PER_S), 0);
+
+  mbuf = st22_tx_get_mbuf(handle.get(), &usrptr);
+  ASSERT_NE(mbuf, nullptr);
+  /* Valid packet length within [1, rtp_pkt_size] must succeed with TAI put API. */
+  EXPECT_EQ(st22_tx_put_mbuf_tai(handle.get(), mbuf, ops.rtp_pkt_size, NS_PER_S), 0);
 }
 
 TEST(St22_rx, create_free_single) {
-  create_free_test(st22_rx, 0, 1, 1);
+  mtl_test::verify_create_free<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                               st22_rx_free>(st22_rx_ops_init, st22_rx_assert_cnt, 0, 1,
+                                             1);
 }
 TEST(St22_rx, create_free_multi) {
-  create_free_test(st22_rx, 0, 1, 6);
+  mtl_test::verify_create_free<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                               st22_rx_free>(st22_rx_ops_init, st22_rx_assert_cnt, 0, 1,
+                                             6);
 }
 TEST(St22_rx, create_free_mix) {
-  create_free_test(st22_rx, 2, 3, 4);
+  mtl_test::verify_create_free<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                               st22_rx_free>(st22_rx_ops_init, st22_rx_assert_cnt, 2, 3,
+                                             4);
 }
 TEST(St22_rx, create_free_max) {
-  create_free_max(st22_rx, TEST_CREATE_FREE_MAX);
+  mtl_test::verify_create_free_max<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                                   st22_rx_free>(st22_rx_ops_init, st22_rx_assert_cnt,
+                                                 TEST_CREATE_FREE_MAX);
 }
 TEST(St22_rx, create_expect_fail) {
-  expect_fail_test(st22_rx);
+  mtl_test::verify_invalid_ports<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                                 st22_rx_free>(st22_rx_ops_init);
 }
 TEST(St22_rx, create_expect_fail_ring_sz) {
-  uint16_t ring_size = 0;
-  expect_fail_test_rtp_ring(st22_rx, ST22_TYPE_RTP_LEVEL, ring_size);
-  ring_size = 128 + 1;
-  expect_fail_test_rtp_ring(st22_rx, ST22_TYPE_RTP_LEVEL, ring_size);
+  mtl_test::verify_rtp_ring_invalid<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                                    st22_rx_free>(st22_rx_ops_init, ST22_TYPE_RTP_LEVEL,
+                                                  0);
+  mtl_test::verify_rtp_ring_invalid<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                                    st22_rx_free>(st22_rx_ops_init, ST22_TYPE_RTP_LEVEL,
+                                                  128 + 1);
 }
 TEST(St22_rx, create_expect_fail_fb_cnt) {
-  uint16_t fbcnt = 1;
-  expect_fail_test_fb_cnt(st22_rx, fbcnt);
-  fbcnt = ST22_FB_MAX_COUNT + 1;
-  expect_fail_test_fb_cnt(st22_rx, fbcnt);
+  mtl_test::verify_invalid_fb_cnt<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                                  st22_rx_free>(st22_rx_ops_init, 1);
+  mtl_test::verify_invalid_fb_cnt<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                                  st22_rx_free>(st22_rx_ops_init, ST22_FB_MAX_COUNT + 1);
+}
+TEST(St22_rx, get_fb_addr) {
+  mtl_test::verify_get_framebuffer<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                                   st22_rx_free>(st22_rx_ops_init, st22_rx_get_fb_addr,
+                                                 3);
+}
+TEST(St22_rx, get_fb_addr_expect_fail) {
+  mtl_test::verify_get_framebuffer_oob<struct st22_rx_ops, st22_rx_handle, st22_rx_create,
+                                       st22_rx_free>(st22_rx_ops_init,
+                                                     st22_rx_get_fb_addr, 3);
+}
+TEST(St22_rx, get_sch_idx) {
+  auto* ctx = st_test_ctx();
+  auto test_ctx = mtl_test::make_context(ctx, 0, 3);
+  ASSERT_TRUE(test_ctx != nullptr);
+
+  struct st22_rx_ops ops;
+  st22_rx_ops_init(test_ctx.get(), &ops);
+  ops.num_port = 1;
+  ScopedSt22Rx handle(st22_rx_create(ctx->handle, &ops));
+  ASSERT_TRUE(static_cast<bool>(handle));
+
+  int sch_idx = st22_rx_get_sch_idx(handle.get());
+  EXPECT_GE(sch_idx, 0);
 }
 
 static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hdr* rtp,
@@ -453,12 +514,6 @@ static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hd
 
   uint16_t data_len = s->pkt_data_len;
   *pkt_len = data_len + sizeof(*rtp);
-  if (s->check_sha) {
-    uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
-    mtl_memcpy(payload,
-               s->frame_buf[s->fb_idx % ST22_TEST_SHA_HIST_NUM] + s->pkt_idx * data_len,
-               data_len);
-  }
 
   s->pkt_idx++;
   if (s->pkt_idx >= s->total_pkts_in_frame) {
@@ -474,7 +529,8 @@ static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hd
 }
 
 /* tai_of, if set, gives the TAI of the frame a first packet starts, by RTP timestamp */
-static void st22_tx_feed_packet_tai(tests_context* ctx, uint64_t (*tai_of)(uint32_t)) {
+static void st22_tx_feed_packet_tai(tests_context* ctx,
+                                    std::function<uint64_t(uint32_t)> tai_of) {
   auto handle = (st22_tx_handle)get_handle(ctx);
   void* mbuf;
   void* usrptr = NULL;
@@ -496,7 +552,10 @@ static void st22_tx_feed_packet_tai(tests_context* ctx, uint64_t (*tai_of)(uint3
 
     uint64_t tai = (tai_of && !ctx->pkt_idx) ? tai_of(ctx->rtp_tmstamp) : 0;
     st22_tx_build_rtp_packet(ctx, (struct st22_rfc9134_rtp_hdr*)usrptr, &mbuf_len);
-    st22_tx_put_mbuf_tai(handle, mbuf, mbuf_len, tai);
+    if (tai_of)
+      st22_tx_put_mbuf_tai(handle, mbuf, mbuf_len, tai);
+    else
+      st22_tx_put_mbuf(handle, mbuf, mbuf_len);
   }
 }
 
@@ -504,33 +563,9 @@ static void st22_tx_feed_packet(void* args) {
   st22_tx_feed_packet_tai((tests_context*)args, nullptr);
 }
 
-static void st22_rx_handle_rtp(tests_context* s, struct st22_rfc9134_rtp_hdr* hdr,
-                               bool newframe, int mbuf_len) {
-  uint8_t* frame;
-  uint8_t* payload;
-
-  if (newframe) {
-    if (s->frame_buf[0]) {
-      std::unique_lock<std::mutex> lck(s->mtx);
-      s->buf_q.push(s->frame_buf[0]);
-      s->cv.notify_all();
-    }
-    s->frame_buf[0] = (uint8_t*)st_test_zmalloc(s->frame_size);
-    ASSERT_TRUE(s->frame_buf[0] != NULL);
-  }
-
-  frame = s->frame_buf[0];
-  payload = (uint8_t*)hdr + sizeof(*hdr);
-  int index = ntohs(hdr->base.seq_number) - __atomic_load_n(&s->seq_id, __ATOMIC_RELAXED);
-  if (index < 0) {
-    index = index + 0x10000;
-  }
-  mtl_memcpy(frame + index * (mbuf_len - sizeof(*hdr)), payload, mbuf_len - sizeof(*hdr));
-}
-
 /* on_packet, if set, sees every packet after the new frame check */
-static void st22_rx_get_packet_hook(tests_context* ctx,
-                                    void (*on_packet)(tests_context*, uint32_t, bool)) {
+static void st22_rx_get_packet_hook(
+    tests_context* ctx, std::function<void(tests_context*, uint32_t, bool)> on_packet) {
   auto handle = (st22_rx_handle)get_handle(ctx);
   void* mbuf;
   void* usrptr = NULL;
@@ -558,10 +593,6 @@ static void st22_rx_get_packet_hook(tests_context* ctx,
       ctx->rtp_tmstamp = tmstamp;
       atomic_inc(&ctx->fb_rec);
       newframe = true;
-      __atomic_store_n(&ctx->seq_id, ntohs(hdr->base.seq_number), __ATOMIC_RELAXED);
-    }
-    if (ctx->check_sha) {
-      st22_rx_handle_rtp(ctx, hdr, newframe, mbuf_len);
     }
     if (on_packet) on_packet(ctx, tmstamp, newframe);
     st22_rx_put_mbuf(handle, mbuf);
@@ -572,16 +603,18 @@ static void st22_rx_get_packet(void* args) {
   st22_rx_get_packet_hook((tests_context*)args, nullptr);
 }
 
-static void st22_rx_fps_test(const std::vector<St22SessionSpec>& specs,
-                             enum st_test_level level) {
+static void st22_rx_fps_test(const std::vector<St22SessionSpec>& specs) {
   auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
-  MTL_TEST_REQUIRE_LEVEL(ctx, level);
 
   const size_t sessions = specs.size();
+  /* Declaration order guarantees RAII teardown: workers stop -> mtl_stop -> free handles.
+   */
   std::vector<St22TxSession> tx;
   std::vector<St22RxSession> rx;
+  mtl_test::ScopedMtlStart mtl_guard(m_handle);
+  std::vector<mtl_test::ScopedWorker> workers;
   std::vector<double> expect_framerate(sessions);
   tx.reserve(sessions);
   rx.reserve(sessions);
@@ -601,7 +634,7 @@ static void st22_rx_fps_test(const std::vector<St22SessionSpec>& specs,
     ASSERT_TRUE(static_cast<bool>(s.handle));
     set_handle(s.ctx.get(), s.handle.get());
     if (spec.type == ST22_TYPE_RTP_LEVEL) {
-      s.worker = std::thread(st22_tx_feed_packet, s.ctx.get());
+      workers.emplace_back(s.ctx.get(), std::thread(st22_tx_feed_packet, s.ctx.get()));
     }
   }
 
@@ -619,15 +652,10 @@ static void st22_rx_fps_test(const std::vector<St22SessionSpec>& specs,
     ASSERT_TRUE(static_cast<bool>(s.handle));
     set_handle(s.ctx.get(), s.handle.get());
     if (spec.type == ST22_TYPE_RTP_LEVEL) {
-      s.worker = std::thread(st22_rx_get_packet, s.ctx.get());
+      workers.emplace_back(s.ctx.get(), std::thread(st22_rx_get_packet, s.ctx.get()));
     }
   }
 
-  mtl_test::ScopedMtlStart mtl_guard(m_handle);
-  ScopedStop workers_stop([&]() {
-    for (auto& s : tx) s.stop();
-    for (auto& s : rx) s.stop();
-  });
   EXPECT_GE(mtl_guard.start(), 0);
 
   auto rx_ctxs = collect_ctxs(rx);
@@ -637,7 +665,7 @@ static void st22_rx_fps_test(const std::vector<St22SessionSpec>& specs,
   EXPECT_TRUE(rate_res.warmed_up);
   EXPECT_TRUE(rate_res.complete);
 
-  workers_stop.stop();
+  for (auto& w : workers) w.stop();
   EXPECT_GE(mtl_guard.stop(), 0);
 
   for (size_t i = 0; i < sessions; i++) {
@@ -650,28 +678,23 @@ static void st22_rx_fps_test(const std::vector<St22SessionSpec>& specs,
 }
 
 TEST(St22_rx, fps_1080p_s2) {
-  st22_rx_fps_test(
-      {
-          {ST22_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 546},
-          {ST22_TYPE_RTP_LEVEL, ST_FPS_P50, 1920, 1080, 1280, 540},
-      },
-      ST_TEST_LEVEL_MANDATORY);
+  st22_rx_fps_test({
+      {ST22_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 546},
+      {ST22_TYPE_RTP_LEVEL, ST_FPS_P50, 1920, 1080, 1280, 540},
+  });
 }
 
 TEST(St22_rx, fps_mix_s2) {
-  st22_rx_fps_test(
-      {
-          {ST22_TYPE_RTP_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 540},
-          {ST22_TYPE_FRAME_LEVEL, ST_FPS_P50, 1280, 720, 1300, 150},
-      },
-      ST_TEST_LEVEL_ALL);
+  st22_rx_fps_test({
+      {ST22_TYPE_RTP_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 540},
+      {ST22_TYPE_FRAME_LEVEL, ST_FPS_P50, 1280, 720, 1300, 150},
+  });
 }
 
-static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
+static void st22_rx_update_src_test(int tx_sessions, bool tx_update_dst = false) {
   auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
-  MTL_TEST_REQUIRE_LEVEL(ctx, level);
 
   const int rx_sessions = 1;
   const St22SessionSpec spec{ST22_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 520};
@@ -735,12 +758,20 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   EXPECT_TRUE(
       mtl_test::wait_for_all(rx_ctxs, mtl_test::rx_frames, kSt22RateWarmupFrames, 6000));
 
-  auto verify_switched_source = [&](const char* label, const uint8_t* src_ip,
-                                    uint16_t udp_port) {
+  auto verify_switched_source = [&](const char* label, const uint8_t* tx_dst_ip,
+                                    const uint8_t* rx_src_ip, uint16_t udp_port) {
+    if (tx_update_dst) {
+      struct st_tx_dest_info dst;
+      memset(&dst, 0, sizeof(dst));
+      dst.udp_port[MTL_SESSION_PORT_P] = udp_port;
+      memcpy(dst.dip_addr[MTL_SESSION_PORT_P], tx_dst_ip, MTL_IP_ADDR_LEN);
+      EXPECT_GE(st22_tx_update_destination(tx[0].handle.get(), &dst), 0);
+    }
+
     struct st_rx_source_info src;
     memset(&src, 0, sizeof(src));
     src.udp_port[MTL_SESSION_PORT_P] = udp_port;
-    memcpy(src.ip_addr[MTL_SESSION_PORT_P], src_ip, MTL_IP_ADDR_LEN);
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], rx_src_ip, MTL_IP_ADDR_LEN);
 
     std::vector<int> base_rec(rx.size(), 0);
     for (size_t i = 0; i < rx.size(); i++) {
@@ -765,26 +796,34 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
     }
   };
 
-  /* Switch to mcast port P (tx_session:1). */
+  /* Switch to mcast port P (tx_session:1, or tx_session:0 destination update). */
   verify_switched_source("mcast 1", ctx->mcast_ip_addr[MTL_PORT_P],
-                         ST22_TEST_LOOPBACK_UDP_PORT + 2);
+                         ctx->mcast_ip_addr[MTL_PORT_P], ST22_TEST_LOOPBACK_UDP_PORT + 2);
 
   /* Switch to mcast port R (tx_session:2). */
   if (tx_sessions > 2) {
     verify_switched_source("mcast 2", ctx->mcast_ip_addr[MTL_PORT_R],
+                           ctx->mcast_ip_addr[MTL_PORT_R],
                            ST22_TEST_LOOPBACK_UDP_PORT + 4);
   }
 
   /* Switch back to unicast (tx_session:0). */
-  const uint8_t* tx0_ip =
+  const uint8_t* tx0_dst_ip =
+      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R];
+  const uint8_t* rx0_src_ip =
       ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P];
-  verify_switched_source("unicast 0", tx0_ip, ST22_TEST_LOOPBACK_UDP_PORT);
+  verify_switched_source("unicast 0", tx0_dst_ip, rx0_src_ip,
+                         ST22_TEST_LOOPBACK_UDP_PORT);
 
   EXPECT_GE(mtl_guard.stop(), 0);
 }
 
 TEST(St22_rx, update_source) {
-  st22_rx_update_src_test(2, ST_TEST_LEVEL_ALL);
+  st22_rx_update_src_test(2);
+}
+
+TEST(St22_tx, update_destination) {
+  st22_rx_update_src_test(1, /*tx_update_dst=*/true);
 }
 
 static void st22_rx_after_start_test(const std::vector<St22SessionSpec>& specs,
@@ -851,8 +890,6 @@ static void st22_rx_after_start_test(const std::vector<St22SessionSpec>& specs,
       info("%s, session %zu fb_rec %d framerate %f\n", __func__, i, fb_rec,
            rate_res.rate[i]);
       EXPECT_NEAR(rate_res.rate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-      EXPECT_LT(mtl_test::relaxed_load(&rx[i].ctx->sha_fail_cnt),
-                2); /* the first frame may be incomplete */
     }
     /* rx then tx destroyed here in reverse order before the next repeat */
   }
@@ -924,12 +961,17 @@ static void st22_rx_dump_test(const std::vector<St22SessionSpec>& specs) {
 
   const uint32_t max_dump_packets = 100;
   for (size_t i = 0; i < sessions; i++) {
-    struct st_pcap_dump_meta meta;
+    struct st_pcap_dump_meta meta = {};
     int ret = st22_rx_pcapng_dump(rx[i].handle.get(), max_dump_packets, true, &meta);
     EXPECT_GE(ret, 0);
-    EXPECT_EQ(meta.dumped_packets[MTL_SESSION_PORT_P], max_dump_packets);
-    dbg("%s, file_name %s\n", __func__, meta.file_name[MTL_SESSION_PORT_P]);
-    if (ret >= 0) remove(meta.file_name[MTL_SESSION_PORT_P]);
+    if (ret >= 0) {
+      EXPECT_EQ(meta.dumped_packets[MTL_SESSION_PORT_P], max_dump_packets);
+      dbg("%s, file_name %s\n", __func__, meta.file_name[MTL_SESSION_PORT_P]);
+      struct stat st_buf = {};
+      EXPECT_EQ(stat(meta.file_name[MTL_SESSION_PORT_P], &st_buf), 0);
+      EXPECT_GT(st_buf.st_size, 0);
+      unlink(meta.file_name[MTL_SESSION_PORT_P]);
+    }
   }
 
   EXPECT_GE(mtl_guard.stop(), 0);
@@ -963,7 +1005,6 @@ static int st22_digest_rx_frame_ready(void* priv, void* frame,
     }
   }
   atomic_inc(&ctx->fb_rec);
-  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   dbg("%s, frame %p\n", __func__, frame);
   return 0;
 }
@@ -977,7 +1018,6 @@ static void st22_digest_rx_frame_check(void* args) {
     {
       std::unique_lock<std::mutex> lck(ctx->mtx);
       ctx->cv.wait(lck, [&]() { return !ctx->buf_q.empty() || ctx->stop.load(); });
-      if (ctx->stop && ctx->buf_q.empty()) break;
       if (ctx->stop) {
         while (!ctx->buf_q.empty()) {
           st22_rx_put_framebuff(handle, ctx->buf_q.front());
@@ -1006,15 +1046,18 @@ static void st22_digest_rx_frame_check(void* args) {
 
 /* Frame-level SHA256 digest and steady-state FPS verification. */
 static void st22_rx_digest_test(const std::vector<St22SessionSpec>& specs,
-                                enum st_test_level level, bool enable_rtcp = false) {
+                                bool enable_rtcp = false) {
   auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
-  MTL_TEST_REQUIRE_LEVEL(ctx, level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   const size_t sessions = specs.size();
+  /* Declaration order guarantees RAII teardown: workers stop -> mtl_stop -> free handles.
+   */
   std::vector<St22TxSession> tx;
   std::vector<St22RxSession> rx;
+  mtl_test::ScopedMtlStart mtl_guard(m_handle);
+  std::vector<mtl_test::ScopedWorker> workers;
   std::vector<double> expect_framerate(sessions);
   tx.reserve(sessions);
   rx.reserve(sessions);
@@ -1046,7 +1089,7 @@ static void st22_rx_digest_test(const std::vector<St22SessionSpec>& specs,
       st_test_rand_data(fb, frame_size, frame);
       unsigned char* result = s.ctx->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
-      test_sha_dump("st20_rx", result);
+      test_sha_dump("st22_tx", result);
     }
     set_handle(s.ctx.get(), s.handle.get());
   }
@@ -1075,16 +1118,14 @@ static void st22_rx_digest_test(const std::vector<St22SessionSpec>& specs,
 
     memcpy(s.ctx->shas, tx[i].ctx->shas, ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
     set_handle(s.ctx.get(), s.handle.get());
-    s.worker = std::thread(st22_digest_rx_frame_check, s.ctx.get());
+    workers.emplace_back(s.ctx.get(),
+                         std::thread(st22_digest_rx_frame_check, s.ctx.get()));
 
-    struct st_queue_meta meta;
+    struct st_queue_meta meta = {};
     EXPECT_GE(st22_rx_get_queue_meta(s.handle.get(), &meta), 0);
+    EXPECT_EQ(meta.num_port, 1);
   }
 
-  mtl_test::ScopedMtlStart mtl_guard(m_handle);
-  ScopedStop workers_stop([&]() {
-    for (auto& s : rx) s.stop();
-  });
   EXPECT_GE(mtl_guard.start(), 0);
 
   auto rx_ctxs = collect_ctxs(rx);
@@ -1096,7 +1137,7 @@ static void st22_rx_digest_test(const std::vector<St22SessionSpec>& specs,
   /* Ensure the SHA worker verified at least one frame before stopping. */
   EXPECT_TRUE(mtl_test::wait_for_all(rx_ctxs, mtl_test::sha_checked_frames, 1, 2000));
 
-  workers_stop.stop();
+  for (auto& w : workers) w.stop();
   EXPECT_GE(mtl_guard.stop(), 0);
 
   for (size_t i = 0; i < sessions; i++) {
@@ -1113,12 +1154,10 @@ static void st22_rx_digest_test(const std::vector<St22SessionSpec>& specs,
 }
 
 TEST(St22_rx, digest_s2) {
-  st22_rx_digest_test(
-      {
-          {ST22_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 551},
-          {ST22_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080, 1280, 1520},
-      },
-      ST_TEST_LEVEL_MANDATORY);
+  st22_rx_digest_test({
+      {ST22_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 551},
+      {ST22_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080, 1280, 1520},
+  });
 }
 
 TEST(St22_rx, digest_rtcp_s2) {
@@ -1127,14 +1166,12 @@ TEST(St22_rx, digest_rtcp_s2) {
           {ST22_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 551},
           {ST22_TYPE_FRAME_LEVEL, ST_FPS_P50, 1920, 1080, 1280, 1520},
       },
-      ST_TEST_LEVEL_ALL, true);
+      true);
 }
 
-static void st22_tx_user_pacing_test(const std::vector<St22SessionSpec>& specs,
-                                     enum st_test_level level) {
+static void st22_tx_user_pacing_test(const std::vector<St22SessionSpec>& specs) {
   auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
-  MTL_TEST_REQUIRE_LEVEL(ctx, level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   const size_t sessions = specs.size();
@@ -1207,11 +1244,9 @@ static void st22_tx_user_pacing_test(const std::vector<St22SessionSpec>& specs,
 }
 
 TEST(St22_tx, tx_user_pacing) {
-  st22_tx_user_pacing_test(
-      {
-          {ST22_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080, 1260, 602},
-      },
-      ST_TEST_LEVEL_ALL);
+  st22_tx_user_pacing_test({
+      {ST22_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080, 1260, 602},
+  });
 }
 
 namespace {
@@ -1221,60 +1256,53 @@ namespace {
  * only the nearest epoch, not floor, ceil, the TAI itself or the consecutive epochs of
  * the default pacing, matches it. */
 struct St22RtpPacing {
-  uint64_t base_epoch;
-  long double frame_ns;
+  uint64_t base_epoch = 0;
+  long double frame_ns = 0;
   std::mutex mtx;
   std::vector<std::pair<uint32_t, uint64_t>> arrivals; /* RTP timestamp, first pkt */
+
+  uint64_t epoch(uint32_t rtp_ts) const {
+    return base_epoch + 2 * (uint64_t)(rtp_ts - 1);
+  }
+
+  uint64_t target(uint32_t rtp_ts) const {
+    long double off = (rtp_ts % 2) ? 0.4L : -0.3L;
+    return (uint64_t)((epoch(rtp_ts) + off) * frame_ns);
+  }
+
+  void record_first_packet(tests_context* ctx, uint32_t tmstamp, bool newframe) {
+    if (!newframe) return;
+    uint64_t now = mtl_ptp_read_time(ctx->ctx->handle);
+    std::lock_guard<std::mutex> rec(mtx);
+    arrivals.emplace_back(tmstamp, now);
+  }
 };
-St22RtpPacing st22_rtp_pacing;
 
-uint64_t st22_rtp_pacing_epoch(uint32_t rtp_ts) {
-  return st22_rtp_pacing.base_epoch + 2 * (uint64_t)(rtp_ts - 1);
-}
-
-uint64_t st22_rtp_pacing_target(uint32_t rtp_ts) {
-  long double off = (rtp_ts % 2) ? 0.4L : -0.3L;
-  return (uint64_t)((st22_rtp_pacing_epoch(rtp_ts) + off) * st22_rtp_pacing.frame_ns);
-}
-
-void st22_rx_record_first_packet(tests_context* ctx, uint32_t tmstamp, bool newframe) {
-  if (!newframe) return;
-  uint64_t now = mtl_ptp_read_time(ctx->ctx->handle);
-  std::lock_guard<std::mutex> rec(st22_rtp_pacing.mtx);
-  st22_rtp_pacing.arrivals.emplace_back(tmstamp, now);
-}
-
-/* Stops the feed threads, then mtl, then frees the sessions, whichever were set up. */
+/* Member order guarantees RAII teardown: workers stop -> mtl_stop -> free handles ->
+ * contexts. */
 struct St22RtpPacingSessions {
   explicit St22RtpPacingSessions(mtl_handle h) : mtl_guard(h) {
   }
-  mtl_test::ScopedMtlStart mtl_guard;
   tests_context tx_ctx;
   tests_context rx_ctx;
   ScopedSt22Tx tx;
   ScopedSt22Rx rx;
-  std::thread tx_thread;
-  std::thread rx_thread;
+  mtl_test::ScopedMtlStart mtl_guard;
+  mtl_test::ScopedWorker rx_worker;
+  mtl_test::ScopedWorker tx_worker;
 
   void stop_threads() {
-    mtl_test::stop_worker(&tx_ctx, tx_thread);
-    mtl_test::stop_worker(&rx_ctx, rx_thread);
-  }
-  ~St22RtpPacingSessions() {
-    stop_threads();
-    mtl_guard.stop();
-    tx.reset();
-    rx.reset();
+    tx_worker.stop();
+    rx_worker.stop();
   }
 };
 }  // namespace
 
 /* ST22 has no EXACT flag: st22_tx_put_mbuf_tai() only picks the epoch the frame goes
  * on, the nearest to its TAI. Checked from RX by the epoch each frame arrives in. */
-static void st22_tx_rtp_user_pacing_test(enum st_test_level level) {
+static void st22_tx_rtp_user_pacing_test() {
   auto ctx = st_test_ctx();
-  constexpr int kPktDataLen = 1280;
-  constexpr int kTotalPkts = 540;
+  const St22SessionSpec spec{ST22_TYPE_RTP_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 540};
   constexpr uint64_t kLeadEpochs = 18;    /* ~300ms */
   constexpr int64_t kEarlyNs = 1'000'000; /* RL warm-up and clock reads */
   constexpr int64_t kLateNs = 3'000'000;  /* tr_offset and RX thread wake */
@@ -1284,77 +1312,63 @@ static void st22_tx_rtp_user_pacing_test(enum st_test_level level) {
    * budget (arrivals.size() / 100 >= 1) active without a blind sleep(). */
   constexpr size_t kTargetFrames = 100;
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
+  /* Declare pacing before s so workers stop and join before pacing is destroyed. */
+  St22RtpPacing pacing;
   St22RtpPacingSessions s(ctx->handle);
-  {
-    std::lock_guard<std::mutex> lck(st22_rtp_pacing.mtx);
-    st22_rtp_pacing.arrivals.clear();
-  }
   ASSERT_GE(s.mtl_guard.start(), 0);
 
-  for (tests_context* c : {&s.tx_ctx, &s.rx_ctx}) {
-    c->ctx = ctx;
-    c->fb_cnt = 3;
-    c->pkt_data_len = kPktDataLen;
-    c->total_pkts_in_frame = kTotalPkts;
-    c->frame_size = (size_t)kPktDataLen * kTotalPkts;
-  }
+  s.tx_ctx.ctx = ctx;
+  s.rx_ctx.ctx = ctx;
+  s.tx_ctx.fb_cnt = 3;
+  s.rx_ctx.fb_cnt = 3;
 
-  /* The create/free ops, made a one-port RTP-level pair from TX port P to RX port R. */
   struct st22_tx_ops ops_tx;
-  st22_tx_ops_init(&s.tx_ctx, &ops_tx);
-  ops_tx.num_port = 1;
-  if (!ctx->mcast_only)
-    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-  ops_tx.type = ST22_TYPE_RTP_LEVEL;
+  fill_loopback_tx_ops(&ops_tx, &s.tx_ctx, spec, ST22_TEST_LOOPBACK_UDP_PORT);
   ops_tx.flags = ST22_TX_FLAG_USER_PACING | ST22_TX_FLAG_USER_TIMESTAMP;
-  ops_tx.rtp_pkt_size = kPktDataLen + sizeof(struct st22_rfc9134_rtp_hdr);
-  ops_tx.rtp_frame_total_pkts = kTotalPkts;
   s.tx.reset(st22_tx_create(ctx->handle, &ops_tx));
   ASSERT_TRUE(static_cast<bool>(s.tx));
 
   struct st22_rx_ops ops_rx;
-  st22_rx_ops_init(&s.rx_ctx, &ops_rx);
-  ops_rx.num_port = 1;
-  if (!ctx->mcast_only)
-    memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  (void)snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-                 ctx->para.port[MTL_PORT_R]);
-  ops_rx.type = ST22_TYPE_RTP_LEVEL;
+  fill_loopback_rx_ops(&ops_rx, &s.rx_ctx, spec, ST22_TEST_LOOPBACK_UDP_PORT);
   s.rx.reset(st22_rx_create(ctx->handle, &ops_rx));
   ASSERT_TRUE(static_cast<bool>(s.rx));
 
-  st22_rtp_pacing.frame_ns = (long double)NS_PER_S / st_frame_rate(ops_tx.fps);
-  st22_rtp_pacing.base_epoch =
-      (uint64_t)(mtl_ptp_read_time(ctx->handle) / st22_rtp_pacing.frame_ns) + kLeadEpochs;
+  pacing.frame_ns = (long double)NS_PER_S / st_frame_rate(ops_tx.fps);
+  pacing.base_epoch =
+      (uint64_t)(mtl_ptp_read_time(ctx->handle) / pacing.frame_ns) + kLeadEpochs;
   s.tx_ctx.rtp_tmstamp = 1;
   set_handle(&s.rx_ctx, s.rx.get());
   set_handle(&s.tx_ctx, s.tx.get());
-  s.rx_thread =
-      std::thread(st22_rx_get_packet_hook, &s.rx_ctx, st22_rx_record_first_packet);
-  s.tx_thread = std::thread(st22_tx_feed_packet_tai, &s.tx_ctx, st22_rtp_pacing_target);
+  s.rx_worker = mtl_test::ScopedWorker(
+      &s.rx_ctx,
+      std::thread(st22_rx_get_packet_hook, &s.rx_ctx,
+                  [&pacing](tests_context* c, uint32_t tmstamp, bool newframe) {
+                    pacing.record_first_packet(c, tmstamp, newframe);
+                  }));
+  s.tx_worker = mtl_test::ScopedWorker(
+      &s.tx_ctx,
+      std::thread(st22_tx_feed_packet_tai, &s.tx_ctx,
+                  [&pacing](uint32_t rtp_ts) { return pacing.target(rtp_ts); }));
 
   mtl_test::wait_until(
-      []() {
-        std::lock_guard<std::mutex> lck(st22_rtp_pacing.mtx);
-        return st22_rtp_pacing.arrivals.size() >= kTargetFrames;
+      [&pacing]() {
+        std::lock_guard<std::mutex> lck(pacing.mtx);
+        return pacing.arrivals.size() >= kTargetFrames;
       },
       /*timeout_ms=*/8000, /*poll_ms=*/10);
   s.stop_threads();
+  EXPECT_GE(s.mtl_guard.stop(), 0);
 
   std::vector<std::pair<uint32_t, uint64_t>> arrivals;
   {
-    std::lock_guard<std::mutex> lck(st22_rtp_pacing.mtx);
-    arrivals = st22_rtp_pacing.arrivals;
+    std::lock_guard<std::mutex> lck(pacing.mtx);
+    arrivals = pacing.arrivals;
   }
   size_t misses = 0;
   for (const auto& a : arrivals) {
-    uint64_t epoch_start =
-        (uint64_t)(st22_rtp_pacing_epoch(a.first) * st22_rtp_pacing.frame_ns);
+    uint64_t epoch_start = (uint64_t)(pacing.epoch(a.first) * pacing.frame_ns);
     int64_t delta = (int64_t)(a.second - epoch_start);
     if (delta < -kEarlyNs || delta > kLateNs) {
       misses++;
@@ -1369,5 +1383,5 @@ static void st22_tx_rtp_user_pacing_test(enum st_test_level level) {
 }
 
 TEST(St22_tx, rtp_user_pacing_nearest_epoch) {
-  st22_tx_rtp_user_pacing_test(ST_TEST_LEVEL_ALL);
+  st22_tx_rtp_user_pacing_test();
 }

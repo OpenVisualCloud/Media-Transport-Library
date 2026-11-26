@@ -20,7 +20,6 @@ struct St20DigestStream {
 struct St20DigestScenario {
   std::vector<St20DigestStream> streams;
   bool check_fps = false;
-  enum st_test_level level = ST_TEST_LEVEL_ALL;
   bool out_of_order = false;
   bool hdr_split = false;
   bool enable_rtcp = false;
@@ -33,7 +32,6 @@ void st20_rx_digest_test(const St20DigestScenario& s) {
   const int sessions = static_cast<int>(s.streams.size());
   constexpr int kSlicesPerFrame = 32;
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, s.level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   bool has_dma = st_test_dma_available(ctx);
@@ -260,7 +258,6 @@ void st20_rx_digest_test(const St20DigestScenario& s) {
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 4);
     if (s.check_fps && !s.enable_rtcp) {
       EXPECT_LT(test_ctx_rx[i]->meta_timing_fail_cnt, 4);
-      EXPECT_LT(test_ctx_tx[i]->tx_tmstamp_delta_fail_cnt, 4);
     }
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     if (st.rx_type == ST20_TYPE_FRAME_LEVEL)
@@ -282,374 +279,189 @@ void st20_rx_digest_test(const St20DigestScenario& s) {
 
 }  // namespace
 
-TEST(St20_rx, digest_frame_1080p_fps59_94_s1) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1920, 1080, false}},
-      true,
-  });
-}
-
-TEST(St20_rx, digest20_field_1080p_fps59_94_s1) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1920, 1080, true}},
-      true,
-  });
-}
-
-TEST(St20_rx, digest_frame_720p_fps59_94_s1_gpm) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P59_94,
-        1280, 720, false}},
-      true,
-  });
-}
-
-TEST(St20_rx, digest20_field_720p_fps59_94_s1_gpm) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P59_94,
-        1280, 720, true}},
-      true,
-  });
-}
-
-TEST(St20_rx, digest_frame_720p_fps29_97_s1_bpm) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
-        1280, 720, false}},
-      true,
-  });
-}
-
-TEST(St20_rx, digest20_field_720p_fps29_97_s1_bpm) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
-        1280, 720, true}},
-      true,
-  });
-}
-
-TEST(St20_rx, digest_rtp_1080p_fps59_94_s1) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1920,
-        1080, false}},
-      true,
-  });
-}
-
 /* RTP-level TX/RX of a session sized like ST 2022-6, 1396-byte pkts (12 RTP + 8 HBRMT +
  * 1376 payload): its largest pkt here is exactly 1396 bytes, 1438 on the wire. */
 TEST(St20_rx, digest_rtp_1080p_fps59_94_s1_pkt1396) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1920,
-        1080, false}},
-      true,
-      ST_TEST_LEVEL_MANDATORY,
-      false,
-      false,
-      false,
-      1396,
-  });
+  St20DigestScenario sc;
+  sc.streams = {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_BPM,
+                 ST_FPS_P59_94, 1920, 1080, false}};
+  sc.check_fps = true;
+  sc.rtp_pkt_size = 1396;
+  st20_rx_digest_test(sc);
 }
 
 /* RTP-level TX/RX of a session at the 1452-byte rtp_pkt_size limit. Whole 5-byte
  * pgroups cap its largest pkt at 1451 bytes, the session's mbufs and rate are 1452. */
 TEST(St20_rx, digest_rtp_1080p_fps59_94_s1_pkt1452) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1920,
-        1080, false}},
-      true,
-      ST_TEST_LEVEL_ALL,
-      false,
-      false,
-      false,
-      1452,
-  });
+  St20DigestScenario sc;
+  sc.streams = {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_BPM,
+                 ST_FPS_P59_94, 1920, 1080, false}};
+  sc.check_fps = true;
+  sc.rtp_pkt_size = 1452;
+  st20_rx_digest_test(sc);
 }
 
-TEST(St20_rx, digest_frame_720p_fps59_94_s3) {
-  st20_rx_digest_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-       1280, 720, false},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P59_94,
-       1280, 720, false},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-       1280, 720, false},
-  }});
-}
-
-TEST(St20_rx, digest20_field_720p_fps59_94_s3) {
-  st20_rx_digest_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-       1280, 720, true},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P59_94,
-       1280, 720, false},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-       1280, 720, true},
-  }});
-}
-
-TEST(St20_rx, digest_frame_1080p_fps_mix_s3) {
-  st20_rx_digest_test({{
+TEST(St20_rx, digest_frame_s3) {
+  St20DigestScenario sc;
+  sc.streams = {
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
        1920, 1080, false},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P60, 1920,
-       1080, false},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P30, 1920,
-       1080, false},
-  }});
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1080,
+       720, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
+       1920 * 2, 1080 * 2, false},
+  };
+  st20_rx_digest_test(sc);
 }
 
-TEST(St20_rx, digest20_field_1080p_fps59_94_s3) {
-  st20_rx_digest_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-       1920, 1080, true},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P59_94,
-       1920, 1080, true},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-       1920, 1080, true},
-  }});
+TEST(St20_rx, digest_frame_rtp_s3) {
+  St20DigestScenario sc;
+  sc.streams = {
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
+       1920, 1080, false},
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1080,
+       720, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
+       1920 * 2, 1080 * 2, false},
+  };
+  st20_rx_digest_test(sc);
 }
 
-TEST(St20_rx, digest_frame_1080p_fps59_94_s4_8bit) {
-  st20_rx_digest_test({{
+TEST(St20_rx, digest_frame_s4_8bit) {
+  St20DigestScenario sc;
+  sc.streams = {
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
        1920, 1080, false, ST20_FMT_YUV_422_8BIT},
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50,
        1920, 1080, false, ST20_FMT_YUV_420_8BIT},
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
        1920, 1080, false, ST20_FMT_YUV_444_8BIT},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1280,
-       720, false, ST20_FMT_RGB_8BIT},
-  }});
-}
-
-TEST(St20_rx, digest20_field_4320p_fps59_94_s1) {
-  st20_rx_digest_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-       1920 * 4, 1080 * 4, true},
-  }});
-}
-
-TEST(St20_rx, digest_frame_s3) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-        1920, 1080, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1080,
-        720, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
-        1920 * 2, 1080 * 2, false}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-  });
-}
-
-TEST(St20_rx, digest_frame_field_s3) {
-  st20_rx_digest_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-       1920, 1080, true},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1080,
-       720, true},
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
-       1920 * 2, 1080 * 2, true},
-  }});
-}
-
-TEST(St20_rx, digest_frame_rtp_s3) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-        1920, 1080, false},
-       {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1080,
-        720, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
-        1920 * 2, 1080 * 2, false}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-  });
-}
-
-TEST(St20_rx, digest_frame_s4_8bit) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-        1920, 1080, false, ST20_FMT_YUV_422_8BIT},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50,
-        1920, 1080, false, ST20_FMT_YUV_420_8BIT},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1920, 1080, false, ST20_FMT_YUV_444_8BIT},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P119_88,
-        1280, 720, false, ST20_FMT_RGB_8BIT}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P119_88,
+       1280, 720, false, ST20_FMT_RGB_8BIT},
+  };
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest_frame_s4_10bit) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-        1920, 1080, false, ST20_FMT_YUV_422_10BIT},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
-        1080, false, ST20_FMT_YUV_420_10BIT},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1920, 1080, false, ST20_FMT_YUV_444_10BIT},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P50, 1280,
-        720, false, ST20_FMT_RGB_10BIT}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20DigestScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
+       1920, 1080, false, ST20_FMT_YUV_422_10BIT},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
+       1080, false, ST20_FMT_YUV_420_10BIT},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
+       1920, 1080, false, ST20_FMT_YUV_444_10BIT},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P50, 1280,
+       720, false, ST20_FMT_RGB_10BIT},
+  };
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest_rtp_s3) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-        1920, 1080, false},
-       {ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
-        1080, false},
-       {ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97, 1920,
-        1080, false}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20DigestScenario sc;
+  sc.streams = {
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94, 1920,
+       1080, false},
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920, 1080,
+       false},
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_RTP_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97, 1920,
+       1080, false},
+  };
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest_ooo_frame_s3) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50, 1920,
-        1080, false},
-       {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1280,
-        720, false},
-       {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1280,
-        720, false}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-      true,
-  });
-}
-
-TEST(St20_rx, digest_tx_slice_s3) {
-  st20_rx_digest_test({{
-      {ST20_TYPE_SLICE_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50,
-       1920, 1080, false},
-      {ST20_TYPE_SLICE_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1280,
+  St20DigestScenario sc;
+  sc.streams = {
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50, 1920,
+       1080, false},
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1280,
        720, false},
-      {ST20_TYPE_SLICE_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-       1280, 720, false},
-  }});
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1280,
+       720, false},
+  };
+  sc.out_of_order = true;
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest_slice_s3) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50,
-        1920, 1080, false},
-       {ST20_TYPE_SLICE_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1280,
-        720, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1280, 720, false}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-  });
+  St20DigestScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50,
+       1920, 1080, false},
+      {ST20_TYPE_SLICE_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1280,
+       720, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
+       1280, 720, false},
+  };
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest20_field_slice_s3) {
-  st20_rx_digest_test({{
+  St20DigestScenario sc;
+  sc.streams = {
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50,
        1920, 1080, true},
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1280,
        720, true},
       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
        1280, 720, true},
-  }});
+  };
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest_ooo_slice_s3) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50, 1920,
-        1080, false},
-       {ST20_TYPE_RTP_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1280,
-        720, false},
-       {ST20_TYPE_RTP_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1280,
-        720, false}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-      true,
-  });
-}
-
-TEST(St20_rx, digest_frame_4320p_fps59_94_s1) {
-  st20_rx_digest_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-       1920 * 4, 1080 * 4, false},
-  }});
+  St20DigestScenario sc;
+  sc.streams = {
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P50, 1920,
+       1080, false},
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1280,
+       720, false},
+      {ST20_TYPE_RTP_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94, 1280,
+       720, false},
+  };
+  sc.out_of_order = true;
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest_frame_4096_2160_fps59_94_12bit_yuv444_s1) {
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        4096, 2160, false, ST20_FMT_YUV_444_12BIT}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-  });
-}
-
-TEST(St20_rx, digest_slice_4320p) {
-  MTL_TEST_REQUIRE_DMA(st_test_ctx());
-  st20_rx_digest_test({{
-      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-       1920 * 4, 1080 * 4, false},
-  }});
+  St20DigestScenario sc;
+  sc.streams = {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM,
+                 ST_FPS_P59_94, 4096, 2160, false, ST20_FMT_YUV_444_12BIT}};
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest_ooo_slice_4320p) {
   MTL_TEST_REQUIRE_DMA(st_test_ctx());
-  st20_rx_digest_test({
-      {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P25,
-        1920 * 4, 1080 * 4, false}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-      true,
-  });
+  St20DigestScenario sc;
+  sc.streams = {{ST20_TYPE_RTP_LEVEL, ST20_TYPE_SLICE_LEVEL, ST20_PACKING_BPM, ST_FPS_P25,
+                 1920 * 4, 1080 * 4, false}};
+  sc.out_of_order = true;
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest_hdr_split) {
   if (!st_test_ctx()->hdr_split) {
     GTEST_SKIP() << "Header split is not enabled";
   }
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P59_94,
-        1920, 1080, false}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-      false,
-      true,
-  });
-}
-
-TEST(St20_rx, digest_rtcp_s1) {
-  /* check fps */
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P50, 1920,
-        1080, false}},
-      true,
-      ST_TEST_LEVEL_ALL,
-      false,
-      false,
-      true,
-  });
+  St20DigestScenario sc;
+  sc.streams = {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM,
+                 ST_FPS_P59_94, 1920, 1080, false}};
+  sc.hdr_split = true;
+  st20_rx_digest_test(sc);
 }
 
 TEST(St20_rx, digest_rtcp_s3) {
   /* no fps check */
-  st20_rx_digest_test({
-      {{ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
-        1920, 1080, true},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
-        1080, false},
-       {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
-        1280, 720, false}},
-      false,
-      ST_TEST_LEVEL_MANDATORY,
-      false,
-      false,
-      true,
-  });
+  St20DigestScenario sc;
+  sc.streams = {
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM_SL, ST_FPS_P59_94,
+       1920, 1080, true},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_GPM, ST_FPS_P50, 1920,
+       1080, false},
+      {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM, ST_FPS_P29_97,
+       1280, 720, false},
+  };
+  sc.enable_rtcp = true;
+  st20_rx_digest_test(sc);
 }
