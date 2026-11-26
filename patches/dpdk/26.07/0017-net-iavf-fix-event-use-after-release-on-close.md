@@ -57,7 +57,8 @@ Each MTL app closes its iavf ports in `mtl_uninit()` and runs `rte_eal_cleanup()
 
 - Unit fingerprint: `DpdkIavfPatch.CloseWaitsForInFlightEventOfThePort` fails on the series without 0017 and passes with it (see below).
 - The series applies to a clean v26.07 with `git am --3way` and with `patch -p1` (as `script/build_dpdk.sh` does), and the iavf driver builds with `-Dwerror=true`. `devtools/checkpatches.sh` and `devtools/check-git-log.sh` pass.
-- Hardware: to do on VM 140 with the recipe below.
+- Seen in the field: an FFmpeg MTL RX process on an E830 VF (ice 2.7.6 PF) ended with `dpdk-iavf-event: segfault at 60 ... in librte_net_iavf.so.26.2` after `dev_close_port(0), succ`, in a 10-minute stability run.
+- Hardware, 2026-11-26, E830 VF on a Proxmox VM, 20 open/close runs each with the recipe below (`IAVF_DBG_EVENT_AT_CLOSE=1 IAVF_DBG_EVENT_DELAY_US=20000`): the series without 0017 ended 20 of 20 runs with SIGSEGV (exit 139) and the same kernel line; with 0017, 20 of 20 exit 0 with `clean exit`.
 
 ## Reproduce without a NIC
 
