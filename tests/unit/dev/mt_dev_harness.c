@@ -37,6 +37,7 @@ struct ut_dev_ctx {
   char* eal_argv[UT_DEV_EAL_ARGV_MAX];
   long cpus;
   enum ut_dev_event events[16];
+  uint16_t event_queues[16];
   int event_count;
   int timesync_enable_calls;
   int fail_timesync_call;
@@ -91,6 +92,8 @@ static int ut_rte_eth_timesync_read_time(uint16_t port_id, struct timespec* time
 static int ut_rte_eth_link_get_nowait(uint16_t port_id, struct rte_eth_link* link);
 static int ut_rte_eth_dev_start(uint16_t port_id);
 static int ut_rte_eth_dev_stop(uint16_t port_id);
+static int ut_rte_eth_dev_tx_queue_stop(uint16_t port_id, uint16_t tx_queue_id);
+static int ut_rte_eth_dev_tx_queue_start(uint16_t port_id, uint16_t tx_queue_id);
 static int ut_rte_eth_stats_reset(uint16_t port_id);
 static int ut_rte_eth_promiscuous_enable(uint16_t port_id);
 static int ut_rte_eal_init(int argc, char** argv);
@@ -133,6 +136,8 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #define rte_eth_link_get_nowait ut_rte_eth_link_get_nowait
 #define rte_eth_dev_start ut_rte_eth_dev_start
 #define rte_eth_dev_stop ut_rte_eth_dev_stop
+#define rte_eth_dev_tx_queue_stop ut_rte_eth_dev_tx_queue_stop
+#define rte_eth_dev_tx_queue_start ut_rte_eth_dev_tx_queue_start
 #define rte_eth_stats_reset ut_rte_eth_stats_reset
 #define rte_eth_promiscuous_enable ut_rte_eth_promiscuous_enable
 #define rte_eal_init ut_rte_eal_init
@@ -167,6 +172,8 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #undef rte_eal_init
 #undef rte_eth_promiscuous_enable
 #undef rte_eth_stats_reset
+#undef rte_eth_dev_tx_queue_start
+#undef rte_eth_dev_tx_queue_stop
 #undef rte_eth_dev_stop
 #undef rte_eth_dev_start
 #undef rte_eth_link_get_nowait
@@ -195,9 +202,15 @@ static const char* ut_dev_compiled_pmd_dir(void) {
   return ut_active_ctx->compiled_pmd_dir;
 }
 
+static void ut_dev_record_queue(enum ut_dev_event event, uint16_t queue) {
+  if (!ut_active_ctx || ut_active_ctx->event_count >= (int)RTE_DIM(ut_active_ctx->events))
+    return;
+  ut_active_ctx->event_queues[ut_active_ctx->event_count] = queue;
+  ut_active_ctx->events[ut_active_ctx->event_count++] = event;
+}
+
 static void ut_dev_record(enum ut_dev_event event) {
-  if (ut_active_ctx && ut_active_ctx->event_count < (int)RTE_DIM(ut_active_ctx->events))
-    ut_active_ctx->events[ut_active_ctx->event_count++] = event;
+  ut_dev_record_queue(event, 0);
 }
 
 static int ut_rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
@@ -273,6 +286,18 @@ static int ut_rte_eth_dev_start(uint16_t port_id) {
 static int ut_rte_eth_dev_stop(uint16_t port_id) {
   (void)port_id;
   ut_dev_record(UT_DEV_EVENT_PORT_STOP);
+  return 0;
+}
+
+static int ut_rte_eth_dev_tx_queue_stop(uint16_t port_id, uint16_t tx_queue_id) {
+  (void)port_id;
+  ut_dev_record_queue(UT_DEV_EVENT_TX_QUEUE_STOP, tx_queue_id);
+  return 0;
+}
+
+static int ut_rte_eth_dev_tx_queue_start(uint16_t port_id, uint16_t tx_queue_id) {
+  (void)port_id;
+  ut_dev_record_queue(UT_DEV_EVENT_TX_QUEUE_START, tx_queue_id);
   return 0;
 }
 
@@ -414,6 +439,12 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
   ctx->tm_call_count++;
   ctx->tm_commit_count++;
   ctx->fail_tm_commit_error = 0;
+  /* as ice from DPDK 24.11: a commit stops and restarts a started port */
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  if (inf->drv_info.drv_type == MT_DRV_ICE && (inf->status & MT_IF_STAT_PORT_STARTED)) {
+    ut_dev_record(UT_DEV_EVENT_PORT_STOP);
+    ut_dev_record(UT_DEV_EVENT_PORT_START);
+  }
   /* as iavf: a failed commit with clear_on_fail drops every node and profile */
   if (ret && clear_on_fail) {
     ctx->tm_node_count = 0;
@@ -628,6 +659,10 @@ int ut_dev_event_count(const ut_dev_ctx* ctx) {
 
 enum ut_dev_event ut_dev_event_at(const ut_dev_ctx* ctx, int index) {
   return ctx->events[index];
+}
+
+uint16_t ut_dev_event_queue_at(const ut_dev_ctx* ctx, int index) {
+  return ctx->event_queues[index];
 }
 
 bool ut_dev_port_started(const ut_dev_ctx* ctx) {
