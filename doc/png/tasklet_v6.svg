@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="936" viewBox="0 0 1300 936" role="img" aria-labelledby="t d">
+<title id="t">Tasklet based asynchronous architecture</title>
+<desc id="d">Each tasklet registers with the scheduler. The scheduler runs the registered tasklets one after the other in a loop: session receivers, session transmitters, and the KNI, IGMP, PTP and ARP tasklets.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1300" height="936" fill="#ffffff"/>
+<text x="50.0" y="54.0" font-size="30" font-weight="700" fill="#1F271B" text-anchor="start">One scheduler runs its tasklets in a loop</text>
+<path d="M305.7 200.0 L512.6 308.2" fill="none" stroke="#0B4F6C" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M528.6 316.5 L505.8 317.0 L516.0 297.5 Z" fill="#0B4F6C"/>
+<path d="M650.0 200.0 L650.0 225.0" fill="none" stroke="#0B4F6C" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M650.0 243.0 L639.0 223.0 L661.0 223.0 Z" fill="#0B4F6C"/>
+<path d="M994.3 200.0 L787.4 308.2" fill="none" stroke="#0B4F6C" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M771.4 316.5 L784.0 297.5 L794.2 317.0 Z" fill="#0B4F6C"/>
+<path d="M930.0 380.0 L805.0 380.0" fill="none" stroke="#0B4F6C" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M787.0 380.0 L807.0 369.0 L807.0 391.0 Z" fill="#0B4F6C"/>
+<path d="M994.3 560.0 L787.4 451.8" fill="none" stroke="#0B4F6C" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M771.4 443.5 L794.2 443.0 L784.0 462.5 Z" fill="#0B4F6C"/>
+<path d="M650.0 560.0 L650.0 535.0" fill="none" stroke="#0B4F6C" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M650.0 517.0 L661.0 537.0 L639.0 537.0 Z" fill="#0B4F6C"/>
+<path d="M305.7 560.0 L512.6 451.8" fill="none" stroke="#0B4F6C" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M528.6 443.5 L516.0 462.5 L505.8 443.0 Z" fill="#0B4F6C"/>
+<path d="M370.0 380.0 L495.0 380.0" fill="none" stroke="#0B4F6C" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M513.0 380.0 L493.0 391.0 L493.0 369.0 Z" fill="#0B4F6C"/>
+<circle cx="650.0" cy="380.0" r="135" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="650.0" y="378.0" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">Scheduler</text>
+<text x="650.0" y="410.0" font-size="20" fill="#ffffff" text-anchor="middle">one per lcore</text>
+<rect x="50.0" y="100.0" width="320" height="100" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="210.0" y="142.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Session 1 Receiver</text>
+<text x="210.0" y="171.0" font-size="20" fill="#1F271B" text-anchor="middle">tasklet</text>
+<circle cx="50.0" cy="100.0" r="20" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="50.0" y="108.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<rect x="490.0" y="100.0" width="320" height="100" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="650.0" y="142.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Session 2 Receiver</text>
+<text x="650.0" y="171.0" font-size="20" fill="#1F271B" text-anchor="middle">tasklet</text>
+<circle cx="490.0" cy="100.0" r="20" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="490.0" y="108.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<rect x="930.0" y="100.0" width="320" height="100" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1090.0" y="142.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Session 1 Transmitter</text>
+<text x="1090.0" y="171.0" font-size="20" fill="#1F271B" text-anchor="middle">tasklet</text>
+<circle cx="930.0" cy="100.0" r="20" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="930.0" y="108.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<rect x="930.0" y="330.0" width="320" height="100" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1090.0" y="372.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Session 2 Transmitter</text>
+<text x="1090.0" y="401.0" font-size="20" fill="#1F271B" text-anchor="middle">tasklet</text>
+<circle cx="930.0" cy="330.0" r="20" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="930.0" y="338.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<rect x="930.0" y="560.0" width="320" height="100" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1090.0" y="602.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">KNI</text>
+<text x="1090.0" y="631.0" font-size="20" fill="#1F271B" text-anchor="middle">tasklet</text>
+<circle cx="930.0" cy="560.0" r="20" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="930.0" y="568.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">5</text>
+<rect x="490.0" y="560.0" width="320" height="100" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="650.0" y="602.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">IGMP</text>
+<text x="650.0" y="631.0" font-size="20" fill="#1F271B" text-anchor="middle">tasklet</text>
+<circle cx="490.0" cy="560.0" r="20" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="490.0" y="568.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">6</text>
+<rect x="50.0" y="560.0" width="320" height="100" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="210.0" y="602.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">PTP</text>
+<text x="210.0" y="631.0" font-size="20" fill="#1F271B" text-anchor="middle">tasklet</text>
+<circle cx="50.0" cy="560.0" r="20" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="50.0" y="568.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">7</text>
+<rect x="50.0" y="330.0" width="320" height="100" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="210.0" y="372.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">ARP</text>
+<text x="210.0" y="401.0" font-size="20" fill="#1F271B" text-anchor="middle">tasklet</text>
+<circle cx="50.0" cy="330.0" r="20" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="50.0" y="338.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">8</text>
+<path d="M370.0 150.0 L468.0 150.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M490.0 150.0 L466.0 163.2 L466.0 136.8 Z" fill="#1F271B"/>
+<path d="M810.0 150.0 L908.0 150.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M930.0 150.0 L906.0 163.2 L906.0 136.8 Z" fill="#1F271B"/>
+<path d="M1090.0 200.0 L1090.0 308.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1090.0 330.0 L1076.8 306.0 L1103.2 306.0 Z" fill="#1F271B"/>
+<path d="M1090.0 430.0 L1090.0 538.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1090.0 560.0 L1076.8 536.0 L1103.2 536.0 Z" fill="#1F271B"/>
+<path d="M930.0 610.0 L832.0 610.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M810.0 610.0 L834.0 596.8 L834.0 623.2 Z" fill="#1F271B"/>
+<path d="M490.0 610.0 L392.0 610.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M370.0 610.0 L394.0 596.8 L394.0 623.2 Z" fill="#1F271B"/>
+<path d="M210.0 560.0 L210.0 452.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M210.0 430.0 L223.2 454.0 L196.8 454.0 Z" fill="#1F271B"/>
+<path d="M210.0 330.0 L210.0 222.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M210.0 200.0 L223.2 224.0 L196.8 224.0 Z" fill="#1F271B"/>
+<rect x="50" y="696" width="1200" height="70" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="74.0" y="739.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="start">Legend</text>
+<path d="M200.0 731.0 L268.0 731.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M290.0 731.0 L266.0 744.2 L266.0 717.8 Z" fill="#1F271B"/>
+<text x="306.0" y="739.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="start">Run order</text>
+<path d="M470.0 731.0 L542.0 731.0" fill="none" stroke="#0B4F6C" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M560.0 731.0 L540.0 742.0 L540.0 720.0 Z" fill="#0B4F6C"/>
+<text x="576.0" y="739.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="start">Tasklet registers with the scheduler</text>
+<rect x="50" y="786" width="1200" height="120" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="74.0" y="824.9" font-size="20" fill="#1F271B" text-anchor="start">Each tasklet registers with the scheduler.</text>
+<text x="74.0" y="850.9" font-size="20" fill="#1F271B" text-anchor="start">The scheduler calls tasklets 1 to 8 in turn, then starts again.</text>
+<text x="74.0" y="876.9" font-size="20" fill="#1F271B" text-anchor="start">Note: the current code has no KNI tasklet. One CNI tasklet does ARP and IGMP.</text>
+</g>
+</svg>

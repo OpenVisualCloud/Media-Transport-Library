@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="780" viewBox="0 0 1400 780" role="img" aria-labelledby="t d">
+<title id="t">Zero copy for RTP encapsulation</title>
+<desc id="d">Each packet is a header mbuf chained to one slice of the video frame. The slices stay in the external memory buffer of the frame, so MTL copies no video data.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1400" height="780" fill="#ffffff"/>
+<text x="40.0" y="62.0" font-size="32" font-weight="700" fill="#1F271B" text-anchor="start">Zero copy for RTP encapsulation</text>
+<rect x="30" y="150" width="440" height="323" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M30 200 V158 Q30 150 38 150 H462 Q470 150 470 158 V200 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="48.0" y="184.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Key points</text>
+<circle cx="52" cy="228.7" r="5" fill="#1F271B"/>
+<text x="68.0" y="236.0" font-size="22" fill="#1F271B" text-anchor="start">Raw video frames are huge</text>
+<text x="68.0" y="264.6" font-size="22" fill="#1F271B" text-anchor="start">Example: 1080p60 4:2:2,</text>
+<text x="68.0" y="293.2" font-size="22" fill="#1F271B" text-anchor="start">about 5 MB per frame</text>
+<circle cx="52" cy="321.1" r="5" fill="#1F271B"/>
+<text x="68.0" y="328.4" font-size="22" fill="#1F271B" text-anchor="start">RFC 4175 encapsulation</text>
+<text x="68.0" y="357.0" font-size="22" fill="#1F271B" text-anchor="start">with no memory copy</text>
+<circle cx="52" cy="384.9" r="5" fill="#1F271B"/>
+<text x="68.0" y="392.2" font-size="22" fill="#1F271B" text-anchor="start">Uses the scatter-gather</text>
+<text x="68.0" y="420.8" font-size="22" fill="#1F271B" text-anchor="start">list (SGL) and chained</text>
+<text x="68.0" y="449.4" font-size="22" fill="#1F271B" text-anchor="start">mbufs of DPDK</text>
+<rect x="500" y="120" width="220" height="80" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="610.0" y="165.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">Header mbuf</text>
+<rect x="500" y="226" width="220" height="80" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="610.0" y="271.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">Header mbuf</text>
+<rect x="500" y="552" width="220" height="80" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="610.0" y="597.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">Header mbuf</text>
+<rect x="500" y="658" width="220" height="80" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="610.0" y="703.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">Header mbuf</text>
+<line x1="610.0" y1="346" x2="610.0" y2="512" stroke="#1F271B" stroke-width="5" stroke-dasharray="12 10"/>
+<rect x="860" y="360" width="74" height="140" rx="0" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<rect x="934" y="360" width="74" height="140" rx="0" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<rect x="1008" y="360" width="74" height="140" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="1082" y="360" width="74" height="140" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="1156" y="360" width="74" height="140" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="1230" y="360" width="74" height="140" rx="0" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<rect x="1304" y="360" width="74" height="140" rx="0" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<line x1="1090.88" y1="430.0" x2="1147.12" y2="430.0" stroke="#1F271B" stroke-width="5" stroke-dasharray="12 10"/>
+<text x="1170.0" y="338.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">External memory buffer</text>
+<text x="790.0" y="420.3" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">Video</text>
+<text x="790.0" y="451.5" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">frame</text>
+<path d="M720.0 160.0 L971.0 160.0 L971.0 340.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M971.0 360.0 L958.9 338.0 L983.1 338.0 Z" fill="#1F271B"/>
+<path d="M720.0 266.0 L897.0 266.0 L897.0 340.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M897.0 360.0 L884.9 338.0 L909.1 338.0 Z" fill="#1F271B"/>
+<path d="M720.0 592.0 L1267.0 592.0 L1267.0 520.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1267.0 500.0 L1279.1 522.0 L1254.9 522.0 Z" fill="#1F271B"/>
+<path d="M720.0 698.0 L1341.0 698.0 L1341.0 520.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1341.0 500.0 L1353.1 522.0 L1328.9 522.0 Z" fill="#1F271B"/>
+</g>
+</svg>
