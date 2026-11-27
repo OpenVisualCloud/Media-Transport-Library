@@ -1,5 +1,6 @@
 # Changelog
 
+* DPDK: 26.07 patch 0017: a non-owner ice port no longer stops the shared PHC timer or sets it to the system time, so stopping a TSN-paced port on one PF no longer stops the PHC of the other PFs and the kernel; its timesync enable before port start fails, instead of reading 0, while the timer is stopped and its owner is not probed in this process; rebuild DPDK (26.07.96_mtl_)
 * dev: with `MTL_FLAG_RX_MONO_POOL` (RxTxApp `--mono_pool` or `--rx_mono_pool`) each RX queue polls its own queue; since 22.12 every queue polled queue 0 of DPDK port 0, so the sessions' own queues overflowed and sessions on several schedulers shared one queue
 * pcapng dumps: a dump on a port without NIC RX timestamps warns that its packets carry their RX burst time, no basis for ST 2110-21 timing; RxTxApp `--pcapng_dump` now sets `MTL_FLAG_ENABLE_HW_TIMESTAMP`, as `--rx_timing_parser` does
 * ixgbe (E610): the built-in PTP syncs: MTL enables timesync after the port start, and DPDK 26.07.95_mtl_ sets the IEEE1588 TX timestamp bit with no `RTE_LIBRTE_IEEE1588` build option, so vector RX stays on

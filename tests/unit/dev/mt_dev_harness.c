@@ -49,6 +49,9 @@ struct ut_dev_ctx {
   bool link_up;
   int link_get_error;
   int link_reads;
+  int fail_configure_error;
+  int configure_calls;
+  uint64_t configured_tx_offloads;
   uint16_t tx_free_thresh[UT_DEV_TX_QUEUES];
   struct mtl_port_status sw_stats;
   pthread_t stats_writer;
@@ -94,6 +97,8 @@ static int ut_rte_eth_dev_stop(uint16_t port_id);
 static int ut_rte_eth_stats_reset(uint16_t port_id);
 static int ut_rte_eth_promiscuous_enable(uint16_t port_id);
 static int ut_rte_eal_init(int argc, char** argv);
+static int ut_rte_eth_dev_get_port_by_name(const char* name, uint16_t* port_id);
+static int ut_rte_eth_dev_info_get(uint16_t port_id, struct rte_eth_dev_info* dev_info);
 static int ut_rte_eth_dev_configure(uint16_t port_id, uint16_t nb_rx_q, uint16_t nb_tx_q,
                                     const struct rte_eth_conf* conf);
 static int ut_rte_eth_dev_adjust_nb_rx_tx_desc(uint16_t port_id, uint16_t* nb_rx_desc,
@@ -136,6 +141,8 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #define rte_eth_stats_reset ut_rte_eth_stats_reset
 #define rte_eth_promiscuous_enable ut_rte_eth_promiscuous_enable
 #define rte_eal_init ut_rte_eal_init
+#define rte_eth_dev_get_port_by_name ut_rte_eth_dev_get_port_by_name
+#define rte_eth_dev_info_get ut_rte_eth_dev_info_get
 #define rte_eth_dev_configure ut_rte_eth_dev_configure
 #define rte_eth_dev_adjust_nb_rx_tx_desc ut_rte_eth_dev_adjust_nb_rx_tx_desc
 #define rte_eth_dev_get_supported_ptypes ut_rte_eth_dev_get_supported_ptypes
@@ -164,6 +171,8 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #undef rte_eth_dev_get_supported_ptypes
 #undef rte_eth_dev_adjust_nb_rx_tx_desc
 #undef rte_eth_dev_configure
+#undef rte_eth_dev_info_get
+#undef rte_eth_dev_get_port_by_name
 #undef rte_eal_init
 #undef rte_eth_promiscuous_enable
 #undef rte_eth_stats_reset
@@ -300,13 +309,30 @@ static int ut_rte_eal_init(int argc, char** argv) {
   return -1;
 }
 
+static int ut_rte_eth_dev_get_port_by_name(const char* name, uint16_t* port_id) {
+  (void)name;
+  *port_id = 0;
+  return 0;
+}
+
+static int ut_rte_eth_dev_info_get(uint16_t port_id, struct rte_eth_dev_info* dev_info) {
+  (void)port_id;
+  memset(dev_info, 0, sizeof(*dev_info));
+  dev_info->driver_name = "net_ice";
+  dev_info->max_rx_queues = UT_DEV_TX_QUEUES;
+  dev_info->max_tx_queues = UT_DEV_TX_QUEUES;
+  dev_info->tx_offload_capa = RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+  return 0;
+}
+
 static int ut_rte_eth_dev_configure(uint16_t port_id, uint16_t nb_rx_q, uint16_t nb_tx_q,
                                     const struct rte_eth_conf* conf) {
   (void)port_id;
   (void)nb_rx_q;
   (void)nb_tx_q;
-  (void)conf;
-  return 0;
+  ut_active_ctx->configure_calls++;
+  ut_active_ctx->configured_tx_offloads = conf->txmode.offloads;
+  return ut_active_ctx->fail_configure_error;
 }
 
 /* Clamps to rx_desc_lim.nb_max, as the real one does. */
@@ -443,6 +469,8 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
   inf->tx_queues = &ctx->tx_queues[0];
   for (int q = 0; q < UT_DEV_TX_QUEUES; q++) ctx->tx_queues[q].rl_shapers_mapping = -1;
   inf->rx_mbuf_pool = (struct rte_mempool*)(uintptr_t)1;
+  ctx->impl.inf[MTL_PORT_R].parent = &ctx->impl;
+  ctx->impl.inf[MTL_PORT_R].port = MTL_PORT_R;
   ctx->cpus = RTE_MAX_LCORE;
   ut_dev_tx_cleanup_frees = RTE_VERSION >= RTE_VERSION_NUM(26, 7, 0, 0);
   ut_active_ctx = ctx;
@@ -798,6 +826,18 @@ void ut_dev_set_shared_txq(ut_dev_ctx* ctx) {
   ctx->impl.user_para.flags |= MTL_FLAG_SHARED_TX_QUEUE;
 }
 
+void ut_dev_enable_launch_time(ut_dev_ctx* ctx) {
+  ctx->impl.inf[MTL_PORT_P].feature |= MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP;
+}
+
+void ut_dev_set_tx_queues_cnt(ut_dev_ctx* ctx, enum mtl_port port, uint16_t cnt) {
+  ctx->impl.user_para.tx_queues_cnt[port] = cnt;
+}
+
+void ut_dev_set_tx_sessions_cnt_max(ut_dev_ctx* ctx, uint16_t cnt) {
+  ctx->impl.user_para.tx_sessions_cnt_max = cnt;
+}
+
 void ut_dev_fail_tm_capabilities(ut_dev_ctx* ctx, int error) {
   ctx->fail_tm_capabilities_error = error;
 }
@@ -822,6 +862,40 @@ int ut_dev_init_pacing(ut_dev_ctx* ctx) {
 
 enum st21_tx_pacing_way ut_dev_pacing_way(const ut_dev_ctx* ctx) {
   return ctx->impl.inf[MTL_PORT_P].tx_pacing_way;
+}
+
+int ut_dev_init_port_pacing(ut_dev_ctx* ctx, enum mtl_port port,
+                            enum st21_tx_pacing_way pacing) {
+  ctx->impl.inf[port].tx_pacing_way = pacing;
+  ut_active_ctx = ctx;
+  return dev_if_init_pacing(&ctx->impl.inf[port]);
+}
+
+enum st21_tx_pacing_way ut_dev_port_pacing_way(const ut_dev_ctx* ctx,
+                                               enum mtl_port port) {
+  return ctx->impl.inf[port].tx_pacing_way;
+}
+
+int ut_dev_if_init(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  if (ut_eal_init() < 0) return -EIO; /* the launch time dynflag needs a memzone */
+  ctx->impl.user_para.pacing = pacing;
+  /* not DPDK memory, yet the configure failure has mt_dev_if_uinit() free them */
+  inf->rx_queues = NULL;
+  inf->tx_queues = NULL;
+  inf->rx_mbuf_pool = NULL;
+  ctx->fail_configure_error = -EIO;
+  ut_active_ctx = ctx;
+  return mt_dev_if_init(&ctx->impl);
+}
+
+int ut_dev_configure_calls(const ut_dev_ctx* ctx) {
+  return ctx->configure_calls;
+}
+
+bool ut_dev_configured_launch_time(const ut_dev_ctx* ctx) {
+  return ctx->configured_tx_offloads & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
 }
 
 int ut_dev_nb_tx_queues(void) {

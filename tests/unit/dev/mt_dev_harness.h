@@ -125,6 +125,9 @@ void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx);
 
 void ut_dev_set_pacing_port(ut_dev_ctx* ctx, bool iavf, enum st21_tx_pacing_way pacing);
 void ut_dev_set_shared_txq(ut_dev_ctx* ctx);
+void ut_dev_enable_launch_time(ut_dev_ctx* ctx);
+void ut_dev_set_tx_queues_cnt(ut_dev_ctx* ctx, enum mtl_port port, uint16_t cnt);
+void ut_dev_set_tx_sessions_cnt_max(ut_dev_ctx* ctx, uint16_t cnt);
 /** Injects the rte_tm_capabilities_get() return; 0 keeps the port TM capable. */
 void ut_dev_fail_tm_capabilities(ut_dev_ctx* ctx, int error);
 /** Injects the rte_tm_node_add() return; 0 keeps the fake checking parent and id. */
@@ -135,6 +138,16 @@ void ut_dev_fail_tm_queue_node_add(ut_dev_ctx* ctx, int call, int error);
 void ut_dev_fail_tm_commit(ut_dev_ctx* ctx, int error);
 int ut_dev_init_pacing(ut_dev_ctx* ctx);
 enum st21_tx_pacing_way ut_dev_pacing_way(const ut_dev_ctx* ctx);
+/** dev_if_init_pacing() of port, given the pacing mt_dev_if_init() copies to it. */
+int ut_dev_init_port_pacing(ut_dev_ctx* ctx, enum mtl_port port,
+                            enum st21_tx_pacing_way pacing);
+enum st21_tx_pacing_way ut_dev_port_pacing_way(const ut_dev_ctx* ctx, enum mtl_port port);
+/** mt_dev_if_init() of port P with the user pacing, on an ice PF that offers launch time.
+ * Its rte_eth_dev_configure() fails, so it returns -EIO. */
+int ut_dev_if_init(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing);
+int ut_dev_configure_calls(const ut_dev_ctx* ctx);
+/** Whether the last rte_eth_dev_configure() asked for the TX launch time offload. */
+bool ut_dev_configured_launch_time(const ut_dev_ctx* ctx);
 int ut_dev_nb_tx_queues(void);
 /** Every rte_tm_* call, of any kind. */
 int ut_dev_tm_call_count(const ut_dev_ctx* ctx);
