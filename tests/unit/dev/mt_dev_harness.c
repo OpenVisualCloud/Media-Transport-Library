@@ -49,6 +49,8 @@ struct ut_dev_ctx {
   bool link_up;
   int link_get_error;
   int link_reads;
+  int configure_calls;
+  uint32_t configured_lpbk_mode;
   uint16_t tx_free_thresh[UT_DEV_TX_QUEUES];
   struct mtl_port_status sw_stats;
   pthread_t stats_writer;
@@ -305,7 +307,10 @@ static int ut_rte_eth_dev_configure(uint16_t port_id, uint16_t nb_rx_q, uint16_t
   (void)port_id;
   (void)nb_rx_q;
   (void)nb_tx_q;
-  (void)conf;
+  if (ut_active_ctx) {
+    ut_active_ctx->configure_calls++;
+    ut_active_ctx->configured_lpbk_mode = conf->lpbk_mode;
+  }
   return 0;
 }
 
@@ -615,6 +620,37 @@ int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size
   inf->dev_info.reta_size = reta_size;
   ut_active_ctx = ctx;
   return dev_config_rss_reta(inf);
+}
+
+void ut_dev_set_mac_loopback(ut_dev_ctx* ctx, bool enabled) {
+  uint64_t* flags = &ctx->impl.user_para.port_params[MTL_PORT_P].flags;
+
+  if (enabled)
+    *flags |= MTL_PORT_FLAG_MAC_LOOPBACK;
+  else
+    *flags &= ~MTL_PORT_FLAG_MAC_LOOPBACK;
+}
+
+int ut_dev_config_port(ut_dev_ctx* ctx) {
+  ut_active_ctx = ctx;
+  return dev_config_port(&ctx->impl.inf[MTL_PORT_P]);
+}
+
+int ut_dev_configure_calls(const ut_dev_ctx* ctx) {
+  return ctx->configure_calls;
+}
+
+uint32_t ut_dev_configured_lpbk_mode(const ut_dev_ctx* ctx) {
+  return ctx->configured_lpbk_mode;
+}
+
+int ut_dev_detect_link(ut_dev_ctx* ctx) {
+  ut_active_ctx = ctx;
+  return dev_detect_link(&ctx->impl.inf[MTL_PORT_P], false);
+}
+
+uint32_t ut_dev_link_speed(const ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].link_speed;
 }
 
 int ut_dev_create_ports(ut_dev_ctx* ctx) {

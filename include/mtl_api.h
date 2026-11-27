@@ -533,6 +533,13 @@ enum mtl_port_init_flag {
    *   Any port still down after this window is silently skipped.
    */
   MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION = (MTL_BIT64(1)),
+
+  /**
+   * Put the port in MAC loopback: every frame it sends comes back on its own RX. Only the
+   * DPDK igc PMD (I225/I226) supports it; mtl_init() fails on any other port. Works with
+   * no cable: the link is taken as up at 2.5G, as igc reports it down with no partner.
+   */
+  MTL_PORT_FLAG_MAC_LOOPBACK = (MTL_BIT64(2)),
 };
 
 struct mtl_ptp_sync_notify_meta {

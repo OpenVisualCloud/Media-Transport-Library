@@ -95,6 +95,8 @@ List all interfaces that can be used by app
 
  **rx_queues_cnt (int):** the number of tx queues(optional). Default it will calculated based on the sessions number in this configuration.
 
+ **mac_loopback (bool):** put the port in MAC loopback(optional): every packet it sends comes back on its own RX, so one port can run TX and RX. Only for Intel I225/I226 on the DPDK `net_igc` PMD; init fails on any other port. Works with no cable or link partner: the link is taken as up at 2.5G, as igc reports it down when the PHY has no partner. Default false.
+
 > Session group contains a group of sessions which use some common settings, there can be 0 or multiple video/audio/ancillary sessions in one group, and there can be 0 or multiple tx/rx session groups in the following parts in case you have multiple destination IP.
 > See [tx_multi_dest](../config/tx_2v2dest_1a_1anc.json) and [rx_multi_dest](../config/rx_2v2dest_1a_1anc.json) for multiple destination reference.
 
