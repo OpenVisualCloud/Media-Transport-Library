@@ -388,6 +388,18 @@
    AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                \
       {"r_tx_ip",          "r tx ip",     OFFSET(portArgs.dip[MTL_SESSION_PORT_R]), \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                            \
+      {"p_tx_port",                                                                 \
+       "device (BDF) of the session p port, one of the loaded ports",               \
+       OFFSET(portArgs.port[MTL_SESSION_PORT_P]),                                   \
+       AV_OPT_TYPE_STRING,                                                          \
+       {.str = NULL},                                                               \
+       .flags = ENC},                                                               \
+      {"r_tx_port",                                                                 \
+       "device (BDF) of the session r port, one of the loaded ports",               \
+       OFFSET(portArgs.port[MTL_SESSION_PORT_R]),                                   \
+       AV_OPT_TYPE_STRING,                                                          \
+       {.str = NULL},                                                               \
+       .flags = ENC},                                                               \
       {"udp_port",                                                                  \
        "UDP port",                                                                  \
        OFFSET(portArgs.udp_port),                                                   \

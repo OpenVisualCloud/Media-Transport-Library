@@ -112,7 +112,7 @@ Reading two ST 2110-20 10-bit YUV422 stream, one on 239.168.85.20:20000 and the 
 
 <!-- markdownlint-disable line-length -->
 ```bash
-ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "1" -p_port 0000:af:01.0 -p_rx_ip 239.168.85.20 -udp_port 20002 -payload_type 96 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "2" -map 0:0 -f rawvideo /dev/null -y -map 1:0 -f rawvideo /dev/null -y
+ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "1" -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20002 -payload_type 96 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "2" -map 0:0 -f rawvideo /dev/null -y -map 1:0 -f rawvideo /dev/null -y
 ```
 
 Reading a ST 2110-20 10-bit YUV422 stream on 239.168.85.20:20000 with payload_type 96, and use libopenh264 to encode the stream to out.264 file:
@@ -137,7 +137,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i
 
 ### 2.2.1 Additional NIC port options (multi-BDF)
 
-The TX path supports additional NIC bindings beyond primary/redundant by using:
+The TX path can load more NICs than the primary and the redundant port. Use these options:
 
 1. `-p2_port` / `-p2_sip`
 1. `-p3_port` / `-p3_sip`
@@ -146,13 +146,33 @@ The TX path supports additional NIC bindings beyond primary/redundant by using:
 1. `-p6_port` / `-p6_sip`
 1. `-p7_port` / `-p7_sip`
 
-Each `*_port` expects a PCI BDF (for example `0000:af:01.2`) and each `*_sip` is the
-source IP bound to that NIC.
+Each `*_port` is a PCI BDF (for example `0000:af:01.2`). Each `*_sip` is the
+source IP address of that NIC.
 
 Example with two additional NICs:
 
 ```bash
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -filter:v fps=59.94 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p2_port 0000:af:01.2 -p2_sip 192.168.97.3 -p3_port 0000:af:01.3 -p3_sip 192.168.98.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -f mtl_st20p -
+```
+
+All inputs and outputs of one FFmpeg process share one MTL instance. The first
+session that opens loads the ports. A later session must load the same ports,
+or a subset of them. Each port of a later session must have the same `*_sip`
+and the same queue counts as the loaded port.
+
+FFmpeg opens the outputs in no fixed order. Thus, give each output the same
+device options, and select the NIC of each output with `-p_tx_port`. The value
+must be one of the device ports of that output. Without `-p_tx_port`, an output
+sends on its `-p_port`.
+
+A second loaded port is the redundant port (ST 2022-7) only when an output
+sets `-r_tx_ip`, or an input sets `-r_rx_ip`. When an output sets `-p_tx_port`
+and `-r_tx_ip`, it must also set `-r_tx_port`.
+
+Example with two outputs, one on each NIC:
+
+```bash
+ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -map 0:v -filter:v fps=59.94 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p2_port 0000:af:01.2 -p2_sip 192.168.97.3 -p_tx_port 0000:af:01.1 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -f mtl_st20p "1" -map 0:v -filter:v fps=59.94 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p2_port 0000:af:01.2 -p2_sip 192.168.97.3 -p_tx_port 0000:af:01.2 -p_tx_ip 239.168.85.21 -udp_port 20000 -payload_type 96 -f mtl_st20p "2"
 ```
 
 ### 2.3. Supported pixel formats

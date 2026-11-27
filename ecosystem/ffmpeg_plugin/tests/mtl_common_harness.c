@@ -4,6 +4,7 @@
 
 #include "mtl_common_harness.h"
 
+#include <limits.h>
 #include <stdarg.h>
 #include <string.h>
 #include <time.h>
@@ -20,12 +21,13 @@ static int ut_ffmpeg_lifecycle_mutex_lock(pthread_mutex_t* mutex);
 /* The layout of the test's FfmpegOptionContext */
 struct FfmpegOptionContext {
   StDevArgs devArgs;
+  StTxSessionPortArgs portArgs;
 };
 
 /* As in the plugin, each table sees only its own direction flag */
 #define OFFSET(field) offsetof(struct FfmpegOptionContext, field)
 #define ENC UT_FFMPEG_ENC_FLAG
-const AVOption ut_ffmpeg_tx_options[] = {MTL_TX_DEV_ARGS};
+const AVOption ut_ffmpeg_tx_options[] = {MTL_TX_DEV_ARGS, MTL_TX_PORT_ARGS};
 const size_t ut_ffmpeg_tx_options_cnt = MTL_ARRAY_SIZE(ut_ffmpeg_tx_options);
 #undef ENC
 #define DEC UT_FFMPEG_DEC_FLAG

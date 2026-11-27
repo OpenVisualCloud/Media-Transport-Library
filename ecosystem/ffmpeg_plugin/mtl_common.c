@@ -165,6 +165,23 @@ static int mtl_dev_build_params(AVFormatContext* ctx, const struct StDevArgs* ar
   return 0;
 }
 
+static bool mtl_dev_ports_loaded(const struct mtl_init_params* requested,
+                                 const struct mtl_init_params* active) {
+  for (int i = 0; i < requested->num_ports; i++) {
+    int j;
+    for (j = 0; j < active->num_ports; j++) {
+      if (!strncmp(requested->port[i], active->port[j], MTL_PORT_MAX_LEN)) break;
+    }
+    if (j == active->num_ports) return false;
+    if (memcmp(requested->sip_addr[i], active->sip_addr[j], MTL_IP_ADDR_LEN) ||
+        (requested->pmd[i] != active->pmd[j]) ||
+        (requested->tx_queues_cnt[i] != active->tx_queues_cnt[j]) ||
+        (requested->rx_queues_cnt[i] != active->rx_queues_cnt[j]))
+      return false;
+  }
+  return true;
+}
+
 static bool mtl_dev_params_compatible(const struct mtl_init_params* requested,
                                       const struct mtl_init_params* active) {
   struct mtl_init_params requested_resources = *requested;
@@ -174,6 +191,17 @@ static bool mtl_dev_params_compatible(const struct mtl_init_params* requested,
 
   if ((requested_ptp & MTL_FLAG_PTP_ENABLE) && (requested_ptp != active_ptp))
     return false;
+
+  /* A later session may load only a subset of the active ports, e.g. its one NIC. */
+  if (!mtl_dev_ports_loaded(requested, active)) return false;
+  requested_resources.num_ports = active->num_ports;
+  memcpy(requested_resources.port, active->port, sizeof(active->port));
+  memcpy(requested_resources.pmd, active->pmd, sizeof(active->pmd));
+  memcpy(requested_resources.sip_addr, active->sip_addr, sizeof(active->sip_addr));
+  memcpy(requested_resources.tx_queues_cnt, active->tx_queues_cnt,
+         sizeof(active->tx_queues_cnt));
+  memcpy(requested_resources.rx_queues_cnt, active->rx_queues_cnt,
+         sizeof(active->rx_queues_cnt));
 
   requested_resources.flags &= ~MTL_FFMPEG_PTP_FLAGS;
   active_resources.flags &= ~MTL_FFMPEG_PTP_FLAGS;
@@ -258,6 +286,8 @@ int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
     const char* dev_port = mtl_next_dev_port(devArgs, &dev_port_idx);
     const char* port_name = args->port[i] ? args->port[i] : dev_port;
     if (!port_name) break;
+    /* Extra loaded devices are not a redundant path unless one was requested. */
+    if ((i == MTL_SESSION_PORT_R) && !args->port[i] && !args->sip[i]) break;
     dbg(ctx, "%s, port on %d\n", __func__, i);
     snprintf(port->port[i], sizeof(port->port[i]), "%s", port_name);
     if (args->sip[i]) {
@@ -283,14 +313,38 @@ int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
   return 0;
 }
 
+static bool mtl_dev_args_have_port(const struct StDevArgs* devArgs, const char* port) {
+  for (int i = 0; i < MTL_PORT_MAX; i++) {
+    if (devArgs->port[i] && !strcmp(devArgs->port[i], port)) return true;
+  }
+  return false;
+}
+
 int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
                       const StTxSessionPortArgs* args, struct st_tx_port* port) {
+  static const char* const port_options[MTL_SESSION_PORT_MAX] = {"p_tx_port",
+                                                                 "r_tx_port"};
   int dev_port_idx = 0;
+
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    if (args->port[i] && !mtl_dev_args_have_port(devArgs, args->port[i])) {
+      err(ctx, "%s, %s %s is not a p_port, r_port or p2_port..p7_port\n", __func__,
+          port_options[i], args->port[i]);
+      return AVERROR(EINVAL);
+    }
+  }
+  if (args->port[MTL_SESSION_PORT_P] && args->dip[MTL_SESSION_PORT_R] &&
+      !args->port[MTL_SESSION_PORT_R]) {
+    err(ctx, "%s, p_tx_port with r_tx_ip needs r_tx_port\n", __func__);
+    return AVERROR(EINVAL);
+  }
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     const char* dev_port = mtl_next_dev_port(devArgs, &dev_port_idx);
     const char* port_name = args->port[i] ? args->port[i] : dev_port;
     if (!port_name) break;
+    /* Extra loaded devices are not a redundant path unless one was requested. */
+    if ((i == MTL_SESSION_PORT_R) && !args->port[i] && !args->dip[i]) break;
     dbg(ctx, "%s, port on %d\n", __func__, i);
     snprintf(port->port[i], sizeof(port->port[i]), "%s", port_name);
     if (args->dip[i]) {
