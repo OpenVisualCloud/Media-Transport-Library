@@ -58,7 +58,6 @@ struct _Gst_Mtl_St30p_Tx {
   GstAudioSink element;
   mtl_handle mtl_lib_handle;
   st30p_tx_handle tx_handle;
-  guint frame_size;
 
   gboolean session_ready;
   gboolean session_capabilites_set;
@@ -70,7 +69,7 @@ struct _Gst_Mtl_St30p_Tx {
    * expected size.
    */
   struct st30_frame* cur_frame;
-  guint cur_frame_available_size;
+  struct gst_mtl_audio_framer framer;
 
   /* arguments */
   guint retry_frame;
@@ -82,6 +81,7 @@ struct _Gst_Mtl_St30p_Tx {
   gboolean async_session_create;
   gboolean use_pts_for_pacing;
   guint pts_for_pacing_offset;
+  GstMtlPtsPacing pts_pacing;
 };
 
 G_END_DECLS

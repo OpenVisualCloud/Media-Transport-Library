@@ -200,12 +200,7 @@ static inline GstFlowReturn gst_mtl_st40p_tx_prepare_test_frame(Gst_Mtl_St40p_Tx
   frame_info->meta_num = meta_count;
   frame_info->udw_buffer_fill = total_bytes;
 
-  if (sink->use_pts_for_pacing) {
-    frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
-    frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  } else {
-    frame_info->timestamp = 0;
-  }
+  gst_mtl_st40p_tx_stamp(sink, frame_info, buf);
 
   if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
     GST_ERROR("Failed to put frame in test mode");

@@ -268,9 +268,10 @@ build_workflow:
   - *hardening
 
 # cicd-pr-check.yml, unit-tests. It builds DPDK, then runs ./build.sh unit,
-# which builds only the root meson project, and build_ffmpeg_plugin.sh unit,
+# which builds only the root meson project, build_ffmpeg_plugin.sh unit,
 # which builds the FFmpeg plugin's unit tests and the plugin files that they
-# compile.
+# compile, build_gstreamer_plugin.sh unit and the RxTxApp unit tests, which
+# compile one header each.
 unit_tests:
   - .github/path_filters.yml
   - .github/workflows/cicd-pr-check.yml
@@ -282,6 +283,11 @@ unit_tests:
   - ecosystem/ffmpeg_plugin/mtl_common.c
   - ecosystem/ffmpeg_plugin/mtl_common.h
   - script/build_ffmpeg_plugin.sh
+  - 'ecosystem/gstreamer_plugin/tests/**'
+  - ecosystem/gstreamer_plugin/gst_mtl_pts_tai.h
+  - script/build_gstreamer_plugin.sh
+  - 'tests/tools/RxTxApp/tests/**'
+  - tests/tools/RxTxApp/src/app_user_time.h
 
 # cicd-pr-check.yml, fuzz-tests. It builds DPDK, then fuzz.sh builds the root
 # meson project with the fuzz targets; fuzz.sh calls meson, not build.sh. Each

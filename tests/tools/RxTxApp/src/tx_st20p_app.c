@@ -94,12 +94,11 @@ static void* app_tx_st20p_frame_thread(void* arg) {
     }
 
     if (s->user_time) {
-      bool restart_base_time = !s->local_tai_base_time;
-      frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
-                                          restart_base_time);
+      frame->timestamp = st_app_user_time(s->ctx, s->user_time, &s->user_time_state,
+                                          s->frame_num, frame_time);
+      if (frame->timestamp) frame->timestamp += s->exact_tro_ns;
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
       s->frame_num++;
-      s->local_tai_base_time = s->user_time->base_tai_time;
     }
 
     st20p_tx_put_frame(handle, frame);
@@ -212,6 +211,9 @@ static int app_tx_st20p_handle_free(struct st_app_tx_st20p_session* s) {
 
 static int app_tx_st20p_uinit(struct st_app_tx_st20p_session* s) {
   app_tx_st20p_stop_source(s);
+  if (s->user_time)
+    info("%s(%d), user time resync %" PRIu64 "\n", __func__, s->idx,
+         s->user_time_state.resync_cnt);
   app_tx_st20p_handle_free(s);
   app_tx_st20p_close_source(s);
 
@@ -304,7 +306,9 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.transport_packing = st20p ? st20p->info.transport_packing : ST20_PACKING_BPM;
   ops.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
-  ops.framebuff_cnt = 2;
+  /* Two are too few for user pacing with a converter: the app gets a frame only
+   * after one is on the wire, too late for the next epoch. */
+  ops.framebuff_cnt = ST_APP_DEFAULT_FB_CNT;
   ops.flags |= ST20P_TX_FLAG_BLOCK_GET;
   ops.start_vrx = ctx->tx_start_vrx;
   ops.pad_interval = ctx->tx_pad_interval;
@@ -323,7 +327,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
     /* use global user time */
     s->user_time = &ctx->user_time;
     s->frame_num = 0;
-    s->local_tai_base_time = 0;
+    memset(&s->user_time_state, 0, sizeof(s->user_time_state));
   }
 
   if (st20p && st20p->exact_user_pacing) {
@@ -363,6 +367,19 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   }
   s->handle = handle;
   s->st20p_frame_size = st20p_tx_frame_size(handle);
+  /* An exact time is the time of the first packet, while ST 2110-21:2022 6.2 (p6)
+   * reads the virtual receiver buffer from the epoch + TRoffset. Start where MTL
+   * starts a frame it paces itself: vrx_pkts packets of TRS before that, so the
+   * buffer keeps its VRX headroom. At the epoch the buffer filled by TRoffset / TRS
+   * packets; at the epoch + TRoffset the NIC latency left it some packets short. */
+  if (ops.flags & ST20P_TX_FLAG_EXACT_USER_PACING) {
+    double tro = 0, trs = 0;
+    uint32_t vrx = 0;
+    if (!st20p_tx_get_pacing_params(handle, &tro, &trs, &vrx))
+      s->exact_tro_ns = (int64_t)(tro - vrx * trs + 0.5);
+    info("%s(%d), exact user pacing, troffset %.0f ns, vrx %u, start %" PRId64 " ns\n",
+         __func__, idx, tro, vrx, s->exact_tro_ns);
+  }
 
   ret = app_tx_st20p_open_source(s);
   if (ret < 0) {

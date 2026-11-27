@@ -72,6 +72,12 @@ If you prefer to build the GStreamer plugins manually, follow these steps:
 
 By following these steps, you can manually build the GStreamer plugins.
 
+### 1.4. Unit tests
+
+`./script/build_gstreamer_plugin.sh unit` builds and runs the unit tests in `tests/`.
+They test header code only, so they need neither MTL nor GStreamer installed,
+nor a NIC or root.
+
 ## 2. Running the pipeline
 
 ### 2.1. Prerequisites
@@ -121,6 +127,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. `enable-dma-offload=true` needs this or `dma-auto`. | N/A                      |
 | dma-auto      | boolean | Use each Intel DMA device on vfio-pci on the NUMA node of the ports, without `dma-dev`. Sets `MTL_FLAG_DMA_AUTO`. | TRUE/FALSE               |
 | allow-down-ports | boolean | Allow MTL to initialize even if port links are down. Sets `MTL_FLAG_ALLOW_DOWN_PORTS` which enables `MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION` on every configured port. Sessions still require at least one functioning port to operate. | TRUE/FALSE |
+| clock-tai     | boolean | Without `enable-ptp`, MTL reads the PTP time from `CLOCK_TAI`, not from `CLOCK_REALTIME`. ST 2110-10 PTP time is TAI. Default FALSE. | TRUE/FALSE |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 | port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
 | port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
@@ -175,15 +182,61 @@ For selected plugins
 - SMPTE ST 2110-30 transmission plugin mtl_st30p_tx
 - SMPTE ST 2110-40 transmission plugin mtl_st40p_tx
 
-There is a feature called user-controlled pacing that allows you to control the
-pacing of packet transmission using the Presentation timestamp (PTS) of the buffer.
-As long as the PTS fits within the pacing window, packets will be sent at the exact
-time specified by the PTS.
+There is a feature called user-controlled pacing. It sends each frame at the time
+that the presentation timestamp (PTS) of its buffer gives. Set
+`use-pts-for-pacing=true` to use it. The plugin does not change the buffer.
 
-This feature requires:
-- MTL time synchronized with the system clock. If you are using onboard PTP,
-you must also synchronize the system's physical clock using `phc2sys`.
-- GStreamer buffers to provide a 64-bit timestamp (TUI) since epoch (PTP time).
+`pts-is-tai` tells the plugin what the PTS is:
+
+- `pts-is-tai=true` (default): the PTS is already a TAI time in nanoseconds, as
+  the MTL RX plugins and the `timeinserter` test element give it. The plugin
+  sends the PTS plus `pts-pacing-offset`. This is the behavior of the plugins
+  before the property.
+- `pts-is-tai=false`: the PTS is GStreamer time, as a source such as
+  `videotestsrc` or `audiotestsrc` gives it. The plugin changes it to a PTP (TAI)
+  time:
+  1. The segment of the stream changes the PTS to running time.
+  2. The base time of the element changes the running time to pipeline clock time.
+  3. The plugin adds the difference between the MTL PTP time and the pipeline
+     clock. It measures the difference at the first buffer after each change of
+     the base time (each start of PLAYING), and again each second. It keeps a
+     change of less than 100 us, so the frame times keep the clock cadence. It
+     applies a larger change as a step of the PTP time and logs a warning. It
+     ignores a measure whose two clock reads are more than 50 us apart, or that
+     got no PTP time, and measures again at the next buffer.
+  4. The plugin adds `pts-pacing-offset`.
+
+`mtl_st30p_tx` gives each frame the time of its first sample: the time of the
+buffer plus the duration of the samples before that frame. A frame that is not
+full when the stream pauses takes its time again from the next buffer. A flush
+drops the samples of a frame that is not full.
+
+MTL paces the frame itself, and the plugin logs one warning, when there is no TAI
+for the buffer:
+
+- the buffer has no valid PTS, or its PTS is outside the segment;
+- with `pts-is-tai=false`: the element has no clock or is not in PLAYING, or the
+  onboard PTP (`enable-ptp=true`) is not locked yet: it locks after 5 syncs in a
+  row with a correction of less than 30 us.
+
+With `pts-is-tai=false`, the frame times follow the pipeline clock (by default
+the monotonic system clock) between two steps:
+
+- With the onboard PTP, MTL keeps the PTP time on the DPDK port. Nothing
+  synchronizes the system clock to it: the plugins do not set
+  `MTL_FLAG_PHC2SYS_ENABLE`, and an external `phc2sys` has no `/dev/ptpN` for a
+  DPDK port.
+- Without the onboard PTP, MTL reads `CLOCK_REALTIME`, which is UTC, or
+  `CLOCK_TAI` with `clock-tai=true`. Keep the system clock synchronized, with
+  `chrony`, or with `ptp4l` and `phc2sys` on a kernel NIC. ST 2110-10 PTP time
+  is TAI, so a receiver that compares the RTP time with its PTP time needs
+  `clock-tai=true`. `CLOCK_TAI` is TAI only when the kernel has the TAI offset
+  (37 s), which these tools set. If the offset is not set, `CLOCK_TAI` is equal
+  to UTC.
+
+So the frame times move away from the PTP time by the rate difference of the two
+clocks, and the plugin puts them back with a step each time the difference is
+more than 100 us.
 
 The following message informs you about the amount of frames that had incorrectly
 defined timestamps by the user (this error message should be 0).
@@ -192,9 +245,23 @@ defined timestamps by the user (this error message should be 0).
  TX_VIDEO_SESSION(0,0): error user timestamp 250
 ```
 
-When using this feature, you can specify an offset for the packets. The offset
-should be large enough to account for any delays between placing the frame in
-the framebuffer and the actual transmission of packets onto the wire.
+The deadline of a frame depends on the media:
+
+- Video and ancillary data: MTL rounds the time of the frame to the nearest
+  epoch, one frame time `T`, and starts the frame at that epoch. Video starts at
+  the epoch plus `TROFFSET` (ST 2110-21:2022 §6.4). This start is the deadline.
+  The epoch can be up to `T / 2` before the time of the frame, so the margin for
+  a late buffer is `pts-pacing-offset - T / 2`, plus `TROFFSET` for video.
+- Audio: MTL sends the frame at its time. The deadline is that time, and the
+  margin is `pts-pacing-offset`.
+
+Set the offset larger than the time from the PTS
+of the buffer to the start of transmission: the latency of the pipeline and the
+time that MTL needs to prepare the frame. A live source sends each buffer after
+its PTS, so the default offset of 0 is too small for it. Use the same offset on
+all elements of one program, so that the video, audio and ancillary streams stay
+in step. MTL counts a frame with a time in the past in `error user timestamp` and
+sends it as soon as it can.
 
 ## 3. SMPTE ST 2110-20 Rawvideo plugins
 
@@ -234,6 +301,7 @@ To be fixed in the future.
 | async-session-create | boolean  | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
 | use-pts-for-pacing   | boolean  | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
 | pts-pacing-offset    | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
+| pts-is-tai           | boolean  | [The PTS is a TAI time](#233-pts-controlled-pacing) | TRUE/FALSE | TRUE       |
 
 #### 3.1.2. Preparing Input Video
 
@@ -344,6 +412,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 | async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
 | use-pts-for-pacing   | boolean | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
 | pts-pacing-offset    | uint    | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
+| pts-is-tai           | boolean | [The PTS is a TAI time](#233-pts-controlled-pacing) | TRUE/FALSE | TRUE       |
 
 #### 4.1.2. Example GStreamer Pipeline for Transmission with s16BE format
 
@@ -435,6 +504,7 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 | tx-split-anc-by-pkt   | boolean  | Emit at most one ANC block per RTP packet; marker on final packet of field. | TRUE/FALSE | FALSE         |
 | use-pts-for-pacing    | gboolean | [User controlled timestamping offset](#233-pts-controlled-pacing)  | TRUE/FALSE       | FALSE         |
 | pts-pacing-offset     | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT   | 0             |
+| pts-is-tai            | gboolean | [The PTS is a TAI time](#233-pts-controlled-pacing)                | TRUE/FALSE       | TRUE          |
 | input-format          | enum     | Encoding of incoming ANC buffers (`raw-udw`, `rfc8331-packed`, `rfc8331`) | enum            | `raw-udw`     |
 | parse-8331-meta       | gboolean | **Deprecated.** Shortcut for `input-format=rfc8331-packed`.         | TRUE/FALSE       | FALSE         |
 | max-combined-udw-size | uint     | Maximum combined size of all user data words to send in one buffer | 0 to (20 * 255)  | 20 * 255      |

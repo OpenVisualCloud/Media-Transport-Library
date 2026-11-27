@@ -12,7 +12,7 @@ script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 show_help() {
 	cat <<EOF
-Usage: ${script_name} [OPTIONS] [BUILD_TYPE]
+Usage: ${script_name} [OPTIONS] [BUILD_TYPE] [unit]
 
 Build the MTL GStreamer plugins of ecosystem/gstreamer_plugin with meson and
 ninja, and install them. The build directory is script/build/gstreamer_plugin.
@@ -23,6 +23,9 @@ by path, and the script checks that before it finishes.
 BUILD_TYPE is one of:
 	debug		Debug build, with the test-only packet mutation properties
 	release		Release build (default)
+
+With unit, the script only builds and runs the unit tests of
+ecosystem/gstreamer_plugin/tests, which need neither MTL nor GStreamer installed.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
 	gcc meson ninja-build pkg-config libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
@@ -42,6 +45,7 @@ ENVIRONMENT:
 EXAMPLES:
 	${script_name}
 	${script_name} debug --test-tools
+	${script_name} unit
 	MTL_INSTALL_PREFIX=\$PWD/.local_install/mtl ${script_name}	# into .local_install/gstreamer/gstreamer-1.0
 EOF
 }
@@ -64,7 +68,8 @@ build_plugins() {
 }
 
 main() {
-	local buildtype=release jobs="${NPROC}" prefix="" test_tools=0 option
+	local buildtype=release jobs="${NPROC}" prefix="" test_tools=0 unit=0 option
+	local unit_dir="${script_folder}/build/gstreamer_plugin_unit"
 	local local_base="" mtl_pc dpdk_pc plugin_dir libdirs=() link_args plugin
 	local -a prefix_args
 	local system_install
@@ -94,6 +99,7 @@ main() {
 			exit 0
 			;;
 		debug | release) buildtype=${option} ;;
+		unit) unit=1 ;;
 		*)
 			log_error "Unknown option: ${option}"
 			show_help
@@ -107,6 +113,14 @@ main() {
 		exit 1
 		;;
 	esac
+	if [ "${unit}" -eq 1 ]; then
+		require_commands "${CXX:-c++}:g++" meson:meson ninja:ninja-build || exit 1
+		rm -rf "${unit_dir}"
+		meson setup "${unit_dir}" "${REPO_DIR}/ecosystem/gstreamer_plugin/tests"
+		ninja -C "${unit_dir}" -j "${jobs}"
+		"${unit_dir}/GstPluginUnitTest"
+		return 0
+	fi
 
 	if [ -z "${prefix}" ] && [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		local_base="$(dirname "${MTL_INSTALL_PREFIX}")"

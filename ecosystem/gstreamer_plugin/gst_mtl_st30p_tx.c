@@ -97,6 +97,7 @@ enum {
   PROP_ST30P_TX_ASYNC_SESSION_CREATE,
   PROP_ST30P_TX_USE_PTS_FOR_PACING,
   PROP_ST30P_TX_PTS_PACING_OFFSET,
+  PROP_ST30P_TX_PTS_IS_TAI,
   PROP_MAX
 };
 
@@ -196,7 +197,15 @@ static void gst_mtl_st30p_tx_class_init(Gst_Mtl_St30p_TxClass* klass) {
                         "Presentation Timestamp (PTS) "
                         "for precise packet pacing. This allows fine-tuning of the "
                         "transmission timing when using PTS-based pacing.",
-                        0, G_MAXUINT, 1080, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        0, G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST30P_TX_PTS_IS_TAI,
+      g_param_spec_boolean("pts-is-tai", "PTS is TAI",
+                           "The buffer PTS is a TAI time in nanoseconds. Set FALSE to "
+                           "read the PTS as running time and change it to TAI. Only "
+                           "with use-pts-for-pacing.",
+                           TRUE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink) {
@@ -233,6 +242,8 @@ static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink) {
 static void gst_mtl_st30p_tx_init(Gst_Mtl_St30p_Tx* sink) {
   GstElement* element = GST_ELEMENT(sink);
   GstPad* sinkpad;
+
+  gst_mtl_common_pts_pacing_init(&sink->pts_pacing);
 
   sinkpad = gst_element_get_static_pad(element, "sink");
   if (!sinkpad) {
@@ -274,6 +285,9 @@ static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST30P_TX_PTS_PACING_OFFSET:
       self->pts_for_pacing_offset = g_value_get_uint(value);
       break;
+    case PROP_ST30P_TX_PTS_IS_TAI:
+      self->pts_pacing.pts_is_tai = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -308,6 +322,9 @@ static void gst_mtl_st30p_tx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST30P_TX_PTS_PACING_OFFSET:
       g_value_set_uint(value, sink->pts_for_pacing_offset);
+      break;
+    case PROP_ST30P_TX_PTS_IS_TAI:
+      g_value_set_boolean(value, sink->pts_pacing.pts_is_tai);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -360,6 +377,8 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
     }
   }
   ops_tx.channel = info->channels;
+  sink->framer.bpf = info->bpf;
+  sink->framer.rate = info->rate;
 
   if (!gst_mtl_common_gst_to_st_sampling(info->rate, &ops_tx.sampling)) {
     GST_ERROR("Failed to parse sampling rate");
@@ -415,7 +434,7 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
     return FALSE;
   }
 
-  sink->frame_size = st30p_tx_frame_size(sink->tx_handle);
+  sink->framer.frame_size = st30p_tx_frame_size(sink->tx_handle);
 
   if (sink->async_session_create) {
     pthread_mutex_lock(&sink->session_mutex);
@@ -478,6 +497,14 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
       sink->session_capabilites_set = TRUE;
       ret = gst_pad_event_default(pad, parent, event);
       break;
+    case GST_EVENT_SEGMENT:
+      gst_event_copy_segment(event, &sink->pts_pacing.segment);
+      ret = gst_pad_event_default(pad, parent, event);
+      break;
+    case GST_EVENT_FLUSH_STOP:
+      gst_mtl_audio_framer_reset(&sink->framer);
+      ret = gst_pad_event_default(pad, parent, event);
+      break;
     case GST_EVENT_EOS:
       gst_mtl_st30p_tx_cur_frame_flush(sink);
       ret = gst_pad_event_default(pad, parent, event);
@@ -491,11 +518,14 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
   return ret;
 }
 
+static void gst_mtl_st30p_tx_stamp(Gst_Mtl_St30p_Tx* sink, struct st30_frame* frame) {
+  if (!sink->use_pts_for_pacing) return;
+  frame->timestamp = sink->framer.frame_tai;
+  frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+}
+
 static struct st30_frame* mtl_st30p_fetch_frame(Gst_Mtl_St30p_Tx* sink) {
-  if (!sink->cur_frame) {
-    sink->cur_frame = st30p_tx_get_frame(sink->tx_handle);
-    sink->cur_frame_available_size = sink->frame_size;
-  }
+  if (!sink->cur_frame) sink->cur_frame = st30p_tx_get_frame(sink->tx_handle);
   return sink->cur_frame;
 }
 
@@ -514,6 +544,8 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
   gint bytes_to_write;
   void* cur_addr_frame;
   void* cur_addr_buf;
+  guint taken;
+  uint64_t buf_tai = 0;
 
   if (sink->async_session_create) {
     pthread_mutex_lock(&sink->session_mutex);
@@ -531,6 +563,12 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
     GST_ERROR("Tx handle not initialized");
     return GST_FLOW_ERROR;
   }
+
+  if (sink->use_pts_for_pacing)
+    buf_tai = gst_mtl_common_pts_to_tai(GST_ELEMENT(sink), sink->mtl_lib_handle,
+                                        &sink->pts_pacing, GST_BUFFER_PTS(buf),
+                                        sink->pts_for_pacing_offset);
+  gst_mtl_audio_framer_buffer(&sink->framer, buf_tai);
 
   for (int i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
@@ -558,26 +596,17 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
         GST_ERROR("Failed to get frame");
         return GST_FLOW_ERROR;
       }
-      cur_addr_frame = frame->addr + sink->frame_size - sink->cur_frame_available_size;
-      cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
+      cur_addr_frame = frame->addr + sink->framer.fill;
+      cur_addr_buf = map_info.data + map_info.size - bytes_to_write;
+      taken = gst_mtl_audio_framer_take(&sink->framer, bytes_to_write);
+      memcpy(cur_addr_frame, cur_addr_buf, taken);
+      bytes_to_write -= taken;
 
-      if (sink->cur_frame_available_size > (guint)bytes_to_write) {
-        memcpy(cur_addr_frame, cur_addr_buf, bytes_to_write);
-        sink->cur_frame_available_size -= bytes_to_write;
-        bytes_to_write = 0;
-        break;
-      } else {
-        memcpy(cur_addr_frame, cur_addr_buf, sink->cur_frame_available_size);
-
-        // By default, timestamping is handled by MTL.
-        if (sink->use_pts_for_pacing) {
-          frame->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
-          frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
-        }
-
+      if (sink->framer.fill == sink->framer.frame_size) {
+        gst_mtl_st30p_tx_stamp(sink, frame);
         st30p_tx_put_frame(sink->tx_handle, frame);
         sink->cur_frame = NULL;
-        bytes_to_write -= sink->cur_frame_available_size;
+        gst_mtl_audio_framer_reset(&sink->framer);
       }
     }
     gst_memory_unmap(gst_buffer_memory, &map_info);
@@ -606,13 +635,22 @@ static void gst_mtl_st30p_tx_finalize(GObject* object) {
 }
 
 static gboolean gst_mtl_st30p_tx_cur_frame_flush(Gst_Mtl_St30p_Tx* sink) {
-  if (sink->cur_frame) {
-    if (st30p_tx_put_frame(sink->tx_handle, sink->cur_frame)) {
-      GST_ERROR("Failed to put frame");
-      return FALSE;
-    }
+  if (!sink->cur_frame) return TRUE;
+
+  /* a frame with no samples since a flush holds only dropped ones */
+  if (!sink->framer.fill) {
+    st30p_tx_put_frame_abort(sink->tx_handle, sink->cur_frame);
     sink->cur_frame = NULL;
+    return TRUE;
   }
+
+  gst_mtl_st30p_tx_stamp(sink, sink->cur_frame);
+  if (st30p_tx_put_frame(sink->tx_handle, sink->cur_frame)) {
+    GST_ERROR("Failed to put frame");
+    return FALSE;
+  }
+  sink->cur_frame = NULL;
+  gst_mtl_audio_framer_reset(&sink->framer);
   return TRUE;
 }
 

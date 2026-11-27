@@ -1,0 +1,57 @@
+# Host config of a stability run. Copy it to stability.yaml (or to
+# /etc/mtl-ci/stability.yaml on a CI runner) and set the values of the host.
+# A path that is not absolute is relative to mtl_path.
+
+mtl_path: /home/user/Media-Transport-Library
+build_dir: build
+# rxtxapp: tests/tools/RxTxApp/build/RxTxApp     # the default (build.sh)
+mtl_manager: build/manager/MtlManager              # coordinates the lcores of the workers
+ffmpeg: /home/user/Media-Transport-Library/.local_install/bin/ffmpeg   # MTL FFmpeg plugin
+ffmpeg_jpegxs: true                                # the ffmpeg has libsvtjpegxs
+gst_launch: gst-launch-1.0
+gst_plugin_path: /home/user/Media-Transport-Library/.local_install/gstreamer/gstreamer-1.0
+ld_library_path: ""
+st22_codec: jpegxs                                 # jpegxs, sample, or "" for no st22p
+plugins:
+  st22_svt_jpegxs: /usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_svt_jpeg_xs.so
+  st22_sample: /usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_sample.so
+  color_convert_sample: /usr/local/lib/x86_64-linux-gnu/libst_plugin_convert_sample.so
+
+media_dir: /dev/shm/mtl-stability-media            # input files, made once with ffmpeg
+run_dir: /var/tmp/mtl-stability/runs
+
+# VFs or PFs bound to vfio-pci. tx[0]: RxTxApp mix, tx[1]: FFmpeg, tx[2]: GStreamer.
+# rx[0]: RxTxApp rx, rx[1]: RxTxApp extconv, rx[-1]: FFmpeg rx.
+ports:
+  tx: ["0000:01:00.0", "0000:04:00.0", "0000:05:00.0"]
+  rx: ["0000:06:00.0", "0000:07:00.0", "0000:08:00.0"]
+
+pacing_way: ""            # "" lets MTL select (RL when the VF has QoS), or tsc
+ptp: false                # true: the MTL PTP client on the ports
+user_time_offset_ns: 0
+
+cpus:
+  housekeeping: 0-1       # systemd slices, IRQs, workqueues, the engine itself
+  app: 2-7                # worker threads that are not MTL schedulers
+  lcores: 8-15            # MTL schedulers: an isolated partition during the run
+  fence: true
+# lcore_slices:           # default: half of the lcores to rxtxapp-mix
+#   rxtxapp-mix: 8-11
+#   rxtxapp-rx: 12-13
+#   rxtxapp-extconv: 14
+
+capture:
+  interface: enp2s0np1    # a kernel netdev with hardware RX timestamps, on the far side of the switch
+  video_frames: 6
+  audio_seconds: 2.0
+  anc_seconds: 4.0
+  gap_s: 5.0
+
+ebu:
+  ip: 127.0.0.1           # empty: EBU_IP of password_file
+  user: ""                # empty: EBU_USER of password_file
+  password_file: ~/.config/mtl-stability/ebu.env   # EBU_PASSWORD=...
+  allow_wide: false
+  keep_failed_pcaps: 20
+
+scan_interval_s: 10

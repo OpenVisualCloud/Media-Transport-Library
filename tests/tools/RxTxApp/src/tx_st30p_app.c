@@ -37,13 +37,10 @@ static void* app_tx_st30p_frame_thread(void* arg) {
     app_tx_st30p_build_frame(s, frame, s->st30p_frame_size);
 
     if (s->user_time) {
-      bool restart_base_time = !s->local_tai_base_time;
-
-      frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
-                                          restart_base_time);
+      frame->timestamp = st_app_user_time(s->ctx, s->user_time, &s->user_time_state,
+                                          s->frame_num, frame_time);
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
       s->frame_num++;
-      s->local_tai_base_time = s->user_time->base_tai_time;
     }
 
     st30p_tx_put_frame(handle, frame);
@@ -156,6 +153,9 @@ static int app_tx_st30p_handle_free(struct st_app_tx_st30p_session* s) {
 
 static int app_tx_st30p_uinit(struct st_app_tx_st30p_session* s) {
   app_tx_st30p_stop_source(s);
+  if (s->user_time)
+    info("%s(%d), user time resync %" PRIu64 "\n", __func__, s->idx,
+         s->user_time_state.resync_cnt);
   app_tx_st30p_handle_free(s);
   app_tx_st30p_close_source(s);
   return 0;
@@ -224,7 +224,7 @@ static int app_tx_st30p_init(struct st_app_context* ctx, st_json_st30p_session_t
     /* use global user time */
     s->user_time = &ctx->user_time;
     s->frame_num = 0;
-    s->local_tai_base_time = 0;
+    memset(&s->user_time_state, 0, sizeof(s->user_time_state));
   }
   if (st30p && st30p->drop_when_late) ops.flags |= ST30P_TX_FLAG_DROP_WHEN_LATE;
 

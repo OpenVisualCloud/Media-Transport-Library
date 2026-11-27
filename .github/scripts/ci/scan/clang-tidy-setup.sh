@@ -30,6 +30,8 @@ for project in app tests plugins ld_preload manager tests/tools/RxTxApp ecosyste
 	tests/tools/gstreamer_tools ecosystem/obs_mtl/linux-mtl tools/set_tai_offset; do
 	meson setup "build/$(basename "$project")" "$project"
 done
-# Its basename, tests, is the build directory of the tests project above.
+# Their basename, tests, is the build directory of the tests project above.
 meson setup build/ffmpeg_plugin_tests ecosystem/ffmpeg_plugin/tests
+meson setup build/gstreamer_plugin_tests ecosystem/gstreamer_plugin/tests
+meson setup build/rxtxapp_tests tests/tools/RxTxApp/tests
 jq -s add build/compile_commands.json build/*/compile_commands.json >compile_commands.json

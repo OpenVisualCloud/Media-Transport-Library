@@ -8,3 +8,4 @@ self-hosted-runner:
     - i225
     - perf
     - sut
+    - stability

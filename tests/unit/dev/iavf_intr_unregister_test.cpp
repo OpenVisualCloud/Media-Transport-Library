@@ -175,25 +175,45 @@ TEST_F(EalIntrCallback, UnregisterSyncWaitsForRunningCallback) {
       << "the interrupt source outlived rte_intr_callback_unregister_sync()";
 }
 
+class DpdkIavfPatch : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    if (RTE_VERSION < RTE_VERSION_NUM(26, 7, 0, 0) ||
+        RTE_VERSION >= RTE_VERSION_NUM(26, 8, 0, 0) || !strstr(rte_version(), "_mtl_"))
+      GTEST_SKIP() << rte_version() << " is not an MTL-patched DPDK 26.07";
+    ASSERT_EQ(ut_eal_init(), 0);
+
+    dl_iterate_phdr(find_iavf, &iavf_);
+    if (iavf_.empty()) GTEST_SKIP() << "no iavf PMD plugin loaded by rte_eal_init()";
+
+    imports_ = undefined_dynamic_symbols(iavf_);
+    ASSERT_FALSE(imports_.empty()) << "cannot read the dynamic symbols of " << iavf_;
+  }
+
+  static std::string rebuild(const std::string& md) {
+    return "; rebuild DPDK with patches/dpdk/26.07 (script/build_dpdk.sh), see "
+           "patches/dpdk/26.07/" +
+           md;
+  }
+
+  std::string iavf_;
+  std::set<std::string> imports_;
+};
+
 /* A lost -EAGAIN leaves a stale source that panics the EAL intr thread at
  * rte_eal_cleanup(). */
-TEST(DpdkIavfPatch, CloseWaitsForInFlightInterruptCallback) {
-  if (RTE_VERSION < RTE_VERSION_NUM(26, 7, 0, 0) || !strstr(rte_version(), "_mtl_"))
-    GTEST_SKIP() << rte_version() << " is not an MTL-patched DPDK 26.07 or later";
-  ASSERT_EQ(ut_eal_init(), 0);
+TEST_F(DpdkIavfPatch, CloseWaitsForInFlightInterruptCallback) {
+  const std::string md = rebuild("0009-net-iavf-fix-interrupt-callback-race-on-close.md");
+  EXPECT_TRUE(imports_.count("rte_intr_callback_unregister_sync"))
+      << iavf_ << " lacks patch 0009" << md;
+  EXPECT_FALSE(imports_.count("rte_intr_callback_unregister"))
+      << iavf_ << " still unregisters an interrupt callback without waiting for it" << md;
+}
 
-  std::string iavf;
-  dl_iterate_phdr(find_iavf, &iavf);
-  if (iavf.empty()) GTEST_SKIP() << "no iavf PMD plugin loaded by rte_eal_init()";
-
-  std::set<std::string> imports = undefined_dynamic_symbols(iavf);
-  ASSERT_FALSE(imports.empty()) << "cannot read the dynamic symbols of " << iavf;
-  const char* rebuild =
-      "; rebuild DPDK with patches/dpdk/26.07 (script/build_dpdk.sh), see "
-      "patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.md";
-  EXPECT_TRUE(imports.count("rte_intr_callback_unregister_sync"))
-      << iavf << " lacks patch 0009" << rebuild;
-  EXPECT_FALSE(imports.count("rte_intr_callback_unregister"))
-      << iavf << " still unregisters an interrupt callback without waiting for it"
-      << rebuild;
+/* Only the event-thread check of the 0017 event wait imports them in iavf. */
+TEST_F(DpdkIavfPatch, CloseWaitsForInFlightEventOfThePort) {
+  const std::string md = rebuild("0017-net-iavf-fix-event-use-after-release-on-close.md");
+  EXPECT_TRUE(imports_.count("rte_thread_self") && imports_.count("rte_thread_equal"))
+      << iavf_ << " lacks patch 0017: the iavf-event thread can handle an event of a "
+      << "port after rte_eth_dev_release_port()" << md;
 }

@@ -118,6 +118,7 @@ enum {
   PROP_ST40P_TX_INTERLACED,
   PROP_ST40P_TX_USE_PTS_FOR_PACING,
   PROP_ST40P_TX_PTS_PACING_OFFSET,
+  PROP_ST40P_TX_PTS_IS_TAI,
   PROP_ST40P_TX_PARSE_8331_META,
   PROP_ST40P_TX_MAX_UDW_SIZE,
   PROP_ST40P_TX_INPUT_FORMAT,
@@ -178,6 +179,16 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_meta(
 static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     Gst_Mtl_St40p_Tx* sink, GstMapInfo map_info, gint bytes_left_to_process,
     struct gst_st40_rfc8331_meta rfc8331_meta, guint anc_count, GstBuffer* buf);
+
+static void gst_mtl_st40p_tx_stamp(Gst_Mtl_St40p_Tx* sink,
+                                   struct st40_frame_info* frame_info, GstBuffer* buf) {
+  frame_info->timestamp = 0;
+  if (!sink->use_pts_for_pacing) return;
+  frame_info->timestamp = gst_mtl_common_pts_to_tai(
+      GST_ELEMENT(sink), sink->mtl_lib_handle, &sink->pts_pacing, GST_BUFFER_PTS(buf),
+      sink->pts_for_pacing_offset);
+  frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+}
 
 #include "gst_mtl_st40p_tx_test.h"
 
@@ -257,7 +268,15 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
                         "Presentation Timestamp (PTS) "
                         "for precise packet pacing. This allows fine-tuning of the "
                         "transmission timing when using PTS-based pacing.",
-                        0, G_MAXUINT, 1080, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        0, G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_PTS_IS_TAI,
+      g_param_spec_boolean("pts-is-tai", "PTS is TAI",
+                           "The buffer PTS is a TAI time in nanoseconds. Set FALSE to "
+                           "read the PTS as running time and change it to TAI. Only "
+                           "with use-pts-for-pacing.",
+                           TRUE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_PARSE_8331_META,
@@ -314,6 +333,7 @@ static void gst_mtl_st40p_tx_init(Gst_Mtl_St40p_Tx* sink) {
   sink->input_format = GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW;
   sink->interlaced = FALSE;
   sink->split_anc_by_pkt = FALSE;
+  gst_mtl_common_pts_pacing_init(&sink->pts_pacing);
   gst_mtl_st40p_tx_test_init(sink);
 
   sinkpad = gst_element_get_static_pad(element, "sink");
@@ -362,6 +382,9 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
       break;
     case PROP_ST40P_TX_PTS_PACING_OFFSET:
       self->pts_for_pacing_offset = g_value_get_uint(value);
+      break;
+    case PROP_ST40P_TX_PTS_IS_TAI:
+      self->pts_pacing.pts_is_tai = g_value_get_boolean(value);
       break;
     case PROP_ST40P_TX_PARSE_8331_META:
       if (g_value_get_boolean(value)) {
@@ -417,6 +440,9 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST40P_TX_PTS_PACING_OFFSET:
       g_value_set_uint(value, sink->pts_for_pacing_offset);
+      break;
+    case PROP_ST40P_TX_PTS_IS_TAI:
+      g_value_set_boolean(value, sink->pts_pacing.pts_is_tai);
       break;
     case PROP_ST40P_TX_PARSE_8331_META:
       g_value_set_boolean(
@@ -542,6 +568,7 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
         GST_ERROR("Tx handle not initialized");
         return FALSE;
       }
+      gst_event_copy_segment(event, &sink->pts_pacing.segment);
       ret = gst_pad_event_default(pad, parent, event);
       break;
     case GST_EVENT_EOS:
@@ -716,18 +743,12 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     /* Get checksum and promptly ignore it */
     udw = st40_get_udw((data_count + 3), payload_cursor);
 
-    if (sink->use_pts_for_pacing) {
-      frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
-      frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    } else {
-      frame_info->timestamp = 0;
-    }
-
     /* word align */
     if (bytes_left_to_process > 0)
       bytes_left_to_process -= bytes_left_to_process % RFC_8331_WORD_BYTE_SIZE;
   }
 
+  gst_mtl_st40p_tx_stamp(sink, frame_info, buf);
   if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
     GST_ERROR("Failed to put frame");
     return GST_FLOW_ERROR;
@@ -853,12 +874,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_simple_block(Gst_Mtl_St40p_Tx* 
 
   frame_info->meta_num = anc_idx;
 
-  if (sink->use_pts_for_pacing) {
-    frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
-    frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  } else {
-    frame_info->timestamp = 0;
-  }
+  gst_mtl_st40p_tx_stamp(sink, frame_info, buf);
 
   if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
     GST_ERROR("Failed to enqueue simplified RFC8331 frame");
@@ -914,12 +930,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
     gst_mtl_st40p_tx_fill_meta(frame_info, frame_info->udw_buff_addr,
                                bytes_left_to_process_cur, sink->did, sink->sdid);
 
-    if (sink->use_pts_for_pacing) {
-      frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
-      frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    } else {
-      frame_info->timestamp = 0;
-    }
+    gst_mtl_st40p_tx_stamp(sink, frame_info, buf);
 
     if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
       GST_ERROR("Failed to put frame");

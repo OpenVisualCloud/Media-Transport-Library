@@ -28,6 +28,10 @@ performance)
 	# test_config, with the EBU LIST password, is one of them.
 	[[ ${COMPLIANCE:-} != true ]] || args+=(--perf_compliance --tb=short)
 	;;
+stability)
+	# The engine reads STABILITY_CONFIG, STABILITY_PROFILE and STABILITY_DURATION.
+	args=(./tests/single/stability -m stability)
+	;;
 nightly)
 	args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly)
 	[[ -n ${PYTEST_FILTER:-} ]] && args+=(-k "$PYTEST_FILTER")
@@ -41,7 +45,7 @@ smoke | smoke-low-bandwidth)
 	if [[ $1 == smoke ]]; then args+=(-m smoke -x); else args+=(-m low_bandwidth); fi
 	;;
 *)
-	echo "Usage: $0 {custom|performance|nightly|smoke|smoke-low-bandwidth}" >&2
+	echo "Usage: $0 {custom|performance|stability|nightly|smoke|smoke-low-bandwidth}" >&2
 	exit 2
 	;;
 esac

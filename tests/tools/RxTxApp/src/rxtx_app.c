@@ -642,36 +642,20 @@ int main(int argc, char** argv) {
  * If user_pacing is NULL, disabled, or an error occurs, returns 0.
  * Otherwise, returns the calculated time.
  */
-uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t frame_num,
-                          double frame_time, bool restart_base_time) {
-  uint64_t tai_time;
-  int64_t offset;
-
+uint64_t st_app_user_time(void* ctx, const struct st_user_time* user_time,
+                          struct st_user_time_state* state, uint64_t frame_num,
+                          double frame_time) {
   if (!user_time) return 0;
 
-  if (restart_base_time) {
-    pthread_mutex_lock(&user_time->base_tai_time_mutex);
-
-    user_time->base_tai_time = app_ptp_from_tai_time(ctx);
-    /* align to N*frame_time, "epochs" */
-    user_time->base_tai_time +=
-        (uint64_t)(frame_time - fmod((double)user_time->base_tai_time, frame_time));
-
-    info("%s, restart base tai time %lu\n", __func__, user_time->base_tai_time);
-    if (user_time->base_tai_time == 0) {
-      err("%s, get tai time fail\n", __func__);
-      pthread_mutex_unlock(&user_time->base_tai_time_mutex);
-      return 0;
-    }
-    pthread_mutex_unlock(&user_time->base_tai_time_mutex);
+  uint64_t now = app_ptp_from_tai_time(ctx);
+  if (!now) {
+    err("%s, get tai time fail\n", __func__);
+    return 0;
   }
-  offset = user_time->user_time_offset;
-  /* offset may be negative to start the pacing clock in the past, presenting
-   * frames late (used by the drop-when-late tests) */
-  tai_time = user_time->base_tai_time + (uint64_t)(frame_time * frame_num);
-  tai_time = (uint64_t)((int64_t)tai_time + offset);
-
-  return tai_time;
+  uint64_t tai = st_app_user_time_calc(user_time, state, now, frame_num, frame_time);
+  if (!frame_num)
+    info("%s, first epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__, state->epoch, tai);
+  return tai;
 }
 
 int st_set_mtl_log_file(struct st_app_context* ctx, const char* file) {

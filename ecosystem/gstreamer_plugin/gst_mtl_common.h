@@ -16,6 +16,8 @@
 #include <mtl/st40_pipeline_api.h>
 #include <mtl/st_pipeline_api.h>
 
+#include "gst_mtl_pts_tai.h"
+
 #define PAYLOAD_TYPE_AUDIO (111)
 #define PAYLOAD_TYPE_VIDEO (112)
 #define PAYLOAD_TYPE_ANCILLARY (113)
@@ -52,6 +54,7 @@ enum {
   PROP_GENERAL_ENABLE_DMA_OFFLOAD,
   PROP_GENERAL_DEV_ARGS_ALLOW_DOWN,
   PROP_GENERAL_DEV_ARGS_DMA_AUTO,
+  PROP_GENERAL_CLOCK_TAI,
   PROP_GENERAL_MAX
 };
 
@@ -72,7 +75,16 @@ typedef struct GeneralArgs {
   gboolean enable_dma_offload;
   gboolean allow_down_ports;
   gboolean dma_auto;
+  gboolean clock_tai;
 } GeneralArgs;
+
+/* PTS to TAI state of one TX element; the streaming thread owns all but pts_is_tai */
+typedef struct GstMtlPtsPacing {
+  gboolean pts_is_tai;
+  GstSegment segment;
+  struct gst_mtl_tai_sync sync;
+  gboolean no_tai_logged;
+} GstMtlPtsPacing;
 
 typedef struct SessionPortArgs {
   gchar session_ip_string[2][MTL_PORT_MAX_LEN];
@@ -117,4 +129,10 @@ mtl_handle gst_mtl_common_init_handle(GeneralArgs* generalArgs,
                                       gboolean force_to_initialize_new_instance);
 
 gint gst_mtl_common_deinit_handle(mtl_handle* handle);
+
+void gst_mtl_common_pts_pacing_init(GstMtlPtsPacing* pacing);
+/* TAI of a buffer with PTS pts, plus pacing_offset; 0 when MTL must pace it */
+uint64_t gst_mtl_common_pts_to_tai(GstElement* element, mtl_handle mtl,
+                                   GstMtlPtsPacing* pacing, GstClockTime pts,
+                                   guint pacing_offset);
 #endif /* __GST_MTL_COMMON_H__ */
