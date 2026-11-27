@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * C harness API for the st_frame_convert_nt() unit tests. Plain C declarations only, so
- * the header is safe to include from C++; st_convert.h cannot be compiled by g++ because
- * struct st_frame_nt_scratch uses _Atomic.
+ * C harness API for the st_frame_convert_nt() and the AVX-512 converter unit tests. Plain
+ * C declarations only, so the header is safe to include from C++; st_convert.h cannot be
+ * compiled by g++ because struct st_frame_nt_scratch uses _Atomic.
  */
 
 #ifndef TESTS_UNIT_PIPELINE_ST_CONVERT_HARNESS_H
@@ -51,6 +51,20 @@ int ut_nt_convert(ut_nt_ctx* ctx, struct st_frame* src, struct st_frame* dst);
  *  bytes at buf, or with no scratch for a NULL buf. */
 int ut_nt_convert_buf(ut_nt_ctx* ctx, void* buf, size_t size, struct st_frame* src,
                       struct st_frame* dst);
+
+enum ut_cvt_kernel {
+  UT_CVT_YUV422P12LE_TO_BE12,
+};
+
+/** The st20_*_avx512() kernel itself on the three planes and the pgroups; -ENOTSUP if
+ *  libmtl was built without it. */
+int ut_cvt_avx512(enum ut_cvt_kernel kernel, uint16_t* planes[3], void* pg, uint32_t w,
+                  uint32_t h);
+/** The calls the st20_*_simd() dispatchers made to those kernels since the last time. */
+int ut_cvt_avx512_dispatched(void);
+/** The CPU SIMD level the st_convert.c dispatchers see: level, or mtl_get_simd_level()
+ *  for MTL_SIMD_LEVEL_MAX, the default. */
+void ut_cvt_set_cpu_simd_level(enum mtl_simd_level level);
 
 #ifdef __cplusplus
 }
