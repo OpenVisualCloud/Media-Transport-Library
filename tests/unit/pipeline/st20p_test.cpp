@@ -170,6 +170,21 @@ TEST_F(St20PipelineRxTest, ResetClearsAllPipelineCounters) {
   EXPECT_EQ(frames_dropped(), 0u);
 }
 
+/* If the transport refuses the reset, as in its own callbacks, nothing is reset. */
+TEST_F(St20PipelineRxTest, ResetKeepsThePipelineCountersWhenTheTransportRefuses) {
+  ASSERT_EQ(inject_complete(1000), 0);
+  struct st_frame* f = get_frame();
+  ASSERT_NE(f, nullptr);
+  EXPECT_EQ(put_frame(f), 0);
+  ASSERT_EQ(frames_received(), 1u);
+
+  ut20p_set_transport_stats_ret(-EBUSY);
+  EXPECT_EQ(ut20p_reset_session_stats(ctx_), -EBUSY);
+  ut20p_set_transport_stats_ret(0);
+
+  EXPECT_EQ(frames_received(), 1u);
+}
+
 /* st20p_rx_get_session_stats overlays the pipeline frame counters on top
  * of the (zeroed) transport stats.  The API result must match the
  * raw counters byte-for-byte. */

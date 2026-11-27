@@ -74,18 +74,20 @@ st20_rx_handle ut20p_stub_rx_create(mtl_handle mt, struct st20_rx_ops* ops) {
   return (st20_rx_handle)(uintptr_t)0x1;
 }
 
+static int ut20p_stats_ret;
+
 int ut20p_stub_get_session_stats(st20_rx_handle handle,
                                  struct st20_rx_user_stats* stats) {
   (void)handle;
   /* Return zeroed transport stats; the pipeline overlays its own
    * frame-level counters on top, which is exactly what we want to test. */
   if (stats) memset(stats, 0, sizeof(*stats));
-  return 0;
+  return ut20p_stats_ret;
 }
 
 int ut20p_stub_reset_session_stats(st20_rx_handle handle) {
   (void)handle;
-  return 0;
+  return ut20p_stats_ret;
 }
 
 /* ── opaque context ───────────────────────────────────────────────────── */
@@ -434,4 +436,16 @@ st20p_rx_handle ut20p_handle(ut20p_ctx* ctx) {
 
 void ut20p_force_destroying(ut20p_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+bool ut20p_destroying(const ut20p_ctx* ctx) {
+  return atomic_load(&ctx->pipeline.lc_destroying);
+}
+
+void ut20p_set_transport(ut20p_ctx* ctx, st20_rx_handle transport) {
+  ctx->pipeline.transport = transport;
+}
+
+void ut20p_set_transport_stats_ret(int ret) {
+  ut20p_stats_ret = ret;
 }
