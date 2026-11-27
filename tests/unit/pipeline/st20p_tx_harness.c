@@ -11,6 +11,7 @@
 #include <string.h>
 
 #define st20_tx_create ut20p_tx_capture_create
+#define st_frame_nt_scratch_init ut20p_tx_nt_scratch_init
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
@@ -18,6 +19,7 @@
 #include "st2110/pipeline/st20_pipeline_tx.c"
 #pragma GCC diagnostic pop
 #undef st20_tx_create
+#undef st_frame_nt_scratch_init
 
 #include "common/ut_common.h"
 
@@ -32,6 +34,27 @@ struct ut20p_tx_ctx {
 };
 
 #include "pipeline/st20p_tx_harness.h"
+
+/* the real one: st_convert.h declared it under the redirected name */
+int st_frame_nt_scratch_init(struct st_frame_nt_scratch* s,
+                             const struct st_frame_converter* converter,
+                             enum st_frame_fmt dst_fmt, uint32_t width, int socket_id);
+
+static bool ut20p_tx_nt_scratch_fail;
+
+int ut20p_tx_nt_scratch_init(struct st_frame_nt_scratch* s,
+                             const struct st_frame_converter* converter,
+                             enum st_frame_fmt dst_fmt, uint32_t width, int socket_id) {
+  if (!ut20p_tx_nt_scratch_fail)
+    return st_frame_nt_scratch_init(s, converter, dst_fmt, width, socket_id);
+  ut20p_tx_nt_scratch_fail = false;
+  memset(s, 0, sizeof(*s));
+  return -ENOMEM;
+}
+
+void ut20p_tx_fail_next_nt_scratch(void) {
+  ut20p_tx_nt_scratch_fail = true;
+}
 
 int ut20p_tx_init(void) {
   return ut_eal_init();
@@ -264,8 +287,13 @@ int ut20p_tx_transport_report_late(ut20p_tx_ctx* ctx, uint64_t epoch_skipped) {
 int ut20p_tx_ctx_set_wire_frames(ut20p_tx_ctx* ctx, const struct st20p_tx_ops* ops) {
   struct st20p_tx_ctx* p = &ctx->pipeline;
   const enum st_frame_fmt fmt = st_frame_fmt_from_transport(ops->transport_fmt);
+  const size_t linesize = RTE_MAX((size_t)ops->transport_linesize,
+                                  st_frame_least_linesize(fmt, ops->width, 0));
+  const uint32_t lines = ops->interlaced ? ops->height / 2 : ops->height;
   size_t size =
-      RTE_ALIGN_CEIL(st_frame_size(fmt, ops->width, ops->height, ops->interlaced), 64);
+      RTE_ALIGN_CEIL(RTE_MAX(st_frame_size(fmt, ops->width, ops->height, ops->interlaced),
+                             linesize * lines),
+                     64);
   size_t src_size = 0;
 
   p->ops.input_fmt = ops->input_fmt;
@@ -273,6 +301,7 @@ int ut20p_tx_ctx_set_wire_frames(ut20p_tx_ctx* ctx, const struct st20p_tx_ops* o
   p->ops.width = ops->width;
   p->ops.height = ops->height;
   p->ops.interlaced = ops->interlaced;
+  p->ops.transport_linesize = ops->transport_linesize;
   p->ops.flags = ops->flags;
   p->derive = st_frame_fmt_equal_transport(ops->input_fmt, ops->transport_fmt);
   if (!p->derive && !st_frame_get_converter(ops->input_fmt, fmt, &ctx->converter)) {
@@ -292,7 +321,7 @@ int ut20p_tx_ctx_set_wire_frames(ut20p_tx_ctx* ctx, const struct st20p_tx_ops* o
     dst->height = ops->height;
     dst->interlaced = ops->interlaced;
     dst->addr[0] = mem;
-    dst->linesize[0] = st_frame_least_linesize(fmt, ops->width, 0);
+    dst->linesize[0] = linesize;
     dst->buffer_size = dst->data_size =
         st_frame_size(fmt, ops->width, ops->height, ops->interlaced);
     if (!src_size) continue;
@@ -312,6 +341,15 @@ size_t ut20p_tx_nt_scratch_size(const ut20p_tx_ctx* ctx) {
 
 void* ut20p_tx_nt_scratch(ut20p_tx_ctx* ctx) {
   return ctx->pipeline.nt_scratch.buf;
+}
+
+void ut20p_tx_hold_nt_scratch(ut20p_tx_ctx* ctx, bool hold) {
+  atomic_store_explicit(&ctx->pipeline.nt_scratch.busy, hold ? 1 : 0,
+                        memory_order_relaxed);
+}
+
+bool ut20p_tx_nt_scratch_held(const ut20p_tx_ctx* ctx) {
+  return atomic_load_explicit(&ctx->pipeline.nt_scratch.busy, memory_order_relaxed);
 }
 
 struct st_frame* ut20p_tx_wire_frame(ut20p_tx_ctx* ctx, int idx) {

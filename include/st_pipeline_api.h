@@ -529,9 +529,9 @@ enum st20p_tx_flag {
   /**
    * Convert with ordinary stores. By default the internal converter, for
    * ST_FRAME_FMT_YUV422PLANAR10LE input or ST_FRAME_FMT_V210 input at a width that is a
-   * multiple of 48, converts a few lines at a time into a per-session scratch and streams
-   * them to the frame with non-temporal stores, so the frame neither is read for
-   * ownership nor fills the cache.
+   * multiple of 48, and st20p_tx_convert_block convert a few lines at a time into a
+   * per-session scratch and stream them to the frame with non-temporal stores, so the
+   * frame neither is read for ownership nor fills the cache.
    */
   ST20P_TX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(14)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
@@ -603,7 +603,8 @@ enum st20p_rx_flag {
    * Only used for internal convert mode and limited formats:
    * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY,
    * ST_FRAME_FMT_YUV422PLANAR16LE
-   * Perform the color format conversion on each packet.
+   * Perform the color format conversion on each packet, and stream its whole cache lines
+   * to the frame with non-temporal stores unless ST20P_RX_FLAG_DISABLE_NT_CONVERT is set.
    * Not supported with ST20P_RX_FLAG_EXT_FRAME, ST20P_RX_FLAG_USE_MULTI_THREADS or
    * ST20P_RX_FLAG_AUTO_DETECT, nor above 40 Gb/s per session, where the transport
    * would add a packet lcore.
@@ -675,7 +676,9 @@ enum st20p_rx_flag {
    * multiple of 48, converts a few lines at a time into a per-session scratch and streams
    * them to the frame with non-temporal stores, so the frame neither is read for
    * ownership nor fills the cache, and comes back cold in cache. A session with
-   * ST20P_RX_FLAG_AUTO_DETECT always converts with ordinary stores.
+   * ST20P_RX_FLAG_AUTO_DETECT always converts with ordinary stores. With
+   * ST20P_RX_FLAG_PKT_CONVERT, each packet is stored straight into the frame instead of
+   * being streamed to it.
    */
   ST20P_RX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(25)),
 };
@@ -1887,6 +1890,48 @@ int st20p_tx_put_frame_abort(st20p_tx_handle handle, struct st_frame* frame);
  */
 int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
                            struct st_ext_frame* ext_frame);
+
+/**
+ * Convert source lines into lines of a frame got by st20p_tx_get_frame, for an app that
+ * builds a frame block by block, e.g. from a stored picture, with no copy before it.
+ * Only for a session whose input_fmt is the transport format, so MTL converts nothing,
+ * and without ST20P_TX_FLAG_EXT_FRAME. The lines go through the session's scratch and
+ * reach the frame with non-temporal stores, fenced before return. They take ordinary
+ * stores instead with ST20P_TX_FLAG_DISABLE_NT_CONVERT, on a build without SSE2, when
+ * the scratch failed to allocate at create, for padded frame lines (transport_linesize
+ * above st_frame_least_linesize, even by whole cache lines), for a block whose first line
+ * is off a cache line (dst_line * linesize not a multiple of 64, as at widths 720 or 1440
+ * unless dst_line is a multiple of 8 or 4), at a width that is not a multiple of 16, or
+ * while a second thread that breaks the rule below converts on the session.
+ * The frame is ready for st20p_tx_put_frame once all its lines are converted. On an
+ * interlaced session dst_line and nb_lines count lines of the field.
+ * Call it from the app thread that gets and puts the session's frames, one call at a
+ * time.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20 pipeline session.
+ * @param frame
+ *   The frame pointer by st20p_tx_get_frame of this session.
+ * @param src_block
+ *   The source lines: fmt ST_FRAME_FMT_YUV422PLANAR10LE, or ST_FRAME_FMT_V210 at a width
+ *   that is a multiple of 48; width that of the frame; addr[] and linesize[] of each
+ *   plane at the first line, linesize[] no less than st_frame_least_linesize.
+ * @param dst_line
+ *   The first frame line to write.
+ * @param nb_lines
+ *   The number of lines to convert, written to frame lines
+ *   [dst_line, dst_line + nb_lines).
+ * @return
+ *   - 0 if successful.
+ *   - -EINVAL: Bad argument, or a frame of another session.
+ *   - -EIO: A session that converts or uses ST20P_TX_FLAG_EXT_FRAME, a frame not got or
+ *     already put, or a session being freed.
+ *   - -ENOTSUP: Source format or width not supported, or a transport format other than
+ *     ST20_FMT_YUV_422_10BIT.
+ */
+int st20p_tx_convert_block(st20p_tx_handle handle, struct st_frame* frame,
+                           const struct st_frame* src_block, uint32_t dst_line,
+                           uint32_t nb_lines);
 
 /**
  * Notify the tx st2110-20 pipeline session that the application has finished

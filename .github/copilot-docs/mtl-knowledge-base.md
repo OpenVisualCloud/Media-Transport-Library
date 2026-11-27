@@ -227,8 +227,9 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 ### Copy Primitive
 Every copy in `lib/` goes through `mt_memcpy()` (`mt_util.h`, `static inline`), never `rte_memcpy` and never a bare `memcpy` in new code. Its one line selects the backend for the whole library, so a change of copy primitive is a one-line change with no call-site churn.
 Today that backend is libc `memcpy`: glibc reads the CPU at load time and picks an AVX-512, AVX2 or ERMS path, `rte_memcpy` is fixed to the path DPDK was built for, and `rte_memcpy` measured slower on the RX frame write path. `mtl_memcpy()` is the public API over the same call.
-Two paths stream whole cache lines with non-temporal stores instead: the st20p conversion (next section) and the RX frame write path, `rv_frame_memcpy()` (`st_rx_video_session.c`), which copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`.
-On that RX frame write path a session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
+Three paths stream whole cache lines with non-temporal stores instead: the st20p conversion (next section), the RX frame write path, `rv_frame_memcpy()` (`st_rx_video_session.c`), which copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`, and the per-packet st20p RX conversion.
+In `rv_frame_memcpy()` a session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
+The per-packet st20p RX conversion, `rx_st20p_pkt_stream()` (`st20_pipeline_rx.c`), converts each packet into a 4 KiB stage first and then streams it the same way.
 
 ### st20p Conversion With Non-Temporal Stores
 - `st_frame_convert_nt()` (`st_convert.c`) runs a converter whose table entry sets `nt_width_align` (rfc4175 422be10 to and from yuv422p10le and v210) 8 lines at a time into a scratch that stays in L2.
@@ -242,8 +243,9 @@ On that RX frame write path a session with a pkt lcore keeps `mt_memcpy()` for t
   A sub-cache-line block tail goes through `mt_memcpy()`, a short last block covers heights such as 540 and 486, and padded source lines are fine.
 - The scratch is a per-session `struct st_frame_nt_scratch` (`nt_scratch` in `st20p_tx_ctx` / `st20p_rx_ctx`): `st_frame_nt_scratch_init()` takes it from `mt_rte_zmalloc_socket()` on the session socket at create, 8 output lines (`st_frame_nt_scratch_size()`, 38,400 B for 1080p 422be10), 16-byte aligned for `_mm_load_si128`; `st_frame_nt_scratch_uinit()` frees it.
   Its `busy` word guards it with one CAS per `st_frame_convert_nt()`: a second app thread that breaks the one-thread-per-session model converts with ordinary stores instead of corrupting it.
-  None is allocated with `ST20P_TX_FLAG_DISABLE_NT_CONVERT` / `ST20P_RX_FLAG_DISABLE_NT_CONVERT`, for a session with no internal converter or an unsupported width, or for RX `AUTO_DETECT`, whose width is unknown at create, so it always converts with ordinary stores.
-- Output is byte-identical to the stock converters, and the converter call count shows which path ran (`*St20p*NtConvert*`, `*St20p*NtScratch*` in `tests/unit/pipeline/st20p_nt_convert_test.cpp`).
+  A session gets one for its internal converter, or, as a TX derive session with a 422be10 frame, for `st20p_tx_convert_block()`, which converts the app's own yuv422p10le or v210 lines block by block straight into the wire-format frame from `st20p_tx_get_frame()` (app thread, field lines on an interlaced session, error codes in `include/st_pipeline_api.h`).
+  None is allocated with `ST20P_TX_FLAG_DISABLE_NT_CONVERT` / `ST20P_RX_FLAG_DISABLE_NT_CONVERT`, for any other session or an unsupported width, or for RX `AUTO_DETECT`, whose width is unknown at create; such a session converts with ordinary stores. A failed allocation fails create, except on the TX derive session, which warns and converts with ordinary stores.
+- Output is byte-identical to the stock converters, and the converter call count shows which path ran (`*St20p*NtConvert*`, `*St20pTxConvertBlock*`, `*St20p*NtScratch*` in `tests/unit/pipeline/st20p_nt_convert_test.cpp`).
 
 ### NUMA Matters
 All DPDK allocations take `socket_id` from `mt_socket_id(impl, port)`. Socket mismatch → 2× DMA latency. Fallback: if preferred socket has no hugepages, allocate from any socket (logs warning).
@@ -1003,6 +1005,10 @@ incomplete still reaches frame_ready. In every mode where incomplete frames reac
 does not deliver it puts back itself with `st20_rx_put_framebuff()`; before ready `ctx->transport` may
 still be unset, so such a frame is parked (a slot per transport frame) and put back by create once
 ready, or by the next frame_ready if it missed that.
+Each packet converts into `ctx->pkt_stage`; its whole lines then stream into the framebuff, and the partial ones at its ends, which the packets next to it share, go through `mt_memcpy()`.
+Stored straight, every line cost a read-for-ownership: 106k LLC misses a 1080p frame on Xeon 6, against 4.4k streamed (measured on the #1892 stack, RxTxApp --rx_pkt_convert).
+Without the stage (`ST20P_RX_FLAG_DISABLE_NT_CONVERT`, allocation failed, warned, or no SSE2 / `enable_rx_video_nt_store`) it stores straight; `St20pRxPktConvertRowTest` pins the unaligned packet splits, `St20pRxPktConvertStageTest` the stage, its absence under that flag, its short copies and the straight store of a packet larger than it.
+`rx_st20p_frame_ready()` fences before it marks the frame CONVERTED, and `st20p_rx_free()` frees the stage only after `st20_rx_free()` detaches the session, whose tasklet converts into it until then.
 Create refuses PKT_CONVERT with `ST20P_RX_FLAG_EXT_FRAME` (a queried ext frame would arrive only at frame_ready)
 and wherever the session could add a pkt lcore (`ST20P_RX_FLAG_USE_MULTI_THREADS`,
 `ST20P_RX_FLAG_AUTO_DETECT`, or above `ST_RX_VIDEO_PKT_LCORE_MBPS`): the uframe callback is not safe on

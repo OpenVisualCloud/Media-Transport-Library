@@ -98,6 +98,8 @@ Two cases never reach the streaming path, so the option does not move them. A se
 
 What keeps the copy relevant under DSA is `mt_dma_full()` backpressure, line-crossing packets, and st22, which has no DMA branch at all.
 
+The st20p per-packet conversion (`ST20P_RX_FLAG_PKT_CONVERT`) writes its frame the same way: `rx_st20p_packet_convert()` converts each packet into a 4 KiB per-session stage, and `rx_st20p_pkt_stream()` streams the stage's whole cache lines into the frame with the same head, tail and short-copy rule.
+
 ### 5.1. Build option
 
 `enable_rx_video_nt_store` controls it, `true` by default. The streaming path is compiled only when the target has SSE2, so on a non-x86 build the option is already a no-op.
@@ -112,4 +114,5 @@ meson setup build_no_nt -Denable_rx_video_nt_store=false
 ninja -C build_no_nt
 ```
 
-With the option off every RX video frame copy goes through `mt_memcpy()` and the three store fences that publish a frame to the application are compiled out with it. Build both ways and compare `incomplete frames` at a fixed session count to tell a copy-bound RX regression apart from a pacing or scheduling one.
+With the option off every RX video frame copy goes through `mt_memcpy()`, the st20p per-packet conversion stores straight into the frame with no stage, and the four store fences that publish a frame to the application are compiled out with them.
+Build both ways and compare `incomplete frames` at a fixed session count to tell a copy-bound RX regression apart from a pacing or scheduling one.

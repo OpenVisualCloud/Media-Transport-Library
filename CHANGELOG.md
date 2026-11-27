@@ -1,5 +1,7 @@
 # Changelog
 
+* st20p: per-packet RX conversion (`ST20P_RX_FLAG_PKT_CONVERT`) writes the whole cache lines of each packet into the frame with non-temporal stores instead of ordinary ones, unless `ST20P_RX_FLAG_DISABLE_NT_CONVERT` is set
+* st20p: add `st20p_tx_convert_block()`, which converts an app's yuv422p10le or v210 lines block by block into the wire-format frame of a session that converts nothing, with non-temporal stores
 * dev: with `MTL_FLAG_RX_MONO_POOL` (RxTxApp `--mono_pool` or `--rx_mono_pool`) each RX queue polls its own queue; since 22.12 every queue polled queue 0 of DPDK port 0, so the sessions' own queues overflowed and sessions on several schedulers shared one queue
 * pcapng dumps: a dump on a port without NIC RX timestamps warns that its packets carry their RX burst time, no basis for ST 2110-21 timing; RxTxApp `--pcapng_dump` now sets `MTL_FLAG_ENABLE_HW_TIMESTAMP`, as `--rx_timing_parser` does
 * ixgbe (E610): the built-in PTP syncs: MTL enables timesync after the port start, and DPDK 26.07.95_mtl_ sets the IEEE1588 TX timestamp bit with no `RTE_LIBRTE_IEEE1588` build option, so vector RX stays on
