@@ -95,6 +95,10 @@ def test_rss_mode_video_performance_refactored(
             )
             break
 
+    # round(1 / 2) is 0: the search below would finish with 0 replicas and pass
+    if replicas_b == 1:
+        pytest.fail(f"rss_mode {rss_mode} failed with 1 replica, so no count passes")
+
     # Binary search between replicas_a and replicas_b
     replicas_a = round(replicas_b / 2)
     while True:
