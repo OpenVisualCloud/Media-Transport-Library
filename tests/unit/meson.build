@@ -272,6 +272,8 @@ unit_sources = [
   'dma/mt_map_test.cpp',
   'dma/mt_dma_auto_harness.c',
   'dma/mt_dma_auto_test.cpp',
+  'dma/st_cvt_dma_harness.c',
+  'dma/st_cvt_dma_test.cpp',
   'main.cpp',
 ]
 

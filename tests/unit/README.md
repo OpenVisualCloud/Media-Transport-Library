@@ -15,7 +15,7 @@ asserts on production behaviour. The suite covers ST 2110-20 (video),
 ST 2110-30 (audio), ST 2110-40 (ancillary), and the ST 2110-40 pipeline. Tests
 run on any developer laptop in a fraction of a second.
 
-TX packet building/queueing on a NIC, DMA copy engines, AF_XDP, and
+TX packet building/queueing on a NIC, hardware DMA copy engines, AF_XDP, and
 multi-process scenarios are out of scope — see
 [`tests/integration_tests/`](../integration_tests/) and
 [`tests/acceptance/`](../acceptance/) for those. Covered here through seams:
@@ -25,9 +25,14 @@ the fast metadata mode (`session/st40_tx_harness.c`), the kernel-socket TX send 
 loopback (`datapath/mt_dp_socket_harness.c`), RX queue selection without a
 flow (`datapath/mt_queue_harness.c`), the DMA map table
 (`dma/mt_map_harness.c`), the `MTL_FLAG_DMA_AUTO` probe over a fake PCI device
-tree (`dma/mt_dma_auto_harness.c`), port stats locking (`dev/mt_dev_harness.c`),
+tree (`dma/mt_dma_auto_harness.c`), the le10-to-be10 DMA converter's CPU fallback
+and the be12-to-yuv422p12le VBMI DMA converter's copies through DPDK's software
+`dma_skeleton` dmadev (`dma/st_cvt_dma_harness.c`), port stats locking (`dev/mt_dev_harness.c`),
 the MtlManager IPC send (`main/mt_instance_harness.c`) and the CNI RX dispatch of
 control frames (`cni/mt_cni_harness.c`).
+
+A case that needs a CPU instruction set, such as AVX-512 VBMI2, skips on a CPU
+without it, so a CI runner without that instruction set does not run it.
 
 ## What makes this different
 

@@ -1367,7 +1367,7 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
         le_caches);
     if (le_caches) mt_rte_free(le_caches);
     if (ctx) mt_cvt_dma_ctx_uinit(ctx);
-    return st20_rfc4175_422be10_to_422le10_avx512_vbmi(pg_be, pg_le, w, h);
+    return st20_rfc4175_422le10_to_422be10_vbmi(pg_le, pg_be, w, h);
   }
   rte_iova_t le_caches_iova = rte_malloc_virt2iova(le_caches);
 
@@ -1830,7 +1830,7 @@ int st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi_dma(
   size_t cache_size = cache_pg_cnt * sizeof(*pg_be);
   int soc_id = dma->parent->soc_id;
 
-  struct st20_rfc4175_422_10_pg2_be* be_caches =
+  struct st20_rfc4175_422_12_pg2_be* be_caches =
       mt_rte_zmalloc_socket(cache_size * caches_num, soc_id);
   struct mt_cvt_dma_ctx* ctx = mt_cvt_dma_ctx_init(2 * caches_num, soc_id, 2);
   if (!be_caches || !ctx) {
@@ -1847,7 +1847,7 @@ int st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi_dma(
   dbg("%s, pg_cnt %d cache_pg_cnt %d caches_num %d cache_batch %d\n", __func__, pg_cnt,
       cache_pg_cnt, caches_num, cache_batch);
   for (int i = 0; i < cache_batch; i++) {
-    struct st20_rfc4175_422_10_pg2_be* be_cache =
+    struct st20_rfc4175_422_12_pg2_be* be_cache =
         be_caches + (i % caches_num) * cache_pg_cnt;
     dbg("%s, cache batch idx %d\n", __func__, i);
 
@@ -1871,7 +1871,7 @@ int st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi_dma(
       if (nb_dq) mt_cvt_dma_ctx_pop(ctx);
     }
 
-    struct st20_rfc4175_422_10_pg2_be* pg = be_cache;
+    struct st20_rfc4175_422_12_pg2_be* pg = be_cache;
     int batch = cache_pg_cnt / 8;
     for (int j = 0; j < batch; j++) {
       __m512i input = _mm512_maskz_loadu_epi8(k, pg);
