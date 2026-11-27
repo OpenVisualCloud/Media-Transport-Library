@@ -343,7 +343,8 @@ If it failed to run the sample, please help to collect the system setup status b
 --p_tx_dst_mac <mac>                 : debug option, destination MAC address for primary port.
 --r_tx_dst_mac <mac>                 : debug option, destination MAC address for redundant port.
 --nb_tx_desc <count>                 : debug option, number of transmit descriptors for each NIC TX queue, affect the memory usage and the performance.
---nb_rx_desc <count>                 : debug option, number of receive descriptors for each NIC RX queue, affect the memory usage and the performance.
+--nb_rx_desc <count>                 : debug option, number of receive descriptors for each NIC RX queue, affect the memory usage and the performance. Default on ice/iavf: the largest power of 2 from 1024 to 2048 whose RX mbufs on the NUMA socket's queues (audio/anc included) fit in 3/4 of its L3, 1024 when less fits; else 2048 (other drivers, --tasklet_thread, shared RX queue or RSS, unknown L3).
+                                     : no-DMA ST20 RX frame sessions pack 11 a scheduler on such an ice/iavf ring of 1024 or less, else 8.
 --tasklet_time                       : debug option, enable stat info for tasklet running time.
 --tsc                                : debug option, force to use tsc pacing.
 --pacing_way <way>                   : debug option, set pacing way, available value: "auto", "rl", "tsc", "tsc_narrow", "ptp", "tsn".

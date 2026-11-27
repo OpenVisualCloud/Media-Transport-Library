@@ -134,7 +134,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 | **Lcore** (default) | DPDK lcores, CPU-pinned via `rte_eal_remote_launch()` | Deterministic latency |
 | **Pthread** (`MTL_FLAG_TASKLET_THREAD`) | Regular pthreads, not pinned | Containers, non-dedicated cores |
 
-Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
+Max schedulers: `MT_MAX_SCH_NUM = 48` (in `mt_main.h`); at most 64, one bit each in `mt_sch_mask_t` (`RTE_BUILD_BUG_ON` in `mtl_init()`)
 
 Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DEFAULT` to `MPOL_LOCAL` until the scheduler stops; any other policy is kept:
 - Under `kernel.numa_balancing=1` the `task_numa_work` scan runs as task work on busy threads; without `MPOL_F_MOF` it rewrites no PTEs there and nothing migrates on fault, but the VMA walk still runs
@@ -151,8 +151,18 @@ Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DE
 ### Quota System
 Sessions assigned to schedulers by weight in "1080p-equivalents":
 1. Search existing schedulers for capacity on right NUMA node
-2. If none found, allocate new scheduler (up to 18)
+2. If none found, allocate new scheduler (up to `MT_MAX_SCH_NUM`)
 3. As sessions freed, quota returned
+
+Without a user `data_quota_mbs_per_sch`, a scheduler holds `ST_QUOTA_TX1080P_PER_SCH` (12) 1080p59 TX sessions' bandwidth (`dev_sch_init()`), and ST20 RX is scaled by `ST_QUOTA_TX1080P_PER_SCH` / its own constant (`st_header.h`):
+a scheduler packs 12 RX with DMA or RTP and 8 RX without DMA, but 11 frame-level RX without DMA when every port of the session fits its RX ring to the L3 (`mt_if_rx_l3_fit()`, set in `dev_config_port()`: ice/iavf with dedicated RX queues and cpus, on a known L3 that holds the NUMA node's cpus (an SNC node counts its share))
+and its ring (`mt_if_nb_rx_desc()`, the deeper of a 2022-7 session's two) has at most `ST_QUOTA_RX1080P_NO_DMA_FRAME_DESC_MAX` (1024) descriptors (`rv_quota_mbs_wo_dma()`, `St20RxQuotaTest`, `MtDevRxDescDefaultL3Test`).
+That is the L3 default of those ports or a user `nb_rx_desc` up to 1024 on them. Other drivers, `MTL_FLAG_TASKLET_THREAD`, a shared RX queue (an AF_PACKET port included) or RSS and an unknown L3 keep 8 at any ring, as do a deeper ring and the 1056 of the iavf HW timestamp workaround.
+KahawaiTest `St20_rx.no_dma_*_sessions_per_sch` checks the packing on NICs; its frame case runs only with `--nb_rx_desc`, which CI does not pass, so by hand.
+Measured on a Xeon 6 6767P (336 MiB L3) with 4 × 100G E830 VFs, 144 × 1080p59.94 at 375 Gb/s on 14 RX cores, 11 a core (RX Video Frame Copy Is Cache-Bound): 512 is clean with stock, NT and per-packet conversion; 1024 is clean with stock (`yuv422p10le` and `v210`) and per-packet, and marginal with NT (2,406 pkts lost in 1 of 3 runs).
+11 a core at 375 Gb/s is measured on that host only. At one port it was also clean on a Xeon 8480+ (33 × 1080p59.94 to `yuv422p10le`, 1024 ring) and on an SNC2 node of a Xeon 6 6767P (36 sessions).
+2048 collapses at 11 a core on 14 cores (20–33 fps), so deeper rings keep 8. On 512, 12 cores were also clean at 12 a core with stock and at 13 with NT, while per-packet at 13 a core lost 36,322 / 281 pkts.
+With a user `data_quota_mbs_per_sch` an ST20 RX session charges its bandwidth times its ports, with or without DMA.
 
 TX video sessions are placed by quota alone; the round is judged at runtime (`doc/rl_pacing.md`, "Check 2"):
 - `lead_min_ns` (`tv_lead_visit()`) is plain `int64_t`, every access under the session lock; the stats dump takes and resets it.
@@ -208,7 +218,7 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 
 | Thread | Purpose | Detail |
 |--------|---------|--------|
-| Scheduler (×18 max) | Tasklet polling | Lcore-pinned or pthread |
+| Scheduler (×48 max) | Tasklet polling | Lcore-pinned or pthread |
 | TSC Calibration (×1) | Measures TSC frequency | Joins before sessions start transmitting (called lazily by `_mt_start()` and pacing init) |
 | Admin (×1) | Watchdog, migration | Periodic alarm-based |
 | Statistics (×1) | Stat dump | Configurable `dump_period_us` |
@@ -357,7 +367,7 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
   - `--match-allocations`: Forces 1:1 allocation→hugepage mapping. Without it, DPDK may merge adjacent allocations and freeing one pool won't reclaim hugepages because they're merged with a live allocation
   - `--in-memory`: Disables shared memory files in `/var/run/dpdk/`. Avoids filesystem ops, permission issues, stale lockfiles after crash
 - x86 cache line: 64 bytes (`RTE_CACHE_LINE_SIZE`)
-- Default descriptors (`mt_dev.h`): RX `MT_DEV_RX_DESC` 2048; TX per port: `MT_DEV_TX_DESC_DEEP` 2048 on a deep port, else `MT_DEV_TX_DESC` 512 (`MtDevTxDescTest`). An AUTO port that falls back to TSC keeps 2048, safe as it reclaims.
+- Default descriptors (`mt_dev.h`): RX on ice/iavf ports fit to the L3, 1024 to 2048 (RX Video Frame Copy Is Cache-Bound), else `MT_DEV_RX_DESC` 2048 (`MtDevRxDescDriverTest`); TX per port: `MT_DEV_TX_DESC_DEEP` 2048 on a deep port, else `MT_DEV_TX_DESC` 512 (`MtDevTxDescTest`). An AUTO port that falls back to TSC keeps 2048, safe as it reclaims.
   - Deep (`inf->tx_deep`, `dev_tx_deep()` in `dev_config_port()`): an RL, TSN or AUTO-with-TM iavf/ice port whose cleanup frees (`MT_DEV_TX_CLEANUP_FREES`), without a shared TX queue or a user `nb_tx_desc`.
     Only a deep port reclaims, flushes bounded, skips the done cleanup, gives the port pad a ref of its own and sizes its pools from what its queue keeps; every other port keeps main's behaviour there.
   - A zero-copy (chained) video pkt takes 2 TX descriptors, so the deep TX queue holds 1024 pkts, ~3.8 ms at 1080p59.94: one lost scheduler slice (EEVDF ~3 ms). 512 holds 0.95 ms, which a shared CPU overran (`St20TxQueueStallTest`); a port that frees lazily keeps 512, as a deeper ring keeps more sent mbufs.
@@ -365,10 +375,15 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
     - Pools: every TX session pool (video, audio, anc, fmd: its ring share, see Mempool Architecture), the per-port sys
       TX pool (`nb_tx_desc` + 1024), the shared-queue pool, and
       with `MTL_FLAG_TX_MONO_POOL` main's `nb_tx_q` × 2 × `nb_tx_desc` more mbufs per port,
-      and on a deep port a cache slack for each of `MT_MAX_SCH_NUM` schedulers, as its queues
-      free into the bursting scheduler's cache (`dev_tx_sys_pool_elements()`: 131071 at 17
-      queues of 2048; 32767 at 512); RTCP rings, RTP rings, audio and anc sessions on top of
-      that are not counted, as on main.
+      and on a deep port a mempool cache slack (`MT_MBUF_CACHE_SLACK`, 192) for each EAL lcore
+      (`rte_lcore_count()`, every CPU unless `lcores` is set), at most `MT_MAX_SCH_NUM`, as its
+      queues free into the cache of the scheduler that bursts them (`dev_tx_sys_pool_elements()`,
+      `MtDevTxPoolTest`): 131071 at 17 queues of 2048, 32767 at 512; at 6 queues of 2048 32767 up
+      to 26 lcores and 65535 from 27, where main's 18 slacks give 32767. RTCP rings, RTP rings,
+      audio and anc sessions on top of that are not counted, as on main.
+      - The port's TX queue count is no bound: a scheduler's cache keeps the pool's mbufs after
+        its sessions migrate or end, and a session create on the `mtl_init()` thread, the EAL main
+        lcore, builds its pads from the pool.
     - RTCP: on a deep port the retransmit ring is at least `nb_tx_desc` (`tv_rtcp_buffer_size()`), and the TX video pools count it.
       Its copy pool (`rtcp_tx_pool_n()`) holds what its queue keeps, a descriptor a copy, the 32 copies a retransmit loop makes before it bursts them, and the cache slack: 4095 at 2048, as many retransmits from a whole-ring NACK as a pool a ring larger (`RtcpCopyPoolParityTest`).
       - A PMD that frees an rs batch of 32 before the loop copies its next bulk leaves that bulk spare: one copy under `nb_tx_desc` + the slack runs dry. Off deep ports the pool is main's retransmit ring + `nb_tx_desc`.
@@ -449,7 +464,7 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
     - Time: the RL training pad trains fill the ring, and the training waits for it to drain (video ~7.5 ms at 1080p59.94, audio ~170 ms at 0.33 ms ptime), and the stop-time flush waits for each queue to drain (TX Pad Flush; on a lazy port 2 × `nb_tx_desc` pads at the queue's rate, ~0.2 s per audio RL queue at 0.33 ms ptime).
     - Recovery: `st20_tx_queue_fatal_error()` flushes the other redundant leg inside the tasklet, its ring's drain if it is healthy (~4 ms at 1080p59.94, ~8 ms with 2048 descriptors queued), so the scheduler's other sessions miss that much once, after a TX hang that is already fatal (a hung one: see Zero copy, Hang).
       - On a deep port, without a sys TX mbuf for the mark it skips that flush (`mt_txq_recovery_flush()`, -ENOMEM) rather than run the lazy loop, and the session ends unrecoverable (see Zero copy, Hang).
-- RX mempool element count: `nb_rx_desc + 1024` (headroom), rounded to `2^q - 1 = 4095`
+- RX mempool element count: `nb_rx_desc + 1024` (headroom), rounded to `2^q - 1`: 4095 at 1024 or 2048 descriptors, 2047 at 512
 - Mempool element size cache-aligned: e.g., 1494 → 1536 (rounded to `MT_MBUF_CACHE_SIZE = 128`)
 
 ---
@@ -873,6 +888,84 @@ same reason, deliberately deferring polls to amortize per-pass overhead backfire
 deeper per-session backlog is a colder backlog. Benchmark on a quiet host — co-tenant
 memory traffic moves this ceiling by a whole session, so compare variants interleaved
 back-to-back, never across time.
+
+So an ice/iavf port without a user `nb_rx_desc` sizes its RX ring to the L3
+(`dev_rx_desc_default()` in `dev_config_port()`, logged at info with its inputs):
+`nb_rx_desc = clamp(pow2_floor(L3 × 3/4 / (RX queues × mbuf)), 1024, 2048)`
+(`dev_rx_desc_by_l3()`, `MtDevRxDescL3Test`), so 1024 too when even less than 1024 fits. The
+floor is `MT_DEV_RX_DESC_MIN` (1024): 36 × 2160p59.94 lost packets on 512 (below), and the
+rule counts provisioned queues, not active ones. An app that wants 512, the best ring
+measured for dense 1080p below, sets `nb_rx_desc`.
+
+Every other port keeps `MT_DEV_RX_DESC` 2048 (`MtDevRxDescDefaultL3Test`):
+- Other drivers, none of them measured: igc, igb, ixgbe, i40e, mlx5, ena, DPDK AF_XDP and
+  AF_PACKET, kernel socket and native AF_XDP.
+- `MTL_FLAG_TASKLET_THREAD`: a scheduler on a shared cpu can stall longer than the ~4 ms a
+  1024 ring holds at 235 kpps.
+- `MTL_FLAG_SHARED_RX_QUEUE` or a shared RSS mode: one queue carries many sessions, at a
+  packet rate the measurements below do not cover. A DPDK AF_PACKET port sets the flag for
+  every port before any is configured (`dev_force_shared_rxq()`).
+- An unknown L3: `mt_l3_size()` reads the unified level-3 `cache/indexK` in sysfs of the
+  first cpu of the port's NUMA node. It returns 0 on Windows, without sysfs, or when that L3's
+  `shared_cpu_list` does not hold all of the node's `cpulist`: an AMD CCD's L3 covers part of a
+  node. An Intel SNC node's L3 spans the whole socket, so the node counts its cpus' share of it
+  (`mt_l3_node_share()`): 168 MiB of a Xeon 6 6767P's 336 MiB on SNC2. SNC3 and SNC4 shares are
+  not measured.
+
+The inputs:
+- Budget: `MT_DEV_RX_L3_PERCENT` (75) of the L3, a margin: the measured cases below only bound
+  it from below, as 36 × 2160p needs 65 % to keep 2048, and they get the same ring at 100 %.
+- RX queues: `dev_socket_rx_queues()`, those of every port on that socket, the rings that
+  share its L3, as `mt_dev_if_init()` will set them: `rx_queues_cnt[]`, or
+  `rx_sessions_cnt_max`, plus on an `MTL_PMD_DPDK_USER` port the CNI, PTP and TAP queues
+  (`dev_sys_rx_queues()`), capped at each port's `max_rx_queues`; 1 on an AF_PACKET port.
+  `mt_dev_if_init()` reads every port's `dev_info` (`dev_probe_port_info()`) before it
+  configures any, so each port counts the others capped. Only this process's ports:
+  separate MTL instances do not see each other.
+  Each audio or ancillary RX session counts as a queue (`st_rx_sessions_queue_cnt()`, as
+  `mtl_api.h` recommends for `rx_queues_cnt` and RxTxApp uses).
+  With mixed PMDs on one socket the count is approximate: an AF_XDP port counts its
+  `rx_queues_cnt[]`, not the `max(tx, rx)` of `mt_dev_if_init()`, and a kernel socket port
+  counts its queues though it has no DPDK ring.
+  `nb_rx_q` is no option, as `mt_dev_if_init()` sets it port by port; the iavf queue pairs
+  it adds stay idle.
+- mbuf: what a session RX pool object takes (`MtDevRxElemSizeTest`):
+  `rte_mempool_calc_obj_size()` of `rte_mbuf` + priv + headroom + data room
+  (`ST_PKT_MAX_ETHER_BYTES` aligned to 1536, 2048 with a mono pool, or `rx_pool_data_size`),
+  so with the object header and stride padding: 1984 bytes. The `mt_mempool_create_by_ops()`
+  log size counts data room and priv only (1696).
+- Spare mbufs: a queue pool holds `nb_rx_desc + 1024` rounded to `2^q - 1`, so at 1024 a queue
+  keeps 3071 mbufs beyond its ring, against 2047 at 2048 and 1535 at a user 512.
+- The iavf HW timestamp ±32 workaround still applies after it (§7).
+
+At 375 Gb/s RX on a Xeon 6 6767P (336 MiB L3), 4 × 100G VFs, with the best ring of each and
+the rule at 1984 bytes. NT converters are pixel-format converters that write their output
+with non-temporal stores.
+- 144 × 1080p59.94, 41 queues a port (164): 2048 collapses on 14 MTL RX cores (quota 11: NT
+  converters 30–33 fps, stock 20 fps, per-packet 30 fps). With NT, MTL's RX L3 miss ratio is
+  35% (57% at 4096, 8% at 1024, 1% at 512); with per-packet it stays at 42–59 %. 512 is clean
+  with stock and NT converters on 12–14 cores and with per-packet conversion on 14 (on 12,
+  quota 13, it lost 36,322 / 281 pkts). 1024 on 14 is clean with stock (`yuv422p10le` and
+  `v210`) and per-packet, and marginal with NT: 2,406 pkts lost in 1 of 3 runs. 256 lost
+  13,952 in 1 of 2. A buffer posted to a 2048 ring is filled ~8.7 ms later at 235 kpps a
+  queue, after its mbuf header has left the cache. Rule: 1024, the floor (fit 812).
+- 36 × 2160p59.94, 9 a port, 14 queues a port (56), ~940 kpps a queue: 512 lost 17,997 / 0
+  (NT) and 4,401 / 1,671 (wire format) pkts, as 512 descriptors last only 0.54 ms there;
+  1024 (NT, 2 runs) and 2048 are clean. Few queues leave each ring a large L3 share.
+  Rule: 2048.
+
+On a Xeon 8480+ (105 MiB L3), 72 × 1080p59.94 on 2 ports, 9 a core on 8 MTL RX cores, NT
+converters, 41 queues a port (82): RX received every packet at every depth, but the generator
+in the same process fell short as the RX buffers filled the L3. At 2048 51.9 fps (162 Gb/s,
+generator L3 miss 68 %), at 1024 54.7–54.9 fps (171 Gb/s, 66–67 %), at 512 58.8–59.2 fps
+(182 Gb/s, 43–44 %). Rule: 1024, the floor (fit 507).
+
+1024 at 2160p rates, measured on the 336 MiB host only: 36 × 2160p59.94 (NT) lost nothing in
+2 runs, and 9 × 2160p59.94 ST 2022-7 on 2 ports of 14 queues nothing in 1 run, as at 2048.
+Not measured on a smaller L3, where 2160p gets 1024 sooner: every port gets it once its socket
+counts over 65 queues on 336 MiB, but over 20 on 105 MiB. E.g. a dual-port 2022-7 2160p
+receiver, 2 × 14 queues on a 105 MiB L3 (1486, so 1024), or a 2022-7 receiver of 4 × 2160p59.94
+with 7 audio sessions each, 34 queues a port (612 on 105 MiB, so 1024).
 
 ### Performance Debugging Mental Model
 

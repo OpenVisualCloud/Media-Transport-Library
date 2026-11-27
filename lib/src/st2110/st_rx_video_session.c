@@ -4587,6 +4587,26 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
   return 0;
 }
 
+/* every port fits its rx ring to the L3 and has at most the dense packing's ring */
+static bool rv_ops_rx_ring_shallow(struct mtl_main_impl* impl, struct st20_rx_ops* ops) {
+  for (int i = 0; i < ops->num_port; i++) {
+    enum mtl_port port = mt_port_by_name(impl, ops->port[i]);
+    if (port >= MTL_PORT_MAX || !mt_if_rx_l3_fit(impl, port) ||
+        mt_if_nb_rx_desc(impl, port) > ST_QUOTA_RX1080P_NO_DMA_FRAME_DESC_MAX)
+      return false;
+  }
+  return true;
+}
+
+static int rv_quota_mbs_wo_dma(struct mtl_main_impl* impl, struct st20_rx_ops* ops,
+                               int quota_mbs) {
+  int per_sch = ST_QUOTA_RX1080P_NO_DMA_PER_SCH;
+
+  if (ST20_TYPE_FRAME_LEVEL == ops->type && rv_ops_rx_ring_shallow(impl, ops))
+    per_sch = ST_QUOTA_RX1080P_NO_DMA_FRAME_PER_SCH;
+  return quota_mbs * ST_QUOTA_TX1080P_PER_SCH / per_sch;
+}
+
 st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
                                         struct st20_rx_ops* ops, mt_sch_mask_t sch_mask) {
   struct mtl_sch_impl* sch;
@@ -4629,8 +4649,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     if (ST20_TYPE_RTP_LEVEL == ops->type) {
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_RTP_PER_SCH;
     } else {
-      quota_mbs_wo_dma =
-          quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_NO_DMA_PER_SCH;
+      quota_mbs_wo_dma = rv_quota_mbs_wo_dma(impl, ops, quota_mbs);
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_PER_SCH;
     }
   }

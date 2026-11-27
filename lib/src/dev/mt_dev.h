@@ -10,6 +10,10 @@
 /* default desc nb for tx and rx */
 #define MT_DEV_RX_DESC (4096 / 2)
 #define MT_DEV_TX_DESC (4096 / 8)
+/* ice/iavf RX ring floor of the L3 fit: 36 x 2160p59.94 lost packets on 512 */
+#define MT_DEV_RX_DESC_MIN (4096 / 4)
+/* L3 share of a socket's ice/iavf RX rings: a margin, the measured loads need >= 65 % */
+#define MT_DEV_RX_L3_PERCENT (75)
 /* tx of a shaped port that frees sent mbufs each burst: 1024 chained video pkts, ~3.8 ms
  * at 1080p59.94, ride out a lost scheduler slice */
 #define MT_DEV_TX_DESC_DEEP (4096 / 2)
