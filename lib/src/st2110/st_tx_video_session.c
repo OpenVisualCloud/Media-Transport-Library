@@ -492,9 +492,21 @@ static bool tv_start_snaps(struct st_tx_video_session_impl* s) {
          !s->ops.rtp_timestamp_delta_us;
 }
 
-/* the most tv_sync_pacing()'s 90 kHz snap moves the target past epoch + tr_offset -
- * vrx * trs, over the phases the epochs take on the tick grid; an exact user start time
- * is not snapped, the frames without one are */
+/* TSC_NARROW sends one packet per trs from the start, so an early snap overfills VRX */
+static uint64_t tv_snap_start(struct st_tx_video_session_impl* s, uint64_t start_tai) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  uint32_t rate = s->fps_tm.sampling_clock_rate;
+
+  /* under a tick a pre-fill cannot overfill, and snapped up it could pass TRoffset */
+  if (s->pacing_way[MTL_SESSION_PORT_P] == ST21_TX_PACING_WAY_TSC_NARROW &&
+      pacing->vrx * pacing->trs * rate >= NS_PER_S)
+    return st_tai_ceil_to_media_clk_ns(start_tai, rate);
+  return st_tai_round_to_media_clk_ns(start_tai, rate);
+}
+
+/* the most tv_sync_pacing()'s nearest 90 kHz snap moves the target past epoch +
+ * tr_offset - vrx * trs, over the phases the epochs take on the tick grid; an exact user
+ * start time is not snapped, the frames without one are */
 static long double tv_snap_loss_ns(struct st_tx_video_session_impl* s) {
   uint32_t rate = s->fps_tm.sampling_clock_rate;
   uint64_t a = (uint64_t)rate * s->fps_tm.den, b = s->fps_tm.mul;
@@ -990,8 +1002,7 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
        * time (one field when interlaced). */
       if (s->pacing.exact_start_tai) {
         uint64_t start = transmission_start_time(s, frame_count);
-        if (tv_start_snaps(s))
-          start = st_tai_round_to_media_clk_ns(start, s->fps_tm.sampling_clock_rate);
+        if (tv_start_snaps(s)) start = tv_snap_start(s, start);
         if (start < s->pacing.exact_start_tai + s->pacing.frame_time) frame_count++;
       }
     }
@@ -1059,8 +1070,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   /* an exact user start is not snapped: its drain slot keeps the snap loss */
   pacing->vrx_room_ns = exact_user_pacing ? pacing->snap_loss_ns : 0;
   if (!exact_user_pacing && tv_start_snaps(s)) {
-    uint64_t snapped =
-        st_tai_round_to_media_clk_ns(start_time_tai, s->fps_tm.sampling_clock_rate);
+    uint64_t snapped = tv_snap_start(s, start_time_tai);
     pacing->vrx_room_ns = pacing->snap_loss_ns - (int32_t)(snapped - start_time_tai);
     start_time_tai = snapped;
   }

@@ -559,7 +559,17 @@ pacing->vrx -= 2; /* leave VRX space for deviation */
 pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 ```
 
-**TSC Narrow mode**: Forces `s->bulk = 1` for maximum accuracy.
+**TSC Narrow mode**: Forces `s->bulk = 1` for maximum accuracy. It sends one packet per `trs` from
+the start, so a start before its edge, epoch + `tr_offset` − `vrx`·`trs`, pre-fills more than
+`vrx`: `tv_snap_start()` snaps a TSC_NARROW start up to the next 90 kHz tick, not the nearest,
+at any frame rate when the pre-fill spans at least a tick (`vrx`·`trs` ≥ 1/90 kHz), and the
+EXACT-frame guard in `calc_frame_count_since_epoch()` uses the same snap. A shorter pre-fill (a
+small `start_vrx`, ST22's 0) keeps the nearest: it cannot overflow VRX, which needs `vrx`·`trs` >
+VRX_full·`trs` − ½ tick, and snapped up its packet 0 could pass `tr_offset`. For a pre-fill of a
+tick or more the start is then up to one tick (11.1 µs) after the edge, not half a tick
+(5.6 µs) either side, so the bound on the stall headroom before VRX underflows falls from
+VRX_full·`trs` − 5.6 µs to VRX_full·`trs` − 11.1 µs: 29.5 → 23.9 µs at 1080p59.94 and 2160p59.94,
+where the real phases give 32.1 → 26.6 µs (67.3 → 61.7 µs at 720p59.94).
 
 | Constraint | Impact |
 |-----------|--------|

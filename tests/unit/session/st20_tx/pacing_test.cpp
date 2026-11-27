@@ -1542,3 +1542,205 @@ TEST(St20TxRlPlanArming, EveryRlFormatArmsItsPlanOrWarns) {
           ut_txv_destroy(ctx);
         }
 }
+
+namespace {
+/* EBU LIST's vrx_full_narrow and trs of BPM 4:2:2 10-bit */
+struct UtNarrowFormat {
+  const char* name;
+  uint32_t width, height;
+  enum st_fps fps;
+  uint32_t mul, den;
+  uint32_t vrx_full;
+  long double trs;
+};
+constexpr UtNarrowFormat kUtNarrowFormats[] = {
+    {"720p59.94", 1280, 720, ST_FPS_P59_94, 60000, 1001, 8, 8756.697648988518L},
+    {"1080p59.94", 1920, 1080, ST_FPS_P59_94, 60000, 1001, 9, 3892.102065613609L},
+    {"2160p59.94", 3840, 2160, ST_FPS_P59_94, 60000, 1001, 36, 973.1437598736178L},
+    {"1080p50", 1920, 1080, ST_FPS_P50, 50, 1, 8, 4665.856622114216L}};
+constexpr const UtNarrowFormat& kUt1080p59 = kUtNarrowFormats[1];
+constexpr const UtNarrowFormat& kUt2160p59 = kUtNarrowFormats[2];
+constexpr long double kUtTickNs = (long double)kNanosecondsPerSecond / kUtRlRate90k;
+}  // namespace
+
+class St20TxTscNarrowPreFill : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    ASSERT_EQ(ut_txv_init(), 0);
+  }
+  void TearDown() override {
+    Release();
+  }
+  void Release() {
+    if (ctx_) ut_txv_destroy(ctx_);
+    ctx_ = nullptr;
+  }
+  bool Init(const UtNarrowFormat& f, enum ut_txv_pacing_way way, bool wide,
+            uint16_t start_vrx, bool st22) {
+    const float trained[2] = {164, 164};
+    Release();
+    ctx_ = ut_txv_create();
+    if (!ctx_) return false;
+    f_ = &f;
+    ut_txv_set_rl_format(ctx_, f.width, f.height, false, f.fps);
+    ut_txv_set_rl_layout(ctx_, ST20_PACKING_BPM, ST20_FMT_YUV_422_10BIT, 512);
+    ut_txv_set_init_pacing_way(ctx_, way);
+    ut_txv_set_start_vrx(ctx_, start_vrx);
+    ut_txv_set_st22_rtp_level(ctx_, st22);
+    return ut_txv_init_rl_pacing(ctx_, 1, 0, false, trained, wide) == 0;
+  }
+  uint64_t EpochTai(uint64_t epoch) const {
+    return st_epoch_to_tai(epoch, f_->mul, f_->den);
+  }
+  /* where a pre-fill of vrx packets starts, before the snap */
+  long double Edge(uint64_t epoch) const {
+    return (long double)EpochTai(epoch) + ut_txv_pacing_tr_offset(ctx_) -
+           ut_txv_pacing_vrx(ctx_) * ut_txv_pacing_trs(ctx_);
+  }
+  /* packet 0's target of the frame tv_sync_pacing() schedules for epoch, -1 on error */
+  long double FirstTarget(uint64_t epoch) {
+    ut_txv_set_cur_epochs(ctx_, epoch - 1);
+    ut_txv_set_mock_ptp_time(ctx_, EpochTai(epoch - 1));
+    if (ut_txv_sync_pacing(ctx_, 0) < 0 || ut_txv_cur_epochs(ctx_) != epoch) return -1;
+    return ut_txv_ptp_time_cursor(ctx_);
+  }
+  ut_txv_ctx* ctx_ = nullptr;
+  const UtNarrowFormat* f_ = nullptr;
+};
+
+/* A TSC_NARROW packet leaves at its target, one per trs, so at zero TX latency EBU LIST
+ * reads VRX ceil((epoch + tr_offset - start) / trs): on every tick phase of the epochs
+ * the start snaps to a 90 kHz tick that keeps that at VRX_full narrow, for the narrow
+ * pre-fill, also when a start_vrx past the tr_offset is rejected for it, and for a
+ * start_vrx just under VRX_full. */
+TEST_F(St20TxTscNarrowPreFill, SnappedStartKeepsNarrowVrxOnEveryPhase) {
+  for (const auto& f : kUtNarrowFormats) {
+    const uint16_t start_vrxs[] = {0, 1000, (uint16_t)(f.vrx_full - 2),
+                                   (uint16_t)(f.vrx_full - 1)};
+    for (uint16_t start_vrx : start_vrxs) {
+      SCOPED_TRACE(std::string(f.name) + " start_vrx " + std::to_string(start_vrx));
+      ASSERT_TRUE(Init(f, UT_TXV_PACING_TSC_NARROW, false, start_vrx, false));
+      const uint32_t vrx = start_vrx && start_vrx < 1000 ? start_vrx : f.vrx_full;
+      ASSERT_EQ(ut_txv_pacing_vrx(ctx_), vrx);
+      ASSERT_EQ(ut_txv_bulk(ctx_), 1u);
+      const long double trs = ut_txv_pacing_trs(ctx_);
+      ASSERT_NEAR((double)trs, (double)f.trs, 1e-6);
+
+      for (uint64_t epoch = 1000; epoch < 1002; epoch++) {
+        SCOPED_TRACE(epoch);
+        const long double start = FirstTarget(epoch);
+        ASSERT_GT(start, 0);
+        const long double drain = EpochTai(epoch) + ut_txv_pacing_tr_offset(ctx_);
+        EXPECT_EQ((uint64_t)start,
+                  ut_txv_round_to_media_clk((uint64_t)start, kUtRlRate90k));
+        EXPECT_LE((uint32_t)ceill((drain - start) / trs), f.vrx_full);
+        EXPECT_LT(start, Edge(epoch) + kUtTickNs);
+      }
+    }
+  }
+}
+
+/* TSC_NARROW sends a pre-fill one packet per trs, so one of a tick or more, wide or from
+ * start_vrx too, starts on the first tick at or after its edge, truncated to a ns */
+TEST_F(St20TxTscNarrowPreFill, APreFillOfATickOrMoreSnapsUp) {
+  const struct {
+    const char* name;
+    const UtNarrowFormat& f;
+    bool wide;
+    uint16_t start_vrx;
+  } cases[] = {{"wide", kUt2160p59, true, 0},
+               {"start_vrx 30", kUt2160p59, false, 30},
+               {"start_vrx 12", kUt2160p59, false, 12},
+               {"start_vrx 3", kUt1080p59, false, 3}};
+
+  for (const auto& c : cases) {
+    SCOPED_TRACE(std::string(c.f.name) + " " + c.name);
+    ASSERT_TRUE(Init(c.f, UT_TXV_PACING_TSC_NARROW, c.wide, c.start_vrx, false));
+    ASSERT_GE(ut_txv_pacing_vrx(ctx_) * ut_txv_pacing_trs(ctx_), kUtTickNs);
+
+    for (uint64_t epoch = 1000; epoch < 1002; epoch++) {
+      SCOPED_TRACE(epoch);
+      const long double start = FirstTarget(epoch);
+      ASSERT_GT(start, 0);
+      const uint64_t edge = (uint64_t)Edge(epoch);
+      EXPECT_EQ((uint64_t)start,
+                ut_txv_round_to_media_clk((uint64_t)start, kUtRlRate90k));
+      EXPECT_GE((uint64_t)start, edge);
+      EXPECT_LT(start, edge + kUtTickNs);
+    }
+  }
+}
+
+/* A pre-fill under a tick cannot overfill VRX with the nearest snap, and snapped up its
+ * packet 0 could pass TRoffset: it keeps the nearest snap, as ST22's empty one does */
+TEST_F(St20TxTscNarrowPreFill, ASubTickPreFillKeepsTheNearestSnap) {
+  const struct {
+    const char* name;
+    const UtNarrowFormat& f;
+    uint16_t start_vrx;
+    bool st22;
+  } cases[] = {{"st22", kUt2160p59, 0, true},
+               {"start_vrx 11", kUt2160p59, 11, false},
+               {"start_vrx 10", kUt2160p59, 10, false},
+               {"start_vrx 2", kUt1080p59, 2, false}};
+
+  for (const auto& c : cases) {
+    SCOPED_TRACE(std::string(c.f.name) + " " + c.name);
+    ASSERT_TRUE(Init(c.f, UT_TXV_PACING_TSC_NARROW, false, c.start_vrx, c.st22));
+    ASSERT_LT(ut_txv_pacing_vrx(ctx_) * ut_txv_pacing_trs(ctx_), kUtTickNs);
+
+    for (uint64_t epoch = 1000; epoch < 1002; epoch++) {
+      SCOPED_TRACE(epoch);
+      const long double start = FirstTarget(epoch);
+      ASSERT_GT(start, 0);
+      EXPECT_EQ((uint64_t)start,
+                ut_txv_round_to_media_clk((uint64_t)Edge(epoch), kUtRlRate90k));
+      if (c.start_vrx) {
+        EXPECT_LT(start, EpochTai(epoch) + ut_txv_pacing_tr_offset(ctx_));
+      }
+    }
+  }
+}
+
+/* the control: TSC keeps the nearest snap */
+TEST_F(St20TxTscNarrowPreFill, TscKeepsTheNearestSnap) {
+  ASSERT_TRUE(Init(kUt2160p59, UT_TXV_PACING_TSC, false, 0, false));
+
+  for (uint64_t epoch = 1000; epoch < 1002; epoch++) {
+    SCOPED_TRACE(epoch);
+    const long double start = FirstTarget(epoch);
+    ASSERT_GT(start, 0);
+    EXPECT_EQ((uint64_t)start,
+              ut_txv_round_to_media_clk((uint64_t)Edge(epoch), kUtRlRate90k));
+  }
+}
+
+/* After an EXACT frame the next frame moves one epoch on only if its snapped start comes
+ * within one frame time of the EXACT start: an EXACT start one frame time, rounded down
+ * to a ns, before it keeps that epoch, and one 1 ns later moves it on, on every tick
+ * phase, for the narrow pre-fill and for a start_vrx of 2, under a tick from 1080p up. */
+TEST_F(St20TxTscNarrowPreFill, TheFrameAfterAnExactFrameIsJudgedOnItsSnappedStart) {
+  for (const auto& f : kUtNarrowFormats)
+    for (uint16_t start_vrx : {0, 2}) {
+      SCOPED_TRACE(std::string(f.name) + " start_vrx " + std::to_string(start_vrx));
+      ASSERT_TRUE(Init(f, UT_TXV_PACING_TSC_NARROW, false, start_vrx, false));
+      ut_txv_set_exact_user_pacing(ctx_, true);
+      const long double frame_time = ut_txv_pacing_frame_time(ctx_);
+
+      for (uint64_t epoch = 1000; epoch < 1002; epoch++)
+        for (uint64_t later : {0, 1}) {
+          SCOPED_TRACE(std::to_string(epoch) + " later " + std::to_string(later));
+          const long double next_start = FirstTarget(epoch + 1);
+          ASSERT_GT(next_start, 0);
+          const uint64_t exact_tai = (uint64_t)floorl(next_start - frame_time) + later;
+          ut_txv_set_cur_epochs(ctx_, epoch - 1);
+          ut_txv_set_mock_ptp_time(ctx_, EpochTai(epoch - 1));
+          ASSERT_EQ(ut_txv_sync_pacing(ctx_, exact_tai), 0);
+          ASSERT_EQ(ut_txv_cur_epochs(ctx_), epoch);
+
+          ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+          EXPECT_EQ(ut_txv_cur_epochs(ctx_), epoch + 1 + later);
+          EXPECT_GE(ut_txv_ptp_time_cursor(ctx_), exact_tai + frame_time);
+        }
+    }
+}
