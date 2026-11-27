@@ -48,6 +48,7 @@ static int rv_detector_init(struct st_rx_video_session_impl* s) {
   detector->frame_num = 0;
   detector->single_line = true;
   detector->pkt_per_frame = 0;
+  detector->n_packet_err_logged = false;
 
   meta->width = 0;
   meta->height = 0;
@@ -174,13 +175,14 @@ static void rv_detector_calculate_fps(struct st_rx_video_session_impl* s,
 
 static void rv_detector_calculate_n_packet(struct st_rx_video_session_impl* s,
                                            struct st_rx_video_detector* detector) {
-  int total0 = detector->pkt_num[1] - detector->pkt_num[0];
-  int total1 = detector->pkt_num[2] - detector->pkt_num[1];
+  uint32_t total0 = detector->rtp_seq[1] - detector->rtp_seq[0];
+  uint32_t total1 = detector->rtp_seq[2] - detector->rtp_seq[1];
 
   if (total0 == total1) {
-    detector->pkt_per_frame = total0;
-  } else {
-    err("%s(%d), err total0 %d total1 %d\n", __func__, s->idx, total0, total1);
+    detector->pkt_per_frame = (int)total0;
+  } else if (!detector->n_packet_err_logged) {
+    err("%s(%d), err total0 %u total1 %u\n", __func__, s->idx, total0, total1);
+    detector->n_packet_err_logged = true;
   }
 }
 
@@ -2896,8 +2898,7 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
   if (rtp->base.marker) {
     if (detector->frame_num < 3) {
       detector->rtp_tm[detector->frame_num] = tmstamp;
-      detector->pkt_num[detector->frame_num] =
-          s->port_user_stats.common.stat_pkts_received;
+      detector->rtp_seq[detector->frame_num] = rfc4175_rtp_seq_id(rtp);
       detector->frame_num++;
     } else {
       rv_detector_calculate_dimension(s, detector, line1_number);
@@ -2911,7 +2912,7 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
         rv_detect_change_status(s, ST20_DETECT_STAT_FAIL);
         err("%s(%d,%d): st20 failed to detect dimension, max_line: %d\n", __func__,
             s->idx, s_port, line1_number);
-      } else { /* detected */
+      } else if (detector->pkt_per_frame || !s->enable_timing_parser) { /* detected */
         ops->width = meta->width;
         ops->height = meta->height;
         ops->fps = meta->fps;

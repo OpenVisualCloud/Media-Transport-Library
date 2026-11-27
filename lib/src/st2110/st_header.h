@@ -578,10 +578,11 @@ struct st_rx_video_detector {
   enum st20_detect_status status;
   bool bpm;
   uint32_t rtp_tm[3];
-  int pkt_num[3];
+  uint32_t rtp_seq[3];
   int frame_num;
   bool single_line;
   int pkt_per_frame;
+  bool n_packet_err_logged;
 
   /* detect result */
   struct st20_detect_meta meta;

@@ -340,6 +340,25 @@ uint64_t ut20_stat_slot_query_ext_fail(const ut20_test_ctx* ctx);
  * context cannot be fed packets afterwards. */
 int ut20_init_sw_dma_requests(ut20_test_ctx* ctx, bool gpu_frames);
 
+/* ── format detection ─────────────────────────────────────────────────── */
+
+/* Run the production rv_attach() of a single port 640x480p59.94 YUV422-10 frame
+ * session with `flags` over fake rx queues, with the notify_detected rv_ops_check()
+ * requires for auto-detect, which counts its calls. A timing parser or auto-detect
+ * flag starts it in format detection. ut20_ctx_destroy() detaches it. */
+int ut20_ctx_attach_st20(ut20_test_ctx* ctx, uint32_t flags);
+/* Feed one frame of the attached session through the production wrapper, one pkt
+ * per line with the marker on the last, as if line `lost_line` (-1: none) was lost
+ * on the wire. Returns 0, or -1 if a pkt could not be allocated. */
+int ut20_feed_attached_frame(ut20_test_ctx* ctx, uint32_t ts, int lost_line);
+/* Advance the RTP seq of the next fed pkt by `n`: a discontinuity such as a sender
+ * restart, or before the first pkt a start `n` seqs on. */
+void ut20_skip_wire_seq(ut20_test_ctx* ctx, uint32_t n);
+/* notify_detected calls of the attached session. */
+int ut20_detected_cnt(const ut20_test_ctx* ctx);
+/* Pkts per frame the detector counted, 0 until a sample gives one. */
+int ut20_detect_pkt_per_frame(const ut20_test_ctx* ctx);
+
 /* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
 
 /* Switch the session into ST 2110-22 frame mode: install the st22 rx info and
@@ -391,8 +410,9 @@ uint16_t ut20_st22_build_boxes(void* buf, uint32_t jpvs_lbox, uint32_t colr_lbox
  * to derive expected counts without hard-coding the value. */
 int ut20_total_frame_pkts(void);
 
-/* Live geometry: number of packets per frame for THIS context. Returns
- * the value passed to ut20_ctx_create_geom() (or 2 for ut20_ctx_create()). */
+/* Live geometry: the session height, which is the number of packets per frame of
+ * a one pkt per line context: the value passed to ut20_ctx_create_geom() (2 for
+ * ut20_ctx_create()), or 480 after ut20_ctx_attach_st20(). */
 int ut20_pkts_per_frame(const ut20_test_ctx* ctx);
 
 /* Framebuffer size in bytes for THIS context. */

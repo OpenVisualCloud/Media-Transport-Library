@@ -143,6 +143,7 @@ unit_sources = [
   'session/st20/st22_box_parse_test.cpp',
   'session/st20/st22_pkt_counter_test.cpp',
   'session/st20/st22_interlaced_test.cpp',
+  'session/st20/detect_test.cpp',
   'session/st20/st20_first_pkt_idx_test.cpp',
   'session/st20/st20_user_meta_test.cpp',
   'session/st20/dma_test.cpp',
