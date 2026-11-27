@@ -5,6 +5,7 @@
 #undef MTL_HAS_USDT
 #include "pipeline/st_plugin_harness.h"
 
+#include "common/ut_common.h"
 #include "st2110/pipeline/st_plugin.c"
 
 static struct st22_encode_dev_impl ut_encoder;
@@ -126,4 +127,71 @@ unsigned int ut_plugin_resp_flag(enum ut_plugin_kind kind, void* session) {
   if (kind == UT_PLUGIN_ENCODER)
     return ((struct st22_encode_session_impl*)session)->req.req.resp_flag;
   return ((struct st22_decode_session_impl*)session)->req.req.resp_flag;
+}
+
+static struct mtl_main_impl ut_impl;
+static struct st_dl_plugin_impl ut_slot_taken;
+
+void* ut_plugin_mgr_init(void) {
+  ut_eal_init();
+  memset(&ut_impl, 0, sizeof(ut_impl));
+  ut_impl.type = MT_HANDLE_MAIN;
+  mt_pthread_mutex_init(&ut_impl.plugin_mgr.lock, NULL);
+  mt_pthread_mutex_init(&ut_impl.plugin_mgr.plugins_lock, NULL);
+  return &ut_impl;
+}
+
+const char* ut_plugin_so_path(enum ut_plugin_so so) {
+  switch (so) {
+    case UT_SO_PLAIN:
+      return UT_PLUGIN_SO;
+    case UT_SO_KEEP_DEV:
+      return UT_PLUGIN_KEEP_DEV_SO;
+    case UT_SO_FAIL_CREATE:
+      return UT_PLUGIN_FAIL_CREATE_SO;
+    case UT_SO_BUSY:
+      return UT_PLUGIN_BUSY_SO;
+    case UT_SO_FAIL_CREATE_BUSY:
+      return UT_PLUGIN_FAIL_CREATE_BUSY_SO;
+  }
+  return NULL;
+}
+
+int ut_plugin_mgr_encoders(void) {
+  int cnt = 0;
+
+  for (int i = 0; i < ST_MAX_ENCODER_DEV; i++)
+    if (ut_impl.plugin_mgr.encode_devs[i]) cnt++;
+  return cnt;
+}
+
+void* ut_plugin_mgr_get_encoder(void) {
+  struct st22_get_encoder_request req = {
+      .device = ST_PLUGIN_DEVICE_AUTO,
+      .req = {.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE,
+              .output_fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM},
+  };
+
+  return st22_get_encoder(&ut_impl, &req);
+}
+
+void ut_plugin_mgr_put_encoder(void* session) {
+  st22_put_encoder(&ut_impl, session);
+}
+
+int ut_plugin_mgr_uinit(void) {
+  return st_plugins_uinit(&ut_impl);
+}
+
+void ut_plugin_mgr_hold_encoder(void) {
+  for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
+    if (!ut_impl.plugin_mgr.encode_devs[i]) continue;
+    rte_atomic32_inc(&ut_impl.plugin_mgr.encode_devs[i]->ref_cnt);
+    return;
+  }
+}
+
+void ut_plugin_mgr_fill_slots(bool full) {
+  for (int i = 0; i < ST_MAX_DL_PLUGINS; i++)
+    ut_impl.plugin_mgr.plugins[i] = full ? &ut_slot_taken : NULL;
 }

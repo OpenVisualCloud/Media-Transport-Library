@@ -1439,6 +1439,7 @@ struct st22_encode_dev_impl {
   char name[ST_MAX_NAME_LEN];
   struct st22_encoder_dev dev;
   rte_atomic32_t ref_cnt;
+  struct st_dl_plugin_impl* owner; /* NULL if the app registered it */
   struct st22_encode_session_impl sessions[ST_MAX_SESSIONS_PER_ENCODER];
 };
 
@@ -1458,6 +1459,7 @@ struct st22_decode_dev_impl {
   char name[ST_MAX_NAME_LEN];
   struct st22_decoder_dev dev;
   rte_atomic32_t ref_cnt;
+  struct st_dl_plugin_impl* owner; /* NULL if the app registered it */
   struct st22_decode_session_impl sessions[ST_MAX_SESSIONS_PER_DECODER];
 };
 
@@ -1477,6 +1479,7 @@ struct st20_convert_dev_impl {
   char name[ST_MAX_NAME_LEN];
   struct st20_converter_dev dev;
   rte_atomic32_t ref_cnt;
+  struct st_dl_plugin_impl* owner; /* NULL if the app registered it */
   struct st20_convert_session_impl sessions[ST_MAX_SESSIONS_PER_CONVERTER];
 };
 
@@ -1488,6 +1491,7 @@ struct st_dl_plugin_impl {
   st_plugin_priv handle;
   st_plugin_free_fn free;
   struct st_plugin_meta meta;
+  bool closing; /* its devs grant no new sessions */
 };
 
 struct st_plugin_mgr {
@@ -1498,6 +1502,9 @@ struct st_plugin_mgr {
   pthread_mutex_t plugins_lock; /* lock for plugins */
   struct st_dl_plugin_impl* plugins[ST_MAX_DL_PLUGINS];
   int plugins_nb;
+  /* guarded by lock: the plugin whose create_fn runs, and its thread */
+  struct st_dl_plugin_impl* loading;
+  pthread_t loading_thread;
 };
 
 /* IMPORTANT: After *_free returns this->impl is dangling memory.

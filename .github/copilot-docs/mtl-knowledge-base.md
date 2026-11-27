@@ -1168,6 +1168,10 @@ Binding: search by capability bitmask (`input_fmt_caps`, `output_fmt_caps`). Fir
 
 - Plugins own their threads (not called from tasklets)
 - The session handle is live as soon as `create_session` is entered: its `*_get_frame` returns NULL until the pipeline is ready, and the plugin's writes to the create request land in the session's copy
+- Devs registered by `st_plugin_create` on its calling thread are owned by that plugin (`owner`, via `mgr->loading` + `loading_thread`); devs registered elsewhere (app, lazily, other threads) have no owner, so a plugin doing that is unsupported
+- `st_plugin_create`/`st_plugin_free` run under `plugins_lock` and must not call `st_plugin_(un)register`
+- Unregister: `-EBUSY` while any owned dev has `ref_cnt`; else the plugin is marked closing (its devs grant no new sessions) and `st_plugin_free` runs; an owned dev still registered after it (or after a failed create) keeps the `.so` loaded, never `dlclose`d
+- Uninit: a busy plugin keeps its `.so` mapped and its devs (any dev with a session, or of a plugin not freed) alive, so plugin threads never run unmapped code or touch freed `sessions[]`; `mtl_uninit` still frees `impl`, so any st2x put after it is undefined: apps must free sessions first (`mt_main_free` warns)
 - Max 8 plugins per MTL instance (`ST_MAX_DL_PLUGINS = 8`)
 - Loaded during `mtl_init()` from JSON config
 

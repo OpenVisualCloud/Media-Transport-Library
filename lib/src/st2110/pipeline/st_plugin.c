@@ -15,15 +15,68 @@ static inline struct st_plugin_mgr* st_get_plugins_mgr(struct mtl_main_impl* imp
   return &impl->plugin_mgr;
 }
 
-static int st_plugin_free(struct st_dl_plugin_impl* plugin) {
-  if (plugin->free) plugin->free(plugin->handle);
-  if (plugin->dl_handle) {
-    dlclose(plugin->dl_handle);
-    plugin->dl_handle = NULL;
-  }
-  mt_rte_free(plugin);
+/* caller holds mgr->lock; a dev registered by another thread has no owner */
+static struct st_dl_plugin_impl* st_plugin_loading(struct st_plugin_mgr* mgr) {
+  if (mgr->loading && pthread_equal(mgr->loading_thread, pthread_self()))
+    return mgr->loading;
+  return NULL;
+}
 
+/* caller holds mgr->lock */
+static int st_plugin_devs(struct st_plugin_mgr* mgr, struct st_dl_plugin_impl* plugin,
+                          bool busy_only) {
+  int cnt = 0;
+
+  for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
+    struct st22_encode_dev_impl* dev = mgr->encode_devs[i];
+    if (dev && dev->owner == plugin && (!busy_only || rte_atomic32_read(&dev->ref_cnt)))
+      cnt++;
+  }
+  for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
+    struct st22_decode_dev_impl* dev = mgr->decode_devs[i];
+    if (dev && dev->owner == plugin && (!busy_only || rte_atomic32_read(&dev->ref_cnt)))
+      cnt++;
+  }
+  for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
+    struct st20_convert_dev_impl* dev = mgr->convert_devs[i];
+    if (dev && dev->owner == plugin && (!busy_only || rte_atomic32_read(&dev->ref_cnt)))
+      cnt++;
+  }
+
+  return cnt;
+}
+
+/* the .so stays loaded while a dev it registered does: the dev calls into it */
+static int st_plugin_close(struct st_plugin_mgr* mgr, struct st_dl_plugin_impl* plugin) {
+  int left;
+
+  mt_pthread_mutex_lock(&mgr->lock);
+  left = st_plugin_devs(mgr, plugin, false);
+  mt_pthread_mutex_unlock(&mgr->lock);
+  if (left) {
+    err("%s, %s left %d devs registered, keep it loaded\n", __func__, plugin->path, left);
+    return -EIO;
+  }
+
+  dlclose(plugin->dl_handle);
+  mt_rte_free(plugin);
   return 0;
+}
+
+static int st_plugin_free(struct st_plugin_mgr* mgr, struct st_dl_plugin_impl* plugin) {
+  int busy;
+
+  mt_pthread_mutex_lock(&mgr->lock);
+  busy = st_plugin_devs(mgr, plugin, true);
+  if (!busy) plugin->closing = true;
+  mt_pthread_mutex_unlock(&mgr->lock);
+  if (busy) {
+    err("%s, %s has %d devs in use\n", __func__, plugin->path, busy);
+    return -EBUSY;
+  }
+
+  plugin->free(plugin->handle);
+  return st_plugin_close(mgr, plugin);
 }
 
 int st_plugins_init(struct mtl_main_impl* impl) {
@@ -37,42 +90,72 @@ int st_plugins_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
+/* a dev of a plugin that was not freed, or with a session, may still be in use */
+static bool st_plugin_dev_kept(struct st_dl_plugin_impl* owner, rte_atomic32_t* ref_cnt) {
+  return owner && (!owner->closing || rte_atomic32_read(ref_cnt));
+}
+
 int st_plugins_uinit(struct mtl_main_impl* impl) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
+  bool busy = false;
 
   mt_stat_unregister(impl, st_plugins_dump, impl);
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     if (mgr->plugins[i]) {
       dbg("%s, active plugin in %d\n", __func__, i);
-      st_plugin_free(mgr->plugins[i]);
-      mgr->plugins[i] = NULL;
+      if (!st_plugin_free(mgr, mgr->plugins[i])) mgr->plugins[i] = NULL;
     }
   }
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
-    if (mgr->encode_devs[i]) {
+    if (!mgr->encode_devs[i]) continue;
+    if (st_plugin_dev_kept(mgr->encode_devs[i]->owner, &mgr->encode_devs[i]->ref_cnt)) {
+      err("%s, keep busy encode dev %s\n", __func__, mgr->encode_devs[i]->name);
+      busy = true;
+    } else {
       dbg("%s, still has encode dev in %d\n", __func__, i);
       mt_rte_free(mgr->encode_devs[i]);
       mgr->encode_devs[i] = NULL;
     }
   }
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
-    if (mgr->decode_devs[i]) {
+    if (!mgr->decode_devs[i]) continue;
+    if (st_plugin_dev_kept(mgr->decode_devs[i]->owner, &mgr->decode_devs[i]->ref_cnt)) {
+      err("%s, keep busy decode dev %s\n", __func__, mgr->decode_devs[i]->name);
+      busy = true;
+    } else {
       dbg("%s, still has decode dev in %d\n", __func__, i);
       mt_rte_free(mgr->decode_devs[i]);
       mgr->decode_devs[i] = NULL;
     }
   }
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
-    if (mgr->convert_devs[i]) {
+    if (!mgr->convert_devs[i]) continue;
+    if (st_plugin_dev_kept(mgr->convert_devs[i]->owner, &mgr->convert_devs[i]->ref_cnt)) {
+      err("%s, keep busy convert dev %s\n", __func__, mgr->convert_devs[i]->name);
+      busy = true;
+    } else {
       dbg("%s, still has convert dev in %d\n", __func__, i);
       mt_rte_free(mgr->convert_devs[i]);
       mgr->convert_devs[i] = NULL;
     }
   }
+  mt_pthread_mutex_lock(&mgr->lock);
+  for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
+    struct st_dl_plugin_impl* plugin = mgr->plugins[i];
+    if (!plugin) continue;
+    if (st_plugin_devs(mgr, plugin, false)) {
+      err("%s, %s busy, leave it and its devs\n", __func__, plugin->path);
+    } else {
+      mt_rte_free(plugin);
+      mgr->plugins[i] = NULL;
+    }
+  }
+  mt_pthread_mutex_unlock(&mgr->lock);
   mt_pthread_mutex_destroy(&mgr->lock);
   mt_pthread_mutex_destroy(&mgr->plugins_lock);
 
-  return 0;
+  /* the kept .so and devs only spare the plugin's own threads */
+  return busy ? -EBUSY : 0;
 }
 
 int st22_put_encoder(struct mtl_main_impl* impl,
@@ -152,6 +235,7 @@ struct st22_encode_session_impl* st22_get_encoder(struct mtl_main_impl* impl,
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
     dev_impl = mgr->encode_devs[i];
     if (!dev_impl) continue;
+    if (dev_impl->owner && dev_impl->owner->closing) continue;
     dbg("%s(%d), try to find one dev\n", __func__, i);
     dev = &mgr->encode_devs[i]->dev;
     if (!st22_encoder_is_capable(dev, req)) {
@@ -248,6 +332,7 @@ struct st22_decode_session_impl* st22_get_decoder(struct mtl_main_impl* impl,
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
     dev_impl = mgr->decode_devs[i];
     if (!dev_impl) continue;
+    if (dev_impl->owner && dev_impl->owner->closing) continue;
     dbg("%s(%d), try to find one dev\n", __func__, i);
     dev = &mgr->decode_devs[i]->dev;
     if (!st22_decoder_is_capable(dev, req)) continue;
@@ -349,6 +434,7 @@ struct st20_convert_session_impl* st20_get_converter(
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
     dev_impl = mgr->convert_devs[i];
     if (!dev_impl) continue;
+    if (dev_impl->owner && dev_impl->owner->closing) continue;
     dbg("%s(%d), try to find one dev\n", __func__, i);
     dev = &mgr->convert_devs[i]->dev;
     if (!st20_converter_is_capable(dev, req)) continue;
@@ -568,6 +654,7 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
     encode_dev->parent = impl;
     encode_dev->idx = i;
     rte_atomic32_set(&encode_dev->ref_cnt, 0);
+    encode_dev->owner = st_plugin_loading(mgr);
     snprintf(encode_dev->name, ST_MAX_NAME_LEN - 1, "%s", dev->name);
     encode_dev->dev = *dev;
     for (int j = 0; j < ST_MAX_SESSIONS_PER_ENCODER; j++) {
@@ -626,6 +713,7 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
     decode_dev->parent = impl;
     decode_dev->idx = i;
     rte_atomic32_set(&decode_dev->ref_cnt, 0);
+    decode_dev->owner = st_plugin_loading(mgr);
     snprintf(decode_dev->name, ST_MAX_NAME_LEN - 1, "%s", dev->name);
     decode_dev->dev = *dev;
     for (int j = 0; j < ST_MAX_SESSIONS_PER_DECODER; j++) {
@@ -688,6 +776,7 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
     convert_dev->parent = impl;
     convert_dev->idx = i;
     rte_atomic32_set(&convert_dev->ref_cnt, 0);
+    convert_dev->owner = st_plugin_loading(mgr);
     snprintf(convert_dev->name, ST_MAX_NAME_LEN - 1, "%s", dev->name);
     convert_dev->dev = *dev;
     for (int j = 0; j < ST_MAX_SESSIONS_PER_CONVERTER; j++) {
@@ -919,42 +1008,55 @@ int st_plugin_register(mtl_handle mt, const char* path) {
     dlclose(dl_handle);
     return -EIO;
   }
-  pl_handle = create_fn(impl);
-  if (!pl_handle) {
-    err("%s, create_fn run fail in %s\n", __func__, path);
+
+  struct st_dl_plugin_impl* plugin;
+  int i;
+
+  mt_pthread_mutex_lock(&mgr->plugins_lock);
+  for (i = 0; i < ST_MAX_DL_PLUGINS; i++) {
+    if (!mgr->plugins[i]) break;
+  }
+  if (i >= ST_MAX_DL_PLUGINS) {
+    mt_pthread_mutex_unlock(&mgr->plugins_lock);
+    err("%s, no space, all items are used\n", __func__);
     dlclose(dl_handle);
     return -EIO;
   }
-
-  struct st_dl_plugin_impl* plugin;
-  /* add to the plugins */
-  mt_pthread_mutex_lock(&mgr->plugins_lock);
-  for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
-    if (mgr->plugins[i]) continue;
-    plugin = mt_rte_zmalloc_socket(sizeof(*plugin), mt_socket_id(impl, MTL_PORT_P));
-    if (!plugin) {
-      mt_pthread_mutex_unlock(&mgr->plugins_lock);
-      dlclose(dl_handle);
-      return -ENOMEM;
-    }
-    plugin->idx = i;
-    snprintf(plugin->path, ST_PLUGIN_MAX_PATH_LEN - 1, "%s", path);
-    plugin->dl_handle = dl_handle;
-    plugin->create = create_fn;
-    plugin->free = free_fn;
-    plugin->handle = pl_handle;
-    plugin->meta = meta;
-    mgr->plugins_nb++;
-    mgr->plugins[i] = plugin;
+  plugin = mt_rte_zmalloc_socket(sizeof(*plugin), mt_socket_id(impl, MTL_PORT_P));
+  if (!plugin) {
     mt_pthread_mutex_unlock(&mgr->plugins_lock);
-    info("%s(%d), %s registered, version %d\n", __func__, i, path, meta.version);
-    return 0;
+    dlclose(dl_handle);
+    return -ENOMEM;
   }
-  mt_pthread_mutex_unlock(&mgr->plugins_lock);
+  plugin->idx = i;
+  snprintf(plugin->path, ST_PLUGIN_MAX_PATH_LEN - 1, "%s", path);
+  plugin->dl_handle = dl_handle;
+  plugin->create = create_fn;
+  plugin->free = free_fn;
+  plugin->meta = meta;
 
-  err("%s, no space, all items are used\n", __func__);
-  dlclose(dl_handle);
-  return -EIO;
+  mt_pthread_mutex_lock(&mgr->lock);
+  mgr->loading = plugin;
+  mgr->loading_thread = pthread_self();
+  mt_pthread_mutex_unlock(&mgr->lock);
+  pl_handle = create_fn(impl);
+  mt_pthread_mutex_lock(&mgr->lock);
+  mgr->loading = NULL;
+  if (!pl_handle) plugin->closing = true;
+  mt_pthread_mutex_unlock(&mgr->lock);
+  if (!pl_handle) {
+    mt_pthread_mutex_unlock(&mgr->plugins_lock);
+    err("%s, create_fn run fail in %s\n", __func__, path);
+    st_plugin_close(mgr, plugin);
+    return -EIO;
+  }
+
+  plugin->handle = pl_handle;
+  mgr->plugins_nb++;
+  mgr->plugins[i] = plugin;
+  mt_pthread_mutex_unlock(&mgr->plugins_lock);
+  info("%s(%d), %s registered, version %d\n", __func__, i, path, meta.version);
+  return 0;
 }
 
 int st_plugin_unregister(mtl_handle mt, const char* path) {
@@ -968,10 +1070,13 @@ int st_plugin_unregister(mtl_handle mt, const char* path) {
     if (plugin) {
       if (!strncmp(plugin->path, path, ST_PLUGIN_MAX_PATH_LEN - 1)) {
         info("%s, unregister %s at %d\n", __func__, path, i);
-        st_plugin_free(plugin);
-        mgr->plugins[i] = NULL;
+        int ret = st_plugin_free(mgr, plugin);
+        if (ret != -EBUSY) {
+          mgr->plugins[i] = NULL;
+          mgr->plugins_nb--;
+        }
         mt_pthread_mutex_unlock(&mgr->plugins_lock);
-        return 0;
+        return ret;
       }
     }
   }
