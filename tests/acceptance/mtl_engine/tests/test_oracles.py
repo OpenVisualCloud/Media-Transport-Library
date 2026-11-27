@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
 
+import logging
+
 import pytest
 import requests
 from compliance import compliance_client
@@ -8,7 +10,7 @@ from compliance.compliance_client import PcapComplianceClient
 from create_pcap_file.netsniff import NetsniffRecorder
 from mtl_engine.application_base import Application
 from mtl_engine.integrity_session import NO_INTEGRITY
-from mtl_engine.pcap_compliance import CaptureIntent
+from mtl_engine.pcap_compliance import CaptureIntent, ComplianceSession
 from mtl_engine.rxtxapp import RxTxApp
 
 
@@ -215,6 +217,16 @@ def test_ebu_report_states_are_distinct():
     assert compliant is True
 
 
+def test_wide_only_compliance_failure_logs_the_report(caplog):
+    session = ComplianceSession(None, {}, "/mtl", "node")
+    stream = {"media_type": "video", "global_video_analysis": {"compliance": "wide"}}
+    report = {"analyzed": True, "not_compliant_streams": 0, "streams": [stream]}
+    intent = CaptureIntent(dst_ips=("239.1.0.1",), capture_time=1)
+    with caplog.at_level(logging.INFO), pytest.raises(AssertionError, match="'wide'"):
+        session._apply_checks(report, intent, allow_wide=False, fail_on_error=False)
+    assert f"Compliance report: {report}" in caplog.messages
+
+
 def test_finalize_reports_both_ebu_and_mtl_failures():
     class FailingCompliance:
         def evaluate(self, intent, fail_on_error):
@@ -323,25 +335,64 @@ def test_netsniff_drops_only_multicast_capture_destinations(capture_filter, expe
     assert recorder._multicast_dst_ips() == expected
 
 
+class _NetdevConn:
+    """A host connection that records commands and keeps the PROMISC flag."""
+
+    def __init__(self, process=None):
+        self.promisc, self.cmds, self.process = False, [], process
+
+    def execute_command(self, cmd, **_):
+        self.cmds.append(cmd)
+        if "promisc on" in cmd:
+            self.promisc = True
+        flags = "<BROADCAST,MULTICAST,PROMISC,UP>" if self.promisc else "<UP>"
+        return type("Res", (), {"return_code": 0, "stdout": flags, "stderr": ""})
+
+    def start_process(self, cmd, **_):
+        return self.process
+
+
 def test_netsniff_restores_promisc_after_a_second_start():
-    class Conn:
-        def __init__(self):
-            self.promisc, self.cmds = False, []
-
-        def execute_command(self, cmd, **_):
-            self.cmds.append(cmd)
-            if "promisc on" in cmd:
-                self.promisc = True
-            flags = "<BROADCAST,MULTICAST,PROMISC,UP>" if self.promisc else "<UP>"
-            return type("Res", (), {"return_code": 0, "stdout": flags, "stderr": ""})
-
     recorder = object.__new__(NetsniffRecorder)
     recorder.interface, recorder._promisc_was_off = "eth0", False
-    recorder.host = type("Host", (), {"connection": Conn()})
+    recorder.host = type("Host", (), {"connection": _NetdevConn()})
     recorder._enable_promisc(recorder.host.connection)
     recorder._enable_promisc(recorder.host.connection)
     recorder._restore_promisc()
     assert recorder.host.connection.cmds[-1] == "sudo ip link set dev eth0 promisc off"
+
+
+def test_netsniff_counted_capture_restores_the_netdev_when_it_ends(monkeypatch):
+    monkeypatch.setattr("create_pcap_file.netsniff.sleep", lambda _: None)
+
+    class Proc:
+        running, pid, stdout_text = True, 1, ""
+
+        def wait(self, timeout):
+            self.running = False
+
+    conn = _NetdevConn(Proc())
+    recorder = NetsniffRecorder(
+        type("Host", (), {"connection": conn, "name": "h"}),
+        "t",
+        "/tmp",
+        interface="eth0",
+        capture_filter="dst 239.1.0.1",
+        packets_capture=10,
+    )
+    recorder.capture()
+    drop_del = "sudo tc filter del dev eth0 ingress pref 2110"
+    assert conn.cmds.count(drop_del) == 2  # before the capture and after it
+    # The rule goes in before promisc and comes out after it: a promiscuous PF
+    # without the drop rule is the worst state.
+    add = next(i for i, c in enumerate(conn.cmds) if "tc filter add dev eth0" in c)
+    assert add < conn.cmds.index("sudo ip link set dev eth0 promisc on")
+    undo = len(conn.cmds) - 1 - conn.cmds[::-1].index(drop_del)
+    assert "sudo ip link set dev eth0 promisc off" in conn.cmds[:undo]
+    assert recorder.pcap_file  # evaluate() still uploads it
+    seen = len(conn.cmds)
+    recorder.stop()  # ComplianceSession.close() only reaps again
+    assert all("pkill" in c for c in conn.cmds[seen:])
 
 
 class _FakeClock:
