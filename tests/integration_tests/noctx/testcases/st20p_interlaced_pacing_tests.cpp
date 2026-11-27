@@ -17,9 +17,7 @@
  * See README.md, "Test catalogue".
  */
 
-#include "core/constants.hpp"
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 #include "strategies/st20p_strategies.hpp"
 
 static_assert(kNoCtxPacingEarlyMaxNs == 0, "comments quote 0 us early");
@@ -69,7 +67,7 @@ TEST_F(NoCtxTest, st20p_user_pacing_interlaced) {
   auto* frameTestStrategy = static_cast<St20pUserPacingOracle*>(bundle.strategy);
 
   bundle.handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   ASSERT_EQ(frameTestStrategy->getPacingParameters(), 0);
   EXPECT_GT(frameTestStrategy->pacing_tr_offset_ns, 0.0);

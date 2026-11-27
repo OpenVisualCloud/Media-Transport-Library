@@ -23,7 +23,6 @@
 #include <cstring>
 #include <deque>
 #include <functional>
-#include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
@@ -34,9 +33,7 @@
 #include <utility>
 #include <vector>
 
-#include "core/constants.hpp"
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 #include "strategies/st20p_strategies.hpp"
 
 namespace {
@@ -78,7 +75,7 @@ LegVrx summarize(std::vector<int32_t> vrx) {
 }
 
 /* The checks expectRlWire() does not make; every session and port is logged first. */
-void expectEqualVrxMargin(const std::vector<St20pVrxRecorder*>& rx,
+void expectEqualVrxMargin(const std::vector<RlWireCheck*>& rx,
                           const std::vector<int>& tx_sch) {
   if (std::all_of(rx.begin(), rx.end(),
                   [](const auto* r) { return r->delivery_ns.empty(); })) {
@@ -1046,6 +1043,17 @@ RlRun runRlMix(
   /* Following through mtl_init() keeps the first read's lag to 10 ms of drift. */
   ptp.follow();
   RlLogTap tap;
+  bool mtl_started = false;
+  struct StopMtlGuard {
+    st_tests_context* c;
+    bool& started;
+    ~StopMtlGuard() {
+      if (started && c && c->handle) {
+        mtl_stop(c->handle);
+        started = false;
+      }
+    }
+  } stop_mtl_guard{ctx, mtl_started};
 
   if (mix.one_quota)
     ctx->para.data_quota_mbs_per_sch =
@@ -1114,7 +1122,11 @@ RlRun runRlMix(
     return run;
   }
 
-  EXPECT_EQ(mtl_start(ctx->handle), 0);
+  if (mtl_start(ctx->handle) != 0) {
+    ADD_FAILURE() << "mtl_start failed";
+    return run;
+  }
+  mtl_started = true;
   for (const RlCreated& c : run.tx) {
     if (c.handler->sessionsHandleRx) c.handler->startSessionRx();
     c.handler->startSessionTx();
@@ -1165,6 +1177,8 @@ RlRun runRlMix(
   for (const RlCreated& c : run.tx)
     stops.emplace_back([h = c.handler] { h->stopSession(); });
   for (auto& t : stops) t.join();
+  mtl_stop(ctx->handle);
+  mtl_started = false;
   ptp.stop();
   expectRlWire(mix, run, tap, ptp, ctx);
   return run;
@@ -1224,7 +1238,7 @@ TEST_F(NoCtxTest, st20p_redundant_1080p59_s8_equal_vrx_margin) {
            "each other one with at most half as many";
   });
   if (IsSkipped() || HasFatalFailure() || run.rx.size() != kSessions) return;
-  expectEqualVrxMargin({run.rx.begin(), run.rx.end()}, run.rx_sch);
+  expectEqualVrxMargin(run.rx, run.rx_sch);
 }
 
 /* The 1080p59.94 sessions the TX link carries, capped at the TX video sessions one MTL

@@ -6,16 +6,18 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
-#include <mutex>
 
 class Handlers;
 
 class FrameTestStrategy {
  public:
-  FrameTestStrategy(Handlers* parent = nullptr, bool enable_tx_modifier = false,
-                    bool enable_rx_modifier = false);
-  virtual ~FrameTestStrategy();
+  explicit FrameTestStrategy(Handlers* parent = nullptr, bool enable_tx_modifier = false,
+                             bool enable_rx_modifier = false)
+      : parent(parent),
+        enable_tx_modifier(enable_tx_modifier),
+        enable_rx_modifier(enable_rx_modifier) {
+  }
+  virtual ~FrameTestStrategy() = default;
 
   virtual void txTestFrameModifier(void* /*frame*/, size_t /*frame_size*/) {
   }
@@ -23,8 +25,8 @@ class FrameTestStrategy {
   }
 
   Handlers* parent;
-  uint32_t idx_tx;
-  uint32_t idx_rx;
+  uint32_t idx_tx = 0;
+  uint32_t idx_rx = 0;
   bool enable_tx_modifier;
   bool enable_rx_modifier;
 };

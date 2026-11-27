@@ -18,40 +18,130 @@
 #include <vector>
 
 #include "../log.h"
+#include "../test_harness.hpp"
 #include "../tests.hpp"
 
-#define ST20_TRAIN_TIME_S (1)
 #define ST20_TEST_PAYLOAD_TYPE (112)
-#define DUMP_INCOMPLITE_SLICE (0)
 
-struct St20SessionConfig {
-  enum st20_type type;
-  enum st20_packing packing;
-  enum st_fps fps;
-  int width;
-  int height;
-  bool interlaced;
-  enum st20_fmt fmt;
+/*
+ * Steady-state FPS measurement window parameters:
+ * - kSt20WarmupFrames=12 (~200-400 ms) lets RL pacing training, TSC fallback,
+ *   and multi-session startup bursts settle completely before snapshotting t0.
+ * - kSt20MinRateFrames=35 over kSt20MinRateWindowMs=1500 gives <=2.9% edge
+ *   quantization error at 25 fps and <=1.1% at 59.94 fps (vs +/-10% tolerance).
+ */
+constexpr int kSt20WarmupFrames = 12;
+constexpr int kSt20MinRateFrames = 50;
+constexpr int kSt20MinRateWindowMs = 2000;
+constexpr int kSt20WarmupTimeoutMs = 10000;
+constexpr int kSt20WindowTimeoutMs = 10000;
+
+/* Functional/digest wait targets when check_fps is false (~1.0-1.5 s). */
+constexpr int kSt20MinRxFrames = 30;
+constexpr int kSt20MinSliceRxFrames = 40;
+constexpr int kSt20MinShaFrames = 10;
+constexpr int kSt20EventTimeoutMs = 8000;
+constexpr int kSt20SlicesPerFrame = 32;
+constexpr uint32_t kSt20RtpSsrcBase = 0x20000000u;
+
+struct St20ExtFrameStats {
+  bool dynamic_ext;
+  int ext_addr_mismatch_cnt;
+  int dynamic_query_cnt;
+  int dynamic_opaque_null_cnt;
 };
 
+struct St20RxSliceExpectMeta {
+  struct st20_rx_slice_meta meta;
+  bool slice_mode;
+  bool interlaced;
+  bool has_prev_field;
+  bool cur_second_field;
+  uint64_t cur_timestamp;
+  bool check_detect;
+  int detect_width;
+  int detect_height;
+  enum st_fps detect_fps;
+  enum st20_packing detect_packing;
+  bool detect_interlaced;
+  int detect_fail_cnt;
+};
+
+struct St20StreamSpec {
+  enum st20_type tx_type = ST20_TYPE_FRAME_LEVEL;
+  enum st20_type rx_type = ST20_TYPE_FRAME_LEVEL;
+  enum st20_packing packing = ST20_PACKING_BPM;
+  enum st_fps fps = ST_FPS_P59_94;
+  int width = 1920;
+  int height = 1080;
+  bool interlaced = false;
+  enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT;
+  int linesize = 0;
+};
+
+enum class St20TxBufMode {
+  kInternal,
+  kUserFrame,
+  kExtMap,
+  kExtDma,
+};
+
+struct St20UnlinkGuard {
+  const char* path = nullptr;
+  ~St20UnlinkGuard() {
+    if (path && path[0] != '\0') unlink(path);
+  }
+};
+
+inline void st20_set_handle(tests_context* c, void* h) {
+  __atomic_store_n(&c->handle, h, __ATOMIC_RELEASE);
+}
+
+inline void* st20_get_handle(const tests_context* c) {
+  return __atomic_load_n(&c->handle, __ATOMIC_ACQUIRE);
+}
+
 uint16_t udp_port_for_idx(int idx, bool hdr_split = false, int base = 10000);
-std::vector<St20SessionConfig> build_sessions(int sessions, enum st20_type type[],
-                                              enum st20_packing packing[],
-                                              enum st_fps fps[], int width[],
-                                              int height[], bool interlaced[],
-                                              enum st20_fmt fmt[]);
 tests_context* init_test_ctx(struct st_tests_context* global_ctx, int idx,
                              uint16_t fb_cnt, bool check_sha = false);
+bool st20_alloc_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t frame_size);
+bool st20_alloc_dma_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t fb_size);
+
+inline mtl_test::RateWindowResult st20_wait_rx_window(
+    const std::vector<tests_context*>& rx_ctx, bool check_fps, bool check_sha,
+    int min_rx_frames = kSt20MinRxFrames) {
+  mtl_test::RateWindowResult res;
+  if (check_fps) {
+    res = mtl_test::measure_rate_window(rx_ctx, mtl_test::rx_frames, kSt20WarmupFrames,
+                                        kSt20MinRateFrames, kSt20MinRateWindowMs,
+                                        kSt20WarmupTimeoutMs, kSt20WindowTimeoutMs);
+    if (check_sha) {
+      res.complete =
+          res.complete && mtl_test::wait_for_all(rx_ctx, mtl_test::sha_checked_frames,
+                                                 kSt20MinShaFrames, kSt20EventTimeoutMs);
+    }
+  } else {
+    res.rate.assign(rx_ctx.size(), 0.0);
+    res.warmed_up = mtl_test::wait_for_all(rx_ctx, mtl_test::rx_frames, min_rx_frames,
+                                           kSt20WarmupTimeoutMs);
+    res.complete =
+        res.warmed_up &&
+        (!check_sha || mtl_test::wait_for_all(rx_ctx, mtl_test::sha_checked_frames,
+                                              kSt20MinShaFrames, kSt20EventTimeoutMs));
+  }
+  return res;
+}
+
 void tx_feed_packet(void* args);
+void tx_feed_packet_ex(tests_context* ctx, bool incomplete_odd_frames = false,
+                       std::function<uint64_t(tests_context*)> tai_fn = nullptr);
 int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp,
-                              uint16_t* pkt_len);
+                              uint16_t* pkt_len, bool incomplete_odd_frames = false);
 int tx_next_video_frame(void* priv, uint16_t* next_frame_idx,
                         struct st20_tx_frame_meta* meta);
 int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
                                   struct st20_tx_frame_meta* meta);
 int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
-                            struct st20_tx_frame_meta* meta);
-int tx_next_ext_video_field(void* priv, uint16_t* next_frame_idx,
                             struct st20_tx_frame_meta* meta);
 int tx_notify_ext_frame_done(void* priv, uint16_t frame_idx,
                              struct st20_tx_frame_meta* meta);
@@ -59,13 +149,14 @@ int tx_notify_timestamp_frame_done(void* priv, uint16_t frame_idx,
                                    struct st20_tx_frame_meta* meta);
 int tx_notify_frame_done_check_tmstamp(void* priv, uint16_t frame_idx,
                                        struct st20_tx_frame_meta* meta);
-int tx_next_video_field(void* priv, uint16_t* next_frame_idx,
-                        struct st20_tx_frame_meta* meta);
 int tx_frame_lines_ready(void* priv, uint16_t frame_idx, struct st20_tx_slice_meta* meta);
 int tx_video_build_ooo_mapping(tests_context* s);
 
 int rx_rtp_ready(void* args);
 void rx_get_packet(void* args);
+void rx_get_packet_ex(
+    tests_context* ctx,
+    std::function<void(const struct st20_rfc4175_rtp_hdr*)> on_pkt = nullptr);
 int st20_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta);
 
 void st20_tx_ops_init(tests_context* st20, struct st20_tx_ops* ops);
@@ -76,24 +167,44 @@ void init_single_port_tx(struct st20_tx_ops& ops, tests_context* tctx, const cha
                          uint16_t udp_port);
 void init_single_port_rx(struct st20_rx_ops& ops, tests_context* tctx, const char* name,
                          uint16_t udp_port);
+void st20_fill_loopback_tx_ops(struct st20_tx_ops& ops, tests_context* tctx,
+                               const St20StreamSpec& st, const char* name,
+                               uint16_t udp_port, uint16_t rtp_pkt_size = 0);
+void st20_fill_loopback_rx_ops(struct st20_rx_ops& ops, tests_context* rctx,
+                               const St20StreamSpec& st, const char* name,
+                               uint16_t udp_port);
+void st20_setup_basic_loopback(struct st_tests_context* ctx,
+                               const std::vector<St20StreamSpec>& streams,
+                               const char* name, std::vector<tests_context*>& tx_ctx,
+                               std::vector<tests_context*>& rx_ctx,
+                               std::vector<st20_tx_handle>& tx_handle,
+                               std::vector<st20_rx_handle>& rx_handle,
+                               std::vector<std::thread>& rtp_thread_tx,
+                               std::vector<std::thread>& rtp_thread_rx);
+void st20_init_tx_digest_frames(mtl_handle m_handle, tests_context* tctx,
+                                st20_tx_handle tx_h, const St20StreamSpec& st,
+                                St20TxBufMode mode = St20TxBufMode::kInternal);
+void st20_init_rx_slice_meta(tests_context* rctx, struct st20_rx_ops& ops_rx,
+                             const St20StreamSpec& st, size_t frame_size,
+                             size_t uframe_size = 0,
+                             int slices_per_frame = kSt20SlicesPerFrame);
+void st20_bind_rx_digest_ctx(tests_context* rctx, const tests_context* tctx,
+                             st20_rx_handle rx_h, const St20StreamSpec& st,
+                             size_t uframe_size = 0);
+void st20_verify_rx_dma_and_queue(st20_rx_handle rx_h, bool has_dma,
+                                  enum st20_type rx_type);
+void st20_publish_tx_sessions(const std::vector<tests_context*>& tx_ctx,
+                              const std::vector<st20_tx_handle>& tx_h,
+                              const std::vector<St20StreamSpec>& streams,
+                              std::vector<std::thread>* tx_threads = nullptr);
+void st20_stop_tx_ready(const std::vector<tests_context*>& tx_ctx);
+
 void st20_rx_drain_bufq_put_framebuff(tests_context* ctx);
+void st20_rx_drain_bufq_free(tests_context* ctx);
 /* rtp_pkt_size: BPM only, size the session and its largest pkt to it; 0 for the
  * default 1260-byte payload */
 void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx,
                           uint16_t rtp_pkt_size = 0);
-
-struct MtlStopGuard {
-  mtl_handle handle;
-  bool started;
-
-  explicit MtlStopGuard(mtl_handle h) : handle(h), started(false) {
-  }
-  ~MtlStopGuard() {
-    if (started && handle) {
-      mtl_stop(handle);
-    }
-  }
-};
 
 class St20DeinitGuard {
  public:
@@ -112,7 +223,6 @@ class St20DeinitGuard {
   St20DeinitGuard& operator=(const St20DeinitGuard&) = delete;
 
   void set_started(bool started);
-  void set_ext_buf(bool ext_buf);
   void add_thread_group(std::vector<std::thread>& threads);
   void set_tx_ctx_cleanup(CtxCleanupFn fn);
   void set_rx_ctx_cleanup(CtxCleanupFn fn);
@@ -132,7 +242,6 @@ class St20DeinitGuard {
   bool stopped_;
   bool sessions_released_;
   bool cleaned_;
-  bool ext_buf_;
 
   std::vector<tests_context*>& tx_ctx_;
   std::vector<tests_context*>& rx_ctx_;

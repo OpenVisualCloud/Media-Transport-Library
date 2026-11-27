@@ -1,8 +1,9 @@
 name: Run gtest
 description: >-
   Run the bare-metal gtest harness on a host that validate-host prepared, then
-  stop the test processes. The nightly mode runs every case, keeps going after a
-  failure, and uploads the log and the system status.
+  stop the test processes. The nightly mode runs a profile group (or regex
+  filter), keeps going after failures, and uploads structured results.jsonl,
+  gtest.log, and system status.
 
 inputs:
   nic:
@@ -12,8 +13,12 @@ inputs:
     description: Run the nightly case list and upload the reports.
     required: false
     default: 'false'
+  gtest_group:
+    description: Profile group name from gtest_runner.py. Nightly only.
+    required: false
+    default: ''
   gtest_cases:
-    description: Regex of the gtest.sh case names to run (empty = all). Nightly only.
+    description: Regex of the profile names to run (empty = all in group). Nightly only.
     required: false
     default: ''
 
@@ -28,6 +33,8 @@ runs:
       env:
         NIGHTLY: 0
         EXIT_ON_FAILURE: 1
+        MTL_NIC_LABEL: ${{ inputs.nic }}
+        GTEST_OUT_DIR: ${{ github.workspace }}/gtest-results
       run: sudo -E env -u BASH_XTRACEFD "${GITHUB_WORKSPACE}/.github/scripts/gtest.sh"
 
     - name: Run nightly gtest bare metal
@@ -35,9 +42,12 @@ runs:
       shell: bash
       env:
         NIGHTLY: 1
+        MTL_NIC_LABEL: ${{ inputs.nic }}
+        GTEST_GROUP: ${{ inputs.gtest_group }}
         GTEST_CASES: ${{ inputs.gtest_cases }}
         EXIT_ON_FAILURE: 0
-        LOG_FILE: ${{ github.workspace }}/gtest.log
+        GTEST_OUT_DIR: ${{ github.workspace }}/gtest-results
+        LOG_FILE: ${{ github.workspace }}/gtest-results/gtest.log
         TEST_CASE_TIMEOUT: 1800
       run: task ci:gtest-nightly
 
@@ -50,19 +60,23 @@ runs:
       if: always() && inputs.nightly == 'true'
       shell: bash
       env:
-        STATUS_NAME: system-info-${{ inputs.nic }}
+        STATUS_NAME: system-info-${{ inputs.nic }}${{ inputs.gtest_group && format('-{0}', inputs.gtest_group) || '' }}
       run: task ci:report -- status
 
     - name: Upload the gtest report
       if: always() && inputs.nightly == 'true'
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
-        name: nightly-gtest-report-${{ inputs.nic }}
-        path: gtest.log
+        name: nightly-gtest-report-${{ inputs.nic }}${{ inputs.gtest_group && format('-{0}', inputs.gtest_group) || '' }}
+        path: |
+          gtest-results/results.jsonl
+          gtest-results/gtest.log
+          gtest-results/last*.log
+        if-no-files-found: warn
 
     - name: Upload the system info
       if: always() && inputs.nightly == 'true'
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
-        name: system-info-${{ inputs.nic }}
-        path: system-info-${{ inputs.nic }}/
+        name: system-info-${{ inputs.nic }}${{ inputs.gtest_group && format('-{0}', inputs.gtest_group) || '' }}
+        path: system-info-${{ inputs.nic }}${{ inputs.gtest_group && format('-{0}', inputs.gtest_group) || '' }}/

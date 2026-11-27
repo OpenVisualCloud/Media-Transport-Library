@@ -9,11 +9,9 @@
 
 #include <gtest/gtest.h>
 
-#include <cstdlib>
 #include <stdexcept>
 
 #include "handlers/st30p_handler.hpp"
-#include "tests.hpp"
 
 namespace {
 /* Normal ST30 labels frame 0 with the packet-grid point it is sent at, not PTP zero. */
@@ -34,8 +32,6 @@ void expectFirstFrameOnPacketGrid(const st30_frame* f, const St30pHandler* handl
 
 St30pDefaultPacingOracle::St30pDefaultPacingOracle(St30pHandler* parentHandler)
     : FrameTestStrategy(parentHandler, false, true), lastTimestamp(0) {
-  idx_tx = 0;
-  idx_rx = 0;
 }
 
 void St30pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
@@ -44,7 +40,22 @@ void St30pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_s
   uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
   uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsFramebuffTime, sampling);
 
-  if (idx_rx == 0) expectFirstFrameOnPacketGrid(f, st30pParent);
+  if (idx_rx == 0) {
+    expectFirstFrameOnPacketGrid(f, st30pParent);
+  } else {
+    constexpr int64_t kSt30pDefaultEarlyMaxNs = 100 * NS_PER_US;
+    constexpr int64_t kSt30pDefaultLateMaxNs = 300 * NS_PER_US;
+    const uint64_t rtp_ns = st10_media_clk_to_tai(f->receive_timestamp, f->timestamp,
+                                                  static_cast<uint32_t>(sampling));
+    const int64_t arrival_offset_ns =
+        static_cast<int64_t>(f->receive_timestamp) - static_cast<int64_t>(rtp_ns);
+    EXPECT_GE(arrival_offset_ns, -kSt30pDefaultEarlyMaxNs)
+        << " idx_rx: " << idx_rx << " arrival_offset_ns: " << arrival_offset_ns
+        << " receive_timestamp: " << f->receive_timestamp << " rtp_ns: " << rtp_ns;
+    EXPECT_LE(arrival_offset_ns, kSt30pDefaultLateMaxNs)
+        << " idx_rx: " << idx_rx << " arrival_offset_ns: " << arrival_offset_ns
+        << " receive_timestamp: " << f->receive_timestamp << " rtp_ns: " << rtp_ns;
+  }
   if (lastTimestamp != 0) {
     uint64_t diff = f->timestamp - lastTimestamp;
     EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << idx_rx << " diff: " << diff;
@@ -54,11 +65,11 @@ void St30pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_s
   idx_rx++;
 }
 
-St30pUserPacingOracle::St30pUserPacingOracle(St30pHandler* parentHandler)
+St30pUserPacingOracle::St30pUserPacingOracle(St30pHandler* parentHandler, bool enableRx)
     : St30pDefaultPacingOracle(parentHandler) {
   enable_tx_modifier = true;
-  enable_rx_modifier = true;
-  if (parentHandler)
+  enable_rx_modifier = enableRx;
+  if (enableRx && parentHandler)
     rxPhc.start(parentHandler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P]);
 }
 
@@ -103,23 +114,6 @@ void St30pUserPacingOracle::initializeTiming(St30pHandler* handler) {
   }
 
   frameTimeNs = handler->nsFramebuffTime;
-  if (!frameTimeNs) {
-    auto& ops = handler->sessionsOpsTx;
-    uint64_t packet_time = st30_get_packet_time(ops.ptime);
-    uint64_t packet_size =
-        st30_get_packet_size(ops.fmt, ops.ptime, ops.sampling, ops.channel);
-    uint64_t packets_per_frame = 0;
-    if (packet_size) {
-      packets_per_frame = ops.framebuff_size / packet_size;
-    }
-
-    frameTimeNs = packet_time * packets_per_frame;
-  }
-
-  if (!frameTimeNs) {
-    frameTimeNs = NS_PER_MS;
-  }
-
   startingTime = static_cast<uint64_t>(frameTimeNs * kSt30pUserPacingStartBuffers);
   timingInitialized = true;
 }
@@ -185,13 +179,4 @@ void St30pUserPacingOracle::verifyTimestampStep(uint64_t frame_idx,
   const uint64_t expected_step = st10_tai_to_media_clk(expected_step_input, sampling_hz);
   const uint64_t diff = current_timestamp - lastTimestamp;
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
-}
-
-St30pRedundantStreamPlan::St30pRedundantStreamPlan(St30pHandler* parentHandler)
-    : St30pUserPacingOracle(parentHandler) {
-}
-
-void St30pRedundantStreamPlan::rxTestFrameModifier(void* /*frame*/,
-                                                   size_t /*frame_size*/) {
-  idx_rx++;
 }

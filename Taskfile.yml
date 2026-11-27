@@ -27,6 +27,7 @@ tasks:
     desc: Kill stale test processes and release isolated CPUs
     cmds:
       - sudo killall -SIGKILL gtest.sh KahawaiTest ffmpeg gst-launch-1.0 RxTxApp RxTxApp_main || true
+      - sudo pkill -9 -f gtest_runner.py || true
       - sudo killall -SIGINT pytest MtlManager phc2sys ptp4l netsniff-ng || true
       - sleep 2
       - sudo {{.TASKFILE_DIR}}/tests/tools/isolate/isolate.sh --sweep

@@ -4,55 +4,86 @@
 
 #include "st20_common.h"
 
+#include <algorithm>
 #include <cmath>
 
 uint16_t udp_port_for_idx(int idx, bool hdr_split, int base) {
   return (hdr_split ? 6970 : base) + idx * 2;
 }
 
-std::vector<St20SessionConfig> build_sessions(int sessions, enum st20_type type[],
-                                              enum st20_packing packing[],
-                                              enum st_fps fps[], int width[],
-                                              int height[], bool interlaced[],
-                                              enum st20_fmt fmt[]) {
-  std::vector<St20SessionConfig> cfgs(sessions);
-  for (int i = 0; i < sessions; ++i) {
-    cfgs[i].type = type ? type[i] : ST20_TYPE_FRAME_LEVEL;
-    cfgs[i].packing = packing ? packing[i] : ST20_PACKING_BPM;
-    cfgs[i].fps = fps ? fps[i] : ST_FPS_P59_94;
-    cfgs[i].width = width ? width[i] : 1920;
-    cfgs[i].height = height ? height[i] : 1080;
-    cfgs[i].interlaced = interlaced ? interlaced[i] : false;
-    cfgs[i].fmt = fmt ? fmt[i] : ST20_FMT_YUV_422_10BIT;
-  }
-  return cfgs;
-}
-
 tests_context* init_test_ctx(struct st_tests_context* global_ctx, int idx,
                              uint16_t fb_cnt, bool check_sha) {
   auto* tctx = new tests_context();
-  EXPECT_TRUE(tctx != NULL);
   tctx->idx = idx;
   tctx->ctx = global_ctx;
   tctx->fb_cnt = fb_cnt;
   tctx->fb_idx = 0;
   tctx->check_sha = check_sha;
+  tctx->ext_fb = NULL;
+  tctx->ext_fb_malloc = NULL;
+  tctx->ext_fb_iova = MTL_BAD_IOVA;
+  tctx->ext_fb_iova_map_sz = 0;
+  tctx->ext_frames = NULL;
   return tctx;
 }
 
-void tx_feed_packet(void* args) {
-  auto ctx = (tests_context*)args;
-  void* mbuf;
+bool st20_alloc_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t frame_size) {
+  tctx->ext_frames =
+      (struct st20_ext_frame*)st_test_zmalloc(sizeof(*tctx->ext_frames) * tctx->fb_cnt);
+  if (!tctx->ext_frames) return false;
+  size_t pg_sz = mtl_page_size(m_handle);
+  size_t fb_size = frame_size * tctx->fb_cnt;
+  tctx->ext_fb_iova_map_sz = mtl_size_page_align(fb_size, pg_sz);
+  tctx->ext_fb_malloc = st_test_zmalloc(tctx->ext_fb_iova_map_sz + pg_sz);
+  if (!tctx->ext_fb_malloc) return false;
+  tctx->ext_fb = (uint8_t*)MTL_ALIGN((uint64_t)tctx->ext_fb_malloc, pg_sz);
+  tctx->ext_fb_iova = mtl_dma_map(m_handle, tctx->ext_fb, tctx->ext_fb_iova_map_sz);
+  info("%s, session %d ext_fb %p\n", __func__, tctx->idx, tctx->ext_fb);
+  if (tctx->ext_fb_iova == MTL_BAD_IOVA) return false;
+
+  for (int j = 0; j < tctx->fb_cnt; j++) {
+    tctx->ext_frames[j].buf_addr = tctx->ext_fb + j * frame_size;
+    tctx->ext_frames[j].buf_iova = tctx->ext_fb_iova + j * frame_size;
+    tctx->ext_frames[j].buf_len = frame_size;
+  }
+  if (!tctx->priv) {
+    tctx->priv = st_test_zmalloc(sizeof(struct St20ExtFrameStats));
+    if (!tctx->priv) return false;
+  }
+  return true;
+}
+
+bool st20_alloc_dma_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t fb_size) {
+  tctx->ext_frames =
+      (struct st20_ext_frame*)st_test_zmalloc(sizeof(*tctx->ext_frames) * tctx->fb_cnt);
+  if (!tctx->ext_frames) return false;
+  mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(m_handle, fb_size * tctx->fb_cnt);
+  if (!dma_mem) return false;
+  tctx->dma_mem = dma_mem;
+
+  for (int j = 0; j < tctx->fb_cnt; j++) {
+    tctx->ext_frames[j].buf_addr = (uint8_t*)mtl_dma_mem_addr(dma_mem) + j * fb_size;
+    tctx->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * fb_size;
+    tctx->ext_frames[j].buf_len = fb_size;
+  }
+  if (!tctx->priv) {
+    tctx->priv = st_test_zmalloc(sizeof(struct St20ExtFrameStats));
+    if (!tctx->priv) return false;
+  }
+  return true;
+}
+
+void tx_feed_packet_ex(tests_context* ctx, bool incomplete_odd_frames,
+                       std::function<uint64_t(tests_context*)> tai_fn) {
+  auto handle = (st20_tx_handle)st20_get_handle(ctx);
   void* usrptr = NULL;
   uint16_t mbuf_len = 0;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   while (!ctx->stop) {
-    /* get available buffer*/
-    mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
+    void* mbuf = st20_tx_get_mbuf(handle, &usrptr);
     if (!mbuf) {
       lck.lock();
-      /* try again */
-      mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
+      mbuf = st20_tx_get_mbuf(handle, &usrptr);
       if (mbuf) {
         lck.unlock();
       } else {
@@ -62,16 +93,23 @@ void tx_feed_packet(void* args) {
       }
     }
 
-    /* build the rtp pkt */
-    tx_video_build_rtp_packet(ctx, (struct st20_rfc4175_rtp_hdr*)usrptr, &mbuf_len);
-
-    st20_tx_put_mbuf((st20_tx_handle)ctx->handle, mbuf, mbuf_len);
+    uint64_t tai = (tai_fn && !ctx->pkt_idx) ? tai_fn(ctx) : 0;
+    tx_video_build_rtp_packet(ctx, (struct st20_rfc4175_rtp_hdr*)usrptr, &mbuf_len,
+                              incomplete_odd_frames);
+    if (tai_fn)
+      st20_tx_put_mbuf_tai(handle, mbuf, mbuf_len, tai);
+    else
+      st20_tx_put_mbuf(handle, mbuf, mbuf_len);
   }
+}
+
+void tx_feed_packet(void* args) {
+  tx_feed_packet_ex((tests_context*)args);
 }
 
 int tx_rtp_done(void* args) {
   auto ctx = (tests_context*)args;
-  if (!ctx->handle) return -EIO; /* not ready */
+  if (!st20_get_handle(ctx)) return -EIO; /* not ready */
 
   std::unique_lock<std::mutex> lck(ctx->mtx);
   ctx->cv.notify_all();
@@ -80,24 +118,26 @@ int tx_rtp_done(void* args) {
 }
 
 int tx_next_video_frame(void* priv, uint16_t* next_frame_idx,
-                        struct st20_tx_frame_meta* /*meta*/) {
+                        struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
-  if (!ctx->handle) return -EIO; /* not ready */
+  auto handle = (st20_tx_handle)st20_get_handle(ctx);
+  if (!handle) return -EIO; /* not ready */
 
   if (ctx->slice) {
-    uint8_t* fb =
-        (uint8_t*)st20_tx_get_framebuffer((st20_tx_handle)ctx->handle, ctx->fb_idx);
+    uint8_t* fb = (uint8_t*)st20_tx_get_framebuffer(handle, ctx->fb_idx);
     memset(fb, 0x0, ctx->frame_size);
     ctx->lines_ready[ctx->fb_idx] = 0;
   }
 
   *next_frame_idx = ctx->fb_idx;
+  int fb_send = __atomic_load_n(&ctx->fb_send, __ATOMIC_RELAXED);
+  if (ctx->field_period_ns > 0.0) meta->second_field = (fb_send % 2) != 0;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
   ctx->fb_idx++;
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
-  ctx->fb_send++;
+  __atomic_fetch_add(&ctx->fb_send, 1, __ATOMIC_RELAXED);
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
@@ -106,99 +146,103 @@ int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
                                   struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
-  if (!ctx->handle) return -EIO; /* not ready */
+  if (!st20_get_handle(ctx)) return -EIO; /* not ready */
 
   if (!ctx->ptp_time_first_frame) {
-    ctx->ptp_time_first_frame = mtl_ptp_read_time(ctx->ctx->handle);
+    uint64_t now = mtl_ptp_read_time(ctx->ctx->handle);
+    if (ctx->user_pacing && ctx->frame_time > 0.0) {
+      /* Anchor 3 epochs ahead and +5 ms off the epoch grid so user pacing never starts
+       * in the past and USER_TIMESTAMP produces a distinct RTP timestamp vs pacing. */
+      uint64_t epoch_idx =
+          static_cast<uint64_t>(static_cast<double>(now) / ctx->frame_time) + 3;
+      ctx->ptp_time_first_frame =
+          static_cast<uint64_t>(static_cast<double>(epoch_idx) * ctx->frame_time) +
+          5 * NS_PER_MS;
+    } else {
+      ctx->ptp_time_first_frame = now;
+    }
   }
 
   *next_frame_idx = ctx->fb_idx;
+  int fb_send = __atomic_load_n(&ctx->fb_send, __ATOMIC_RELAXED);
 
   if (ctx->user_pacing) {
     meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    meta->timestamp = ctx->ptp_time_first_frame + ctx->frame_time * ctx->fb_send * 2;
+    meta->timestamp =
+        ctx->ptp_time_first_frame + static_cast<uint64_t>(ctx->frame_time * fb_send * 2);
   } else if (ctx->user_timestamp) {
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    meta->timestamp = ctx->fb_send;
+    meta->timestamp = fb_send;
   }
   dbg("%s, next_frame_idx %u timestamp %" PRIu64 "\n", __func__, *next_frame_idx,
       meta->timestamp);
   ctx->fb_idx++;
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
-  ctx->fb_send++;
+  __atomic_fetch_add(&ctx->fb_send, 1, __ATOMIC_RELAXED);
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
 
 int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
-                            struct st20_tx_frame_meta* /*meta*/) {
-  auto ctx = (tests_context*)priv;
-
-  if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
-  if (!ctx->handle) return -EIO; /* not ready */
-
-  if (ctx->ext_fb_in_use[ctx->fb_idx]) {
-    err("%s, ext frame %d not available\n", __func__, ctx->fb_idx);
-    return -EIO;
-  }
-
-  int ret = st20_tx_set_ext_frame((st20_tx_handle)ctx->handle, ctx->fb_idx,
-                                  &ctx->ext_frames[ctx->fb_idx]);
-  if (ret < 0) {
-    err("%s, set ext framebuffer fail %d fb_idx %d\n", __func__, ret, ctx->fb_idx);
-    return -EIO;
-  }
-  ctx->ext_fb_in_use[ctx->fb_idx] = true;
-
-  *next_frame_idx = ctx->fb_idx;
-  dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
-  ctx->fb_idx++;
-  if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
-  ctx->fb_send++;
-  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
-  return 0;
-}
-
-int tx_next_ext_video_field(void* priv, uint16_t* next_frame_idx,
                             struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
-  if (!ctx->handle) return -EIO; /* not ready */
+  auto handle = (st20_tx_handle)st20_get_handle(ctx);
+  if (!handle) return -EIO; /* not ready */
 
-  if (ctx->ext_fb_in_use[ctx->fb_idx]) {
+  constexpr int max_slots =
+      static_cast<int>(sizeof(ctx->ext_fb_in_use) / sizeof(ctx->ext_fb_in_use[0]));
+  if (static_cast<int>(ctx->fb_idx) >= max_slots) {
+    err("%s, fb_idx %d exceeds ext_fb_in_use capacity %d\n", __func__, ctx->fb_idx,
+        max_slots);
+    return -EIO;
+  }
+  if (__atomic_load_n(&ctx->ext_fb_in_use[ctx->fb_idx], __ATOMIC_ACQUIRE)) {
     err("%s, ext frame %d not available\n", __func__, ctx->fb_idx);
     return -EIO;
   }
 
-  int ret = st20_tx_set_ext_frame((st20_tx_handle)ctx->handle, ctx->fb_idx,
-                                  &ctx->ext_frames[ctx->fb_idx]);
+  int ret = st20_tx_set_ext_frame(handle, ctx->fb_idx, &ctx->ext_frames[ctx->fb_idx]);
   if (ret < 0) {
     err("%s, set ext framebuffer fail %d fb_idx %d\n", __func__, ret, ctx->fb_idx);
     return -EIO;
   }
-  ctx->ext_fb_in_use[ctx->fb_idx] = true;
+  __atomic_store_n(&ctx->ext_fb_in_use[ctx->fb_idx], true, __ATOMIC_RELEASE);
 
   *next_frame_idx = ctx->fb_idx;
-  meta->second_field = ctx->fb_send % 2 ? true : false;
+  int fb_send = __atomic_load_n(&ctx->fb_send, __ATOMIC_RELAXED);
+  if (ctx->field_period_ns > 0.0) meta->second_field = (fb_send % 2) != 0;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
   ctx->fb_idx++;
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
-  ctx->fb_send++;
+  __atomic_fetch_add(&ctx->fb_send, 1, __ATOMIC_RELAXED);
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
 
 int tx_notify_ext_frame_done(void* priv, uint16_t frame_idx,
-                             struct st20_tx_frame_meta* /*meta*/) {
+                             struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
-  if (!ctx->handle) return -EIO; /* not ready */
+  auto handle = (st20_tx_handle)st20_get_handle(ctx);
+  if (!handle) return -EIO; /* not ready */
+  if (!ctx->ext_frames) return -EIO;
 
-  void* frame_addr = st20_tx_get_framebuffer((st20_tx_handle)ctx->handle, frame_idx);
-  for (int i = 0; i < ctx->fb_cnt; ++i) {
+  if (meta) {
+    if (ctx->pre_timestamp && meta->timestamp == ctx->pre_timestamp) {
+      __atomic_fetch_add(&ctx->tx_tmstamp_delta_fail_cnt, 1, __ATOMIC_RELAXED);
+    }
+    ctx->pre_timestamp = meta->timestamp;
+  }
+
+  constexpr int max_slots =
+      static_cast<int>(sizeof(ctx->ext_fb_in_use) / sizeof(ctx->ext_fb_in_use[0]));
+  const int cnt = std::min(ctx->fb_cnt, max_slots);
+  void* frame_addr = st20_tx_get_framebuffer(handle, frame_idx);
+  for (int i = 0; i < cnt; ++i) {
     if (frame_addr == ctx->ext_frames[i].buf_addr) {
-      ctx->ext_fb_in_use[i] = false;
+      __atomic_store_n(&ctx->ext_fb_in_use[i], false, __ATOMIC_RELEASE);
       return 0;
     }
   }
@@ -211,7 +255,7 @@ int tx_notify_timestamp_frame_done(void* priv, uint16_t /*frame_idx*/,
                                    struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
-  if (!ctx->handle) return -EIO; /* not ready */
+  if (!st20_get_handle(ctx)) return -EIO; /* not ready */
 
   if (ctx->user_timestamp && !ctx->user_pacing) {
     dbg("%s, timestamp %u %u\n", __func__, (uint32_t)meta->timestamp, ctx->pre_timestamp);
@@ -247,38 +291,21 @@ int tx_notify_frame_done_check_tmstamp(void* priv, uint16_t /*frame_idx*/,
                                        struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
-  if (!ctx->handle) return -EIO; /* not ready */
+  if (!st20_get_handle(ctx)) return -EIO; /* not ready */
 
-  if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
-    if (ctx->rtp_tmstamp == 0)
-      ctx->rtp_tmstamp = meta->timestamp;
-    else {
-      int delta = meta->timestamp - ctx->rtp_tmstamp;
-      if (tmstamp_delta_to_fps(delta) != meta->fps) {
-        dbg("fail delta: %d\n", delta);
-        ctx->tx_tmstamp_delta_fail_cnt++;
-      }
-      ctx->rtp_tmstamp = meta->timestamp;
+  int done = __atomic_fetch_add(&ctx->fb_send_done, 1, __ATOMIC_RELAXED);
+  if (done == 0) {
+    ctx->rtp_tmstamp = meta->rtp_timestamp;
+  } else {
+    int delta =
+        static_cast<int>(static_cast<int32_t>(meta->rtp_timestamp - ctx->rtp_tmstamp));
+    if (tmstamp_delta_to_fps(delta) != meta->fps) {
+      dbg("fail delta: %d\n", delta);
+      ctx->tx_tmstamp_delta_fail_cnt++;
     }
+    ctx->rtp_tmstamp = meta->rtp_timestamp;
   }
 
-  return 0;
-}
-
-int tx_next_video_field(void* priv, uint16_t* next_frame_idx,
-                        struct st20_tx_frame_meta* meta) {
-  auto ctx = (tests_context*)priv;
-
-  if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
-  if (!ctx->handle) return -EIO; /* not ready */
-
-  *next_frame_idx = ctx->fb_idx;
-  meta->second_field = ctx->fb_send % 2 ? true : false;
-  dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
-  ctx->fb_idx++;
-  if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
-  ctx->fb_send++;
-  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
 
@@ -286,9 +313,10 @@ int tx_frame_lines_ready(void* priv, uint16_t frame_idx,
                          struct st20_tx_slice_meta* meta) {
   auto ctx = (tests_context*)priv;
 
-  if (!ctx->handle) return -EIO; /* not ready */
+  auto handle = (st20_tx_handle)st20_get_handle(ctx);
+  if (!handle) return -EIO; /* not ready */
 
-  uint8_t* fb = (uint8_t*)st20_tx_get_framebuffer((st20_tx_handle)ctx->handle, frame_idx);
+  uint8_t* fb = (uint8_t*)st20_tx_get_framebuffer(handle, frame_idx);
   int offset = ctx->lines_ready[frame_idx] * ctx->stride;
   uint16_t lines = ctx->lines_per_slice;
   if (ctx->lines_ready[frame_idx] + lines > ctx->height)
@@ -322,27 +350,25 @@ int tx_video_build_ooo_mapping(tests_context* s) {
   int ooo_end = ooo_start + ooo_pkts;
   int ooo_step = total_pkts / 40;
   while (ooo_end < total_pkts) {
-    int s = ooo_start, e = ooo_end, temp;
-    while (s <= e) {
-      temp = ooo_mapping[s];
-      ooo_mapping[s] = ooo_mapping[e];
-      ooo_mapping[e] = temp;
-      s++;
-      e--;
+    int s_idx = ooo_start, e_idx = ooo_end, temp;
+    while (s_idx <= e_idx) {
+      temp = ooo_mapping[s_idx];
+      ooo_mapping[s_idx] = ooo_mapping[e_idx];
+      ooo_mapping[e_idx] = temp;
+      s_idx++;
+      e_idx--;
       ooo_cnt++;
     }
     ooo_start += ooo_step;
     ooo_end += ooo_step;
   }
 
-  // ooo_mapping[100] = 99;
-
   dbg("%s(%d), ooo_cnt %d\n", __func__, s->idx, ooo_cnt);
   return 0;
 }
 
 int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp,
-                              uint16_t* pkt_len) {
+                              uint16_t* pkt_len, bool incomplete_odd_frames) {
   struct st20_rfc4175_extra_rtp_hdr* e_rtp = NULL;
   int offset;
   int frame_size = s->frame_size;
@@ -374,15 +400,17 @@ int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp
   rtp->base.version = 2;
   rtp->base.marker = 0;
   rtp->base.payload_type = ST20_TEST_PAYLOAD_TYPE;
+  rtp->base.ssrc = htonl(kSt20RtpSsrcBase + static_cast<uint32_t>(s->idx));
   rtp->row_number = htons(row_number);
   rtp->row_offset = htons(row_offset);
   rtp->base.tmstamp = htonl(s->rtp_tmstamp);
+  uint32_t seq_id =
+      static_cast<uint32_t>(__atomic_fetch_add(&s->seq_id, 1, __ATOMIC_RELAXED));
   if (s->out_of_order_pkt)
     rtp->base.seq_number = htons(s->frame_base_seq_id + pkt_idx);
   else
-    rtp->base.seq_number = htons(s->seq_id);
-  rtp->seq_number_ext = htons((uint16_t)(s->seq_id >> 16));
-  s->seq_id++;
+    rtp->base.seq_number = htons(static_cast<uint16_t>(seq_id));
+  rtp->seq_number_ext = htons(static_cast<uint16_t>(seq_id >> 16));
   int temp = s->single_line
                  ? ((s->width - row_offset) / s->st20_pg.coverage * s->st20_pg.size)
                  : (frame_size - offset);
@@ -404,14 +432,19 @@ int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp
   }
 
   s->pkt_idx++;
-  if (s->pkt_idx >= s->total_pkts_in_frame) {
+  bool marker = (s->pkt_idx >= s->total_pkts_in_frame);
+  if (incomplete_odd_frames && (__atomic_load_n(&s->fb_send, __ATOMIC_RELAXED) % 2) &&
+      s->pkt_idx >= (s->total_pkts_in_frame / 2)) {
+    marker = true;
+  }
+  if (marker) {
     /* end of current frame */
     rtp->base.marker = 1;
 
     s->pkt_idx = 0;
     s->fb_idx++;
     s->rtp_tmstamp++;
-    s->fb_send++;
+    __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
     if (s->out_of_order_pkt) {
       tx_video_build_ooo_mapping(s);
       s->frame_base_seq_id += s->total_pkts_in_frame;
@@ -423,7 +456,7 @@ int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp
 
 int rx_rtp_ready(void* args) {
   auto ctx = (tests_context*)args;
-  if (!ctx->handle) return -EIO; /* not ready */
+  if (!st20_get_handle(ctx)) return -EIO; /* not ready */
 
   std::unique_lock<std::mutex> lck(ctx->mtx);
   ctx->cv.notify_all();
@@ -451,6 +484,7 @@ void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr, bool newf
   }
 
   frame = s->frame_buf[0];
+  if (!frame) return;
   payload = (uint8_t*)hdr + sizeof(*hdr);
   row_number = ntohs(hdr->row_number);
   row_offset = ntohs(hdr->row_offset);
@@ -487,24 +521,21 @@ void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr, bool newf
     }
     mtl_memcpy(frame + offset2, payload + row_length, row2_length);
   }
-
-  return;
 }
 
-void rx_get_packet(void* args) {
-  auto ctx = (tests_context*)args;
+void rx_get_packet_ex(tests_context* ctx,
+                      std::function<void(const struct st20_rfc4175_rtp_hdr*)> on_pkt) {
+  auto handle = (st20_rx_handle)st20_get_handle(ctx);
   void* mbuf;
   void* usrptr = NULL;
   uint16_t mbuf_len = 0;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   struct st20_rfc4175_rtp_hdr* hdr;
   while (!ctx->stop) {
-    /* get available buffer*/
-    mbuf = st20_rx_get_mbuf((st20_rx_handle)ctx->handle, &usrptr, &mbuf_len);
+    mbuf = st20_rx_get_mbuf(handle, &usrptr, &mbuf_len);
     if (!mbuf) {
       lck.lock();
-      /* try again */
-      mbuf = st20_rx_get_mbuf((st20_rx_handle)ctx->handle, &usrptr, &mbuf_len);
+      mbuf = st20_rx_get_mbuf(handle, &usrptr, &mbuf_len);
       if (mbuf) {
         lck.unlock();
       } else {
@@ -514,38 +545,61 @@ void rx_get_packet(void* args) {
       }
     }
     hdr = (struct st20_rfc4175_rtp_hdr*)usrptr;
+    size_t expect_len = sizeof(*hdr);
+    if (mbuf_len < expect_len) {
+      __atomic_fetch_add(&ctx->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
+    } else {
+      expect_len += ntohs(hdr->row_length);
+      if (ntohs(hdr->row_offset) & ST20_SRD_OFFSET_CONTINUATION) {
+        const auto* e_hdr =
+            reinterpret_cast<const struct st20_rfc4175_extra_rtp_hdr*>(hdr + 1);
+        expect_len +=
+            sizeof(*e_hdr) +
+            (mbuf_len >= sizeof(*hdr) + sizeof(*e_hdr) ? ntohs(e_hdr->row_length) : 0u);
+      }
+      if (mbuf_len != expect_len) {
+        __atomic_fetch_add(&ctx->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
+      }
+    }
+    if (on_pkt) on_pkt(hdr);
     uint32_t tmstamp = ntohl(hdr->base.tmstamp);
     bool newframe = false;
     ctx->packet_rec++;
     if (tmstamp != ctx->rtp_tmstamp) {
       if (ctx->packet_rec == ctx->total_pkts_in_frame || ctx->rtp_tmstamp == 0)
         newframe = true;
-      /* new frame received */
       ctx->rtp_tmstamp = tmstamp;
-      ctx->fb_rec++;
+      __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
       ctx->packet_rec = 0;
     }
     if (ctx->check_sha) {
       rx_handle_rtp(ctx, hdr, newframe);
     }
-    st20_rx_put_mbuf((st20_rx_handle)ctx->handle, mbuf);
+    st20_rx_put_mbuf(handle, mbuf);
   }
+}
+
+void rx_get_packet(void* args) {
+  rx_get_packet_ex((tests_context*)args);
 }
 
 int st20_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
+  auto handle = (st20_rx_handle)st20_get_handle(ctx);
 
-  if (!ctx->handle) return -EIO;
+  if (!handle) return -EIO;
 
   if (st_is_frame_complete(meta->status)) {
-    ctx->fb_rec++;
-    if (!ctx->start_time) {
-      ctx->rtp_delta = meta->timestamp - ctx->rtp_tmstamp;
-      ctx->start_time = st_test_get_monotonic_time();
+    __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
+    if (!__atomic_load_n(&ctx->start_time, __ATOMIC_ACQUIRE)) {
+      __atomic_store_n(&ctx->rtp_delta,
+                       static_cast<int>(meta->timestamp - ctx->rtp_tmstamp),
+                       __ATOMIC_RELAXED);
+      __atomic_store_n(&ctx->start_time, st_test_get_monotonic_time(), __ATOMIC_RELEASE);
     }
   }
   if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) ctx->rtp_tmstamp = meta->timestamp;
-  st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
+  st20_rx_put_framebuff(handle, frame);
   return 0;
 }
 
@@ -619,23 +673,15 @@ void st20_rx_ops_init(tests_context* st20, struct st20_rx_ops* ops) {
 
 void st20_tx_assert_cnt(int expect_s20_tx_cnt) {
   auto ctx = st_test_ctx();
-  auto handle = ctx->handle;
   struct st_var_info var;
-  int ret;
-
-  ret = st_get_var_info(handle, &var);
-  EXPECT_GE(ret, 0);
+  EXPECT_GE(st_get_var_info(ctx->handle, &var), 0);
   EXPECT_EQ(var.st20_tx_sessions_cnt, expect_s20_tx_cnt);
 }
 
 void st20_rx_assert_cnt(int expect_s20_rx_cnt) {
   auto ctx = st_test_ctx();
-  auto handle = ctx->handle;
   struct st_var_info var;
-  int ret;
-
-  ret = st_get_var_info(handle, &var);
-  EXPECT_GE(ret, 0);
+  EXPECT_GE(st_get_var_info(ctx->handle, &var), 0);
   EXPECT_EQ(var.st20_rx_sessions_cnt, expect_s20_rx_cnt);
 }
 
@@ -645,12 +691,8 @@ void init_single_port_tx(struct st20_tx_ops& ops, tests_context* tctx, const cha
   ops.name = name;
   ops.priv = tctx;
   ops.num_port = 1;
-  if (tctx->ctx->mcast_only)
-    memcpy(ops.dip_addr[MTL_SESSION_PORT_P], tctx->ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  else
-    memcpy(ops.dip_addr[MTL_SESSION_PORT_P], tctx->ctx->para.sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
+  memcpy(ops.dip_addr[MTL_SESSION_PORT_P], tctx->ctx->para.sip_addr[MTL_PORT_R],
+         MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            tctx->ctx->para.port[MTL_PORT_P]);
   ops.udp_port[MTL_SESSION_PORT_P] = udp_port;
@@ -663,12 +705,8 @@ void init_single_port_rx(struct st20_rx_ops& ops, tests_context* tctx, const cha
   ops.name = name;
   ops.priv = tctx;
   ops.num_port = 1;
-  if (tctx->ctx->mcast_only)
-    memcpy(ops.ip_addr[MTL_SESSION_PORT_P], tctx->ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  else
-    memcpy(ops.ip_addr[MTL_SESSION_PORT_P], tctx->ctx->para.sip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
+  memcpy(ops.ip_addr[MTL_SESSION_PORT_P], tctx->ctx->para.sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            tctx->ctx->para.port[MTL_PORT_R]);
   ops.udp_port[MTL_SESSION_PORT_P] = udp_port;
@@ -677,10 +715,258 @@ void init_single_port_rx(struct st20_rx_ops& ops, tests_context* tctx, const cha
   ops.rtp_ring_size = 1024;
 }
 
+void st20_fill_loopback_tx_ops(struct st20_tx_ops& ops, tests_context* tctx,
+                               const St20StreamSpec& st, const char* name,
+                               uint16_t udp_port, uint16_t rtp_pkt_size) {
+  tctx->field_period_ns =
+      st.interlaced ? static_cast<double>(NS_PER_S) / st_frame_rate(st.fps) : 0.0;
+  init_single_port_tx(ops, tctx, name, udp_port);
+  ops.type = st.tx_type;
+  ops.packing = st.packing;
+  ops.width = st.width;
+  ops.height = st.height;
+  ops.linesize = st.linesize;
+  ops.interlaced = st.interlaced;
+  ops.fps = st.fps;
+  ops.fmt = st.fmt;
+  ops.payload_type = ST20_TEST_PAYLOAD_TYPE;
+  ops.framebuff_cnt = tctx->fb_cnt;
+  ops.get_next_frame = tx_next_video_frame;
+  if (st.tx_type == ST20_TYPE_RTP_LEVEL) {
+    rtp_tx_specific_init(&ops, tctx, rtp_pkt_size);
+  }
+}
+
+void st20_fill_loopback_rx_ops(struct st20_rx_ops& ops, tests_context* rctx,
+                               const St20StreamSpec& st, const char* name,
+                               uint16_t udp_port) {
+  init_single_port_rx(ops, rctx, name, udp_port);
+  ops.type = st.rx_type;
+  ops.width = st.width;
+  ops.height = st.height;
+  ops.linesize = st.linesize;
+  ops.interlaced = st.interlaced;
+  ops.fps = st.fps;
+  ops.fmt = st.fmt;
+  ops.payload_type = ST20_TEST_PAYLOAD_TYPE;
+  ops.framebuff_cnt = rctx->fb_cnt;
+  ops.notify_frame_ready = st20_rx_frame_ready;
+  ops.notify_rtp_ready = rx_rtp_ready;
+}
+
+void st20_publish_tx_sessions(const std::vector<tests_context*>& tx_ctx,
+                              const std::vector<st20_tx_handle>& tx_h,
+                              const std::vector<St20StreamSpec>& streams,
+                              std::vector<std::thread>* tx_threads) {
+  for (size_t i = 0; i < tx_ctx.size(); i++) {
+    st20_set_handle(tx_ctx[i], tx_h[i]);
+    tx_ctx[i]->ready.store(true, std::memory_order_release);
+    if (tx_threads && streams[i].tx_type == ST20_TYPE_RTP_LEVEL) {
+      (*tx_threads)[i] = std::thread(tx_feed_packet, tx_ctx[i]);
+    }
+  }
+}
+
+void st20_stop_tx_ready(const std::vector<tests_context*>& tx_ctx) {
+  for (auto* c : tx_ctx) {
+    if (c) c->ready.store(false, std::memory_order_release);
+  }
+}
+
+void st20_setup_basic_loopback(struct st_tests_context* ctx,
+                               const std::vector<St20StreamSpec>& streams,
+                               const char* name, std::vector<tests_context*>& tx_ctx,
+                               std::vector<tests_context*>& rx_ctx,
+                               std::vector<st20_tx_handle>& tx_handle,
+                               std::vector<st20_rx_handle>& rx_handle,
+                               std::vector<std::thread>& rtp_thread_tx,
+                               std::vector<std::thread>& rtp_thread_rx) {
+  auto m_handle = ctx->handle;
+  const int sessions = static_cast<int>(streams.size());
+
+  for (int i = 0; i < sessions; i++) {
+    tx_ctx[i] = init_test_ctx(ctx, i, 3);
+    tx_ctx[i]->ready.store(false, std::memory_order_relaxed);
+    struct st20_tx_ops ops_tx;
+    st20_fill_loopback_tx_ops(ops_tx, tx_ctx[i], streams[i], name, udp_port_for_idx(i));
+    tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
+    ASSERT_TRUE(tx_handle[i] != NULL);
+  }
+
+  for (int i = 0; i < sessions; i++) {
+    rx_ctx[i] = init_test_ctx(ctx, i, 3);
+    struct st20_rx_ops ops_rx;
+    st20_fill_loopback_rx_ops(ops_rx, rx_ctx[i], streams[i], name, udp_port_for_idx(i));
+    rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
+    ASSERT_TRUE(rx_handle[i] != NULL);
+
+    rx_ctx[i]->total_pkts_in_frame = tx_ctx[i]->total_pkts_in_frame;
+    st20_set_handle(rx_ctx[i], rx_handle[i]);
+    if (streams[i].rx_type == ST20_TYPE_RTP_LEVEL) {
+      rtp_thread_rx[i] = std::thread(rx_get_packet, rx_ctx[i]);
+    }
+  }
+
+  st20_publish_tx_sessions(tx_ctx, tx_handle, streams, &rtp_thread_tx);
+}
+
+void st20_init_tx_digest_frames(mtl_handle m_handle, tests_context* tctx,
+                                st20_tx_handle tx_h, const St20StreamSpec& st,
+                                St20TxBufMode mode) {
+  struct st20_pgroup st20_pg;
+  st20_get_pgroup(st.fmt, &st20_pg);
+  size_t frame_size =
+      static_cast<size_t>(st.width) * st.height * st20_pg.size / st20_pg.coverage;
+  if (st.interlaced) frame_size >>= 1;
+
+  int raw_stride = st.width / st20_pg.coverage * st20_pg.size;
+  int stride = raw_stride;
+  size_t fb_size = frame_size;
+  if (st.linesize > raw_stride) {
+    stride = st.linesize;
+    fb_size = static_cast<size_t>(st.linesize) * st.height;
+    if (st.interlaced) fb_size >>= 1;
+  }
+
+  tctx->frame_size = frame_size;
+  tctx->fb_size = fb_size;
+  tctx->height = st.height;
+  tctx->stride = stride;
+  tctx->slice = (st.tx_type == ST20_TYPE_SLICE_LEVEL);
+  tctx->lines_per_slice = st.height / 30;
+
+  if (mode == St20TxBufMode::kUserFrame) {
+    size_t uframe_size = static_cast<size_t>(st.width) * st.height * 2 * sizeof(uint16_t);
+    if (st.interlaced) uframe_size >>= 1;
+    tctx->uframe_size = uframe_size;
+    tctx->slice = false;
+    const uint32_t data_h = st.interlaced ? st.height / 2 : st.height;
+    for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+      tctx->frame_buf[frame] = (uint8_t*)st_test_zmalloc(uframe_size);
+      uint8_t* fb = tctx->frame_buf[frame];
+      ASSERT_TRUE(fb != NULL);
+      st_test_rand_data(fb, uframe_size, frame);
+      uint16_t* p10_u16 = (uint16_t*)fb;
+      for (size_t k = 0; k < (uframe_size / 2); k++) p10_u16[k] &= 0x3ff;
+      SHA256((unsigned char*)fb, uframe_size, tctx->shas[frame]);
+      test_sha_dump("st20_rx", tctx->shas[frame]);
+
+      auto* pg = (struct st20_rfc4175_422_10_pg2_be*)st20_tx_get_framebuffer(tx_h, frame);
+      st20_yuv422p10le_to_rfc4175_422be10(
+          p10_u16, p10_u16 + static_cast<size_t>(st.width) * data_h,
+          p10_u16 + static_cast<size_t>(st.width) * data_h * 3 / 2, pg, st.width, data_h);
+    }
+    return;
+  }
+
+  if (st.tx_type == ST20_TYPE_FRAME_LEVEL) {
+    EXPECT_EQ(st20_tx_get_framebuffer_size(tx_h), fb_size);
+    EXPECT_EQ(st20_tx_get_framebuffer_count(tx_h), tctx->fb_cnt);
+  }
+  if (mode == St20TxBufMode::kExtMap) {
+    ASSERT_TRUE(st20_alloc_ext_frames(m_handle, tctx, frame_size));
+  } else if (mode == St20TxBufMode::kExtDma) {
+    ASSERT_TRUE(st20_alloc_dma_ext_frames(m_handle, tctx, fb_size));
+  }
+
+  const int total_lines = st.interlaced ? st.height / 2 : st.height;
+  for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+    uint8_t* fb = nullptr;
+    if (mode == St20TxBufMode::kExtMap) {
+      fb = tctx->ext_fb + frame * frame_size;
+    } else if (mode == St20TxBufMode::kExtDma) {
+      fb = (uint8_t*)tctx->ext_frames[frame].buf_addr;
+    } else if (st.tx_type == ST20_TYPE_FRAME_LEVEL) {
+      fb = (uint8_t*)st20_tx_get_framebuffer(tx_h, frame);
+    } else {
+      tctx->frame_buf[frame] = (uint8_t*)st_test_zmalloc(frame_size);
+      fb = tctx->frame_buf[frame];
+    }
+    ASSERT_TRUE(fb != NULL);
+    if (st.linesize > raw_stride) {
+      for (int line = 0; line < total_lines; line++) {
+        st_test_rand_data(fb + stride * line, static_cast<size_t>(raw_stride), frame);
+      }
+    } else {
+      st_test_rand_data(fb, frame_size, frame);
+    }
+    SHA256((unsigned char*)fb, fb_size, tctx->shas[frame]);
+    test_sha_dump("st20_rx", tctx->shas[frame]);
+  }
+}
+
+void st20_init_rx_slice_meta(tests_context* rctx, struct st20_rx_ops& ops_rx,
+                             const St20StreamSpec& st, size_t frame_size,
+                             size_t uframe_size, int slices_per_frame) {
+  ops_rx.slice_lines = st.height / slices_per_frame;
+  ops_rx.notify_slice_ready = st20_digest_rx_slice_ready;
+  if (st.rx_type != ST20_TYPE_SLICE_LEVEL) return;
+
+  auto* expect = (struct St20RxSliceExpectMeta*)st_test_zmalloc(
+      sizeof(struct St20RxSliceExpectMeta));
+  ASSERT_TRUE(expect != NULL);
+  expect->slice_mode = true;
+  expect->interlaced = st.interlaced;
+  expect->meta.width = st.width;
+  expect->meta.height = st.height;
+  expect->meta.fps = st.fps;
+  expect->meta.fmt = st.fmt;
+  expect->meta.frame_total_size = frame_size;
+  expect->meta.uframe_total_size = uframe_size;
+  expect->meta.second_field = false;
+  rctx->priv = expect;
+  ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+}
+
+void st20_bind_rx_digest_ctx(tests_context* rctx, const tests_context* tctx,
+                             st20_rx_handle rx_h, const St20StreamSpec& st,
+                             size_t uframe_size) {
+  rctx->frame_size = tctx->frame_size;
+  rctx->fb_size = tctx->fb_size;
+  rctx->width = st.width;
+  rctx->height = st.height;
+  rctx->uframe_size = uframe_size;
+  st20_get_pgroup(st.fmt, &rctx->st20_pg);
+  memcpy(rctx->shas, tctx->shas, TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
+  rctx->total_pkts_in_frame = tctx->total_pkts_in_frame;
+  st20_set_handle(rctx, rx_h);
+}
+
+void st20_verify_rx_dma_and_queue(st20_rx_handle rx_h, bool has_dma,
+                                  enum st20_type rx_type) {
+  bool dma_enabled = st20_rx_dma_enabled(rx_h);
+  if (has_dma && (rx_type != ST20_TYPE_RTP_LEVEL)) {
+    EXPECT_TRUE(dma_enabled);
+  } else {
+    EXPECT_FALSE(dma_enabled);
+  }
+  struct st_queue_meta meta;
+  EXPECT_GE(st20_rx_get_queue_meta(rx_h, &meta), 0);
+}
+
+static void st20_release_rx_ext_frame(tests_context* ctx, void* frame,
+                                      void* opaque = nullptr) {
+  if (opaque) {
+    bool* in_use = static_cast<bool*>(opaque);
+    EXPECT_TRUE(__atomic_exchange_n(in_use, false, __ATOMIC_ACQ_REL));
+    return;
+  }
+  if (!ctx->ext_frames) return;
+  const int max_slots =
+      static_cast<int>(sizeof(ctx->ext_fb_in_use) / sizeof(ctx->ext_fb_in_use[0]));
+  const int cnt = std::min(ctx->fb_cnt, max_slots);
+  for (int j = 0; j < cnt; j++) {
+    if (ctx->ext_frames[j].buf_addr == frame) {
+      __atomic_store_n(&ctx->ext_fb_in_use[j], false, __ATOMIC_RELEASE);
+      return;
+    }
+  }
+}
+
 void st20_rx_drain_bufq_put_framebuff(tests_context* ctx) {
   if (!ctx) return;
   std::unique_lock<std::mutex> lck(ctx->mtx);
-  auto handle = (st20_rx_handle)ctx->handle;
+  auto handle = (st20_rx_handle)st20_get_handle(ctx);
   while (!ctx->buf_q.empty()) {
     void* frame = ctx->buf_q.front();
     ctx->buf_q.pop();
@@ -688,6 +974,18 @@ void st20_rx_drain_bufq_put_framebuff(tests_context* ctx) {
     if (handle) {
       st20_rx_put_framebuff(handle, frame);
     }
+    st20_release_rx_ext_frame(ctx, frame);
+  }
+}
+
+void st20_rx_drain_bufq_free(tests_context* ctx) {
+  if (!ctx) return;
+  std::unique_lock<std::mutex> lck(ctx->mtx);
+  while (!ctx->buf_q.empty()) {
+    void* frame = ctx->buf_q.front();
+    ctx->buf_q.pop();
+    if (!ctx->second_field_q.empty()) ctx->second_field_q.pop();
+    if (frame) st_test_free(frame);
   }
 }
 
@@ -701,7 +999,6 @@ void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx,
   size_t bytes_in_line = ops->width * test_ctx->st20_pg.size / test_ctx->st20_pg.coverage;
 
   if (ops->packing == ST20_PACKING_GPM_SL) {
-    /* calculate pkts in line for rtp */
     size_t bytes_in_pkt = MTL_PKT_MAX_RTP_BYTES - sizeof(struct st20_rfc4175_rtp_hdr);
     int pkts_in_line = (bytes_in_line / bytes_in_pkt) + 1;
     test_ctx->total_pkts_in_frame = ops->height * pkts_in_line;
@@ -753,8 +1050,7 @@ void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx,
 }
 
 static void stop_and_wake_only(std::vector<tests_context*>& contexts) {
-  for (size_t i = 0; i < contexts.size(); ++i) {
-    auto* ctx = contexts[i];
+  for (auto* ctx : contexts) {
     if (!ctx) continue;
     ctx->stop = true;
     std::unique_lock<std::mutex> lck(ctx->mtx);
@@ -779,7 +1075,6 @@ St20DeinitGuard::St20DeinitGuard(mtl_handle handle, std::vector<tests_context*>&
       stopped_(false),
       sessions_released_(false),
       cleaned_(false),
-      ext_buf_(false),
       tx_ctx_(tx_ctx),
       rx_ctx_(rx_ctx),
       tx_handle_(tx_handle),
@@ -794,10 +1089,6 @@ St20DeinitGuard::~St20DeinitGuard() {
 
 void St20DeinitGuard::set_started(bool started) {
   started_ = started;
-}
-
-void St20DeinitGuard::set_ext_buf(bool ext_buf) {
-  ext_buf_ = ext_buf;
 }
 
 void St20DeinitGuard::add_thread_group(std::vector<std::thread>& threads) {
@@ -821,8 +1112,7 @@ void St20DeinitGuard::stop() {
   if (tx_threads_) join_threads(*tx_threads_);
   if (rx_threads_) join_threads(*rx_threads_);
   for (auto* group : extra_thread_groups_) {
-    if (!group) continue;
-    join_threads(*group);
+    if (group) join_threads(*group);
   }
 
   if (started_ && m_handle_) {
@@ -839,8 +1129,7 @@ void St20DeinitGuard::release_sessions() {
 
   /* Stop TX before draining RX so no new frame can enter the RX queues. */
   for (auto* c : tx_ctx_) {
-    if (!c) continue;
-    if (tx_ctx_cleanup_) tx_ctx_cleanup_(c);
+    if (c && tx_ctx_cleanup_) tx_ctx_cleanup_(c);
   }
 
   for (auto& h : tx_handle_) {
@@ -852,8 +1141,7 @@ void St20DeinitGuard::release_sessions() {
 
   /* Return queued framebuffers while the RX handles are still valid. */
   for (auto* c : rx_ctx_) {
-    if (!c) continue;
-    if (rx_ctx_cleanup_) rx_ctx_cleanup_(c);
+    if (c && rx_ctx_cleanup_) rx_ctx_cleanup_(c);
   }
 
   for (auto& h : rx_handle_) {
@@ -871,127 +1159,172 @@ void St20DeinitGuard::cleanup() {
 
   release_sessions();
 
-  for (auto*& c : rx_ctx_) {
-    if (!c) continue;
-    if (ext_buf_ && m_handle_ && c->ext_fb && c->ext_fb_iova_map_sz &&
-        c->ext_fb_iova != MTL_BAD_IOVA) {
-      mtl_dma_unmap(m_handle_, c->ext_fb, c->ext_fb_iova, c->ext_fb_iova_map_sz);
+  auto free_ctxs = [this](std::vector<tests_context*>& ctxs) {
+    for (auto*& c : ctxs) {
+      if (!c) continue;
+      if (m_handle_ && c->ext_fb && c->ext_fb_iova_map_sz &&
+          c->ext_fb_iova != MTL_BAD_IOVA) {
+        mtl_dma_unmap(m_handle_, c->ext_fb, c->ext_fb_iova, c->ext_fb_iova_map_sz);
+      }
+      tests_context_unit(c);
+      delete c;
+      c = NULL;
     }
-    tests_context_unit(c);
-    delete c;
-    c = NULL;
-  }
-
-  for (auto*& c : tx_ctx_) {
-    if (!c) continue;
-    if (ext_buf_ && m_handle_ && c->ext_fb && c->ext_fb_iova_map_sz &&
-        c->ext_fb_iova != MTL_BAD_IOVA) {
-      mtl_dma_unmap(m_handle_, c->ext_fb, c->ext_fb_iova, c->ext_fb_iova_map_sz);
-    }
-    tests_context_unit(c);
-    delete c;
-    c = NULL;
-  }
+  };
+  free_ctxs(rx_ctx_);
+  free_ctxs(tx_ctx_);
 
   cleaned_ = true;
 }
 
-int st20_digest_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
+static int st20_digest_rx_ready_common(void* priv, void* frame,
+                                       struct st20_rx_frame_meta* meta, bool interlaced) {
   auto ctx = (tests_context*)priv;
-  dbg("%s(%d), frame %p, opaque %p\n", __func__, ctx->idx, frame, meta->opaque);
+  void* opaque = meta->opaque;
+  dbg("%s(%d), frame %p, opaque %p\n", __func__, ctx->idx, frame, opaque);
 
-  if (meta->opaque) {
-    /* free dynamic ext frame */
-    bool* in_use = (bool*)meta->opaque;
-    EXPECT_TRUE(*in_use);
-    *in_use = false;
+  auto handle = (st20_rx_handle)st20_get_handle(ctx);
+  if (!handle) {
+    if (opaque) st20_release_rx_ext_frame(ctx, frame, opaque);
+    return -EIO;
   }
 
-  if (!ctx->handle) return -EIO;
+  auto put_and_release = [&]() {
+    st20_rx_put_framebuff(handle, frame);
+    if (opaque) st20_release_rx_ext_frame(ctx, frame, opaque);
+  };
+
+  if (ctx->ext_frames) {
+    bool found = false;
+    for (int j = 0; j < ctx->fb_cnt; j++) {
+      if (ctx->ext_frames[j].buf_addr == frame) {
+        found = true;
+        break;
+      }
+    }
+    auto* ext_stats = static_cast<St20ExtFrameStats*>(ctx->priv);
+    if (!found) {
+      if (ext_stats) {
+        __atomic_fetch_add(&ext_stats->ext_addr_mismatch_cnt, 1, __ATOMIC_RELAXED);
+      } else {
+        ctx->rx_meta_fail_cnt++;
+      }
+    }
+    if (ext_stats && ext_stats->dynamic_ext && !opaque) {
+      __atomic_fetch_add(&ext_stats->dynamic_opaque_null_cnt, 1, __ATOMIC_RELAXED);
+    }
+  }
 
   ctx->slice_recv_timestamp = 0;
   ctx->slice_recv_lines = 0;
 
-  if (!st_is_frame_complete(meta->status)) {
+  if (!st_is_frame_complete(meta->status) || meta->frame_total_size != ctx->frame_size ||
+      meta->uframe_total_size != ctx->uframe_size ||
+      meta->frame_total_size != meta->frame_recv_size) {
     ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
+    put_and_release();
     return 0;
-  }
-  if (meta->frame_total_size != ctx->frame_size) {
-    ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-    return 0;
-  }
-  if (meta->uframe_total_size != ctx->uframe_size) {
-    ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-    return 0;
-  }
-  if (meta->frame_total_size != meta->frame_recv_size) {
-    ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-    return 0;
-  }
-  if (meta->fpt > (ctx->frame_time / 10)) {
-    ctx->meta_timing_fail_cnt++;
-    dbg("%s(%d), fpt %" PRId64 ", frame time %fms\n", __func__, ctx->idx, meta->fpt,
-        ctx->frame_time / NS_PER_MS);
-  }
-  double rx_time = (double)meta->timestamp_last_pkt - meta->timestamp_first_pkt;
-  if (rx_time > ctx->frame_time) {
-    ctx->meta_timing_fail_cnt++;
-    dbg("%s(%d), rx_time %fms\n", __func__, ctx->idx, rx_time / NS_PER_MS);
   }
 
-  if (ctx->user_timestamp && !ctx->user_pacing) {
-    dbg("%s, timestamp %u %u\n", __func__, (uint32_t)meta->timestamp, ctx->pre_timestamp);
-    if (ctx->pre_timestamp) {
-      if ((uint32_t)meta->timestamp != (ctx->pre_timestamp + 1)) {
-        ctx->incomplete_frame_cnt++;
+  if (!interlaced) {
+    /* Skip initial startup warmup frames before enforcing steady-state timing bounds. */
+    if (ctx->frame_time > 0 && ctx->fb_rec >= 3) {
+      if (meta->fpt < 0 || meta->fpt > (ctx->frame_time / 2)) {
+        ctx->meta_timing_fail_cnt++;
+        dbg("%s(%d), fpt %" PRId64 ", frame time %fms\n", __func__, ctx->idx, meta->fpt,
+            ctx->frame_time / NS_PER_MS);
+      }
+      double rx_time = (double)meta->timestamp_last_pkt - meta->timestamp_first_pkt;
+      if (rx_time < (ctx->frame_time * 0.5) || rx_time > (ctx->frame_time * 1.25)) {
+        ctx->meta_timing_fail_cnt++;
+        dbg("%s(%d), rx_time %fms\n", __func__, ctx->idx, rx_time / NS_PER_MS);
       }
     }
-    ctx->pre_timestamp = (uint32_t)meta->timestamp;
+
+    if (ctx->user_timestamp && !ctx->user_pacing) {
+      dbg("%s, timestamp %u %u\n", __func__, (uint32_t)meta->timestamp,
+          ctx->pre_timestamp);
+      if (ctx->pre_timestamp && (uint32_t)meta->timestamp != (ctx->pre_timestamp + 1)) {
+        ctx->incomplete_frame_cnt++;
+      }
+      ctx->pre_timestamp = (uint32_t)meta->timestamp;
+    }
   }
 
-  std::unique_lock<std::mutex> lck(ctx->mtx);
-  if (ctx->buf_q.empty()) {
-    ctx->buf_q.push(frame);
-    ctx->cv.notify_all();
-  } else {
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
+  bool pushed = false;
+  {
+    std::unique_lock<std::mutex> lck(ctx->mtx);
+    if (!ctx->stop.load(std::memory_order_acquire) && ctx->buf_q.empty()) {
+      /* Keep dynamic ext slot marked in_use until the SHA worker finishes hashing. */
+      if (opaque) {
+        EXPECT_TRUE(__atomic_load_n(static_cast<bool*>(opaque), __ATOMIC_ACQUIRE));
+      }
+      ctx->buf_q.push(frame);
+      if (interlaced) ctx->second_field_q.push(meta->second_field);
+      ctx->cv.notify_all();
+      pushed = true;
+    }
   }
-  ctx->fb_rec++;
+  if (!pushed) put_and_release();
+  __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
-
   return 0;
 }
 
-#if DUMP_INCOMPLITE_SLICE
-void dump_slice_meta(struct st20_rx_slice_meta* meta) {
-  info("%s, width %u height %u fps %d fmd %d field %d\n", __func__, meta->width,
-       meta->height, meta->fps, meta->fmt, meta->second_field);
-  info("%s, frame total size %" PRIu64 " recv size %" PRIu64 " recv lines %u\n", __func__,
-       meta->frame_total_size, meta->frame_recv_size, meta->frame_recv_lines);
+int st20_digest_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
+  return st20_digest_rx_ready_common(priv, frame, meta, false);
 }
-#endif
 
-int st20_digest_rx_slice_ready(void* priv, void* /*frame*/,
-                               struct st20_rx_slice_meta* meta) {
+int st20_digest_rx_field_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
+  return st20_digest_rx_ready_common(priv, frame, meta, true);
+}
+
+int st20_digest_rx_slice_ready(void* priv, void* frame, struct st20_rx_slice_meta* meta) {
   auto ctx = (tests_context*)priv;
 
-  if (!ctx->handle) return -EIO;
-#if DUMP_INCOMPLITE_SLICE
-  int old_incomplete_slice_cnt = ctx->incomplete_slice_cnt;
-#endif
+  if (!st20_get_handle(ctx)) return -EIO;
   ctx->slice_cnt++;
 
-  struct st20_rx_slice_meta* expect_meta = (struct st20_rx_slice_meta*)ctx->priv;
+  if (!frame || meta->frame_recv_lines == 0) {
+    ctx->incomplete_slice_cnt++;
+  }
+
+  auto* expect = static_cast<St20RxSliceExpectMeta*>(ctx->priv);
+  if (!expect) return -EIO;
+  struct st20_rx_slice_meta* expect_meta = &expect->meta;
   if (expect_meta->width != meta->width) ctx->incomplete_slice_cnt++;
   if (expect_meta->height != meta->height) ctx->incomplete_slice_cnt++;
   if (expect_meta->fps != meta->fps) ctx->incomplete_slice_cnt++;
   if (expect_meta->fmt != meta->fmt) ctx->incomplete_slice_cnt++;
   if (expect_meta->frame_total_size != meta->frame_total_size) {
     ctx->incomplete_slice_cnt++;
+  }
+
+  if (expect->interlaced) {
+    if (!expect->has_prev_field) {
+      expect->has_prev_field = true;
+      expect->cur_second_field = meta->second_field;
+      expect->cur_timestamp = meta->timestamp;
+    } else if (meta->timestamp == expect->cur_timestamp) {
+      if (meta->second_field != expect->cur_second_field) {
+        ctx->incomplete_slice_cnt++;
+        __atomic_fetch_add(&ctx->rx_field_fail_cnt, 1, __ATOMIC_RELAXED);
+      }
+    } else {
+      uint32_t ts_delta = static_cast<uint32_t>(meta->timestamp - expect->cur_timestamp);
+      uint32_t max_single_field_delta =
+          static_cast<uint32_t>(90000.0 / st_frame_rate(meta->fps) * 1.5);
+      if (ts_delta <= max_single_field_delta &&
+          meta->second_field == expect->cur_second_field) {
+        ctx->incomplete_slice_cnt++;
+        __atomic_fetch_add(&ctx->rx_field_fail_cnt, 1, __ATOMIC_RELAXED);
+      }
+      expect->cur_second_field = meta->second_field;
+      expect->cur_timestamp = meta->timestamp;
+    }
+  } else if (meta->second_field) {
+    ctx->incomplete_slice_cnt++;
+    __atomic_fetch_add(&ctx->rx_field_fail_cnt, 1, __ATOMIC_RELAXED);
   }
 
   struct st20_pgroup st20_pg;
@@ -1009,128 +1342,57 @@ int st20_digest_rx_slice_ready(void* priv, void* /*frame*/,
   ctx->slice_recv_lines = meta->frame_recv_lines;
   if (!ctx->slice_recv_timestamp) {
     ctx->slice_recv_timestamp = meta->timestamp;
-  } else {
-    if (ctx->slice_recv_timestamp != meta->timestamp) {
-      ctx->incomplete_slice_cnt++;
-      dbg("%s, time stamp err %" PRIu64 " %" PRIu64 "\n", __func__, meta->timestamp,
-          ctx->slice_recv_timestamp);
-    }
+  } else if (ctx->slice_recv_timestamp != meta->timestamp) {
+    ctx->incomplete_slice_cnt++;
+    dbg("%s, time stamp err %" PRIu64 " %" PRIu64 "\n", __func__, meta->timestamp,
+        ctx->slice_recv_timestamp);
   }
-#if DUMP_INCOMPLITE_SLICE
-  if (old_incomplete_slice_cnt != ctx->incomplete_slice_cnt) {
-    dbg("%s, incomplete_slice detected\n", __func__);
-    dump_slice_meta(meta);
-    dump_slice_meta(expect_meta);
-  }
-#endif
   return 0;
 }
 
-int st20_digest_rx_field_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
-  auto ctx = (tests_context*)priv;
-
-  if (!ctx->handle) return -EIO;
-
-  ctx->slice_recv_timestamp = 0;
-  ctx->slice_recv_lines = 0;
-
-  if (!st_is_frame_complete(meta->status)) {
-    ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-    return 0;
+static void st20_digest_rx_check_common(tests_context* ctx, bool interlaced) {
+  unsigned char result[SHA256_DIGEST_LENGTH];
+  while (true) {
+    void* frame;
+    bool second_field = false;
+    {
+      std::unique_lock<std::mutex> lck(ctx->mtx);
+      ctx->cv.wait(lck, [ctx] { return ctx->stop || !ctx->buf_q.empty(); });
+      if (ctx->stop) return;
+      /* Keep entry in buf_q until hashing finishes so at most 1 RX buffer is held. */
+      frame = ctx->buf_q.front();
+      if (interlaced) second_field = ctx->second_field_q.front();
+    }
+    dbg("%s, frame %p\n", __func__, frame);
+    int i;
+    SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->fb_size,
+           result);
+    for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
+      if (!memcmp(result, ctx->shas[i], SHA256_DIGEST_LENGTH)) break;
+    }
+    if (i >= TEST_SHA_HIST_NUM) {
+      test_sha_dump("st20_rx_error_sha", result);
+      ctx->sha_fail_cnt++;
+    } else if (interlaced && ((i % 2) != 0) != second_field) {
+      test_sha_dump("field split error", result);
+      __atomic_fetch_add(&ctx->rx_field_fail_cnt, 1, __ATOMIC_RELAXED);
+    }
+    __atomic_fetch_add(&ctx->check_sha_frame_cnt, 1, __ATOMIC_RELAXED);
+    auto handle = (st20_rx_handle)st20_get_handle(ctx);
+    if (handle) st20_rx_put_framebuff(handle, frame);
+    st20_release_rx_ext_frame(ctx, frame);
+    {
+      std::unique_lock<std::mutex> lck(ctx->mtx);
+      ctx->buf_q.pop();
+      if (interlaced) ctx->second_field_q.pop();
+    }
   }
-  if (meta->frame_total_size != ctx->frame_size) {
-    ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-    return 0;
-  }
-  if (meta->uframe_total_size != ctx->uframe_size) {
-    ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-    return 0;
-  }
-  if (meta->frame_total_size != meta->frame_recv_size) {
-    ctx->incomplete_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-    return 0;
-  }
-
-  std::unique_lock<std::mutex> lck(ctx->mtx);
-  if (ctx->buf_q.empty()) {
-    ctx->buf_q.push(frame);
-    ctx->second_field_q.push(meta->second_field);
-    ctx->cv.notify_all();
-  } else {
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-  }
-  ctx->fb_rec++;
-  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
-  dbg("%s, frame %p\n", __func__, frame);
-  return 0;
 }
 
 void st20_digest_rx_frame_check(void* args) {
-  auto ctx = (tests_context*)args;
-  unsigned char result[SHA256_DIGEST_LENGTH];
-  while (true) {
-    void* frame;
-    {
-      std::unique_lock<std::mutex> lck(ctx->mtx);
-      ctx->cv.wait(lck, [ctx] { return ctx->stop || !ctx->buf_q.empty(); });
-      if (ctx->stop) return;
-      frame = ctx->buf_q.front();
-      ctx->buf_q.pop();
-    }
-    dbg("%s, frame %p\n", __func__, frame);
-    int i;
-    SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->fb_size,
-           result);
-    for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
-      unsigned char* target_sha = ctx->shas[i];
-      if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
-    }
-    if (i >= TEST_SHA_HIST_NUM) {
-      test_sha_dump("st20_rx_error_sha", result);
-      ctx->sha_fail_cnt++;
-    }
-    ctx->check_sha_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-  }
+  st20_digest_rx_check_common((tests_context*)args, false);
 }
 
 void st20_digest_rx_field_check(void* args) {
-  auto ctx = (tests_context*)args;
-  unsigned char result[SHA256_DIGEST_LENGTH];
-  while (true) {
-    void* frame;
-    bool second_field;
-    {
-      std::unique_lock<std::mutex> lck(ctx->mtx);
-      ctx->cv.wait(lck, [ctx] { return ctx->stop || !ctx->buf_q.empty(); });
-      if (ctx->stop) return;
-      frame = ctx->buf_q.front();
-      second_field = ctx->second_field_q.front();
-      ctx->buf_q.pop();
-      ctx->second_field_q.pop();
-    }
-    dbg("%s, frame %p\n", __func__, frame);
-    int i;
-    SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->fb_size,
-           result);
-    for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
-      unsigned char* target_sha = ctx->shas[i];
-      if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
-    }
-    if (i >= TEST_SHA_HIST_NUM) {
-      test_sha_dump("st20_rx_error_sha", result);
-      ctx->sha_fail_cnt++;
-    }
-    bool expect_second_field = i % 2 ? true : false;
-    if (expect_second_field != second_field) {
-      test_sha_dump("field split error", result);
-      ctx->rx_field_fail_cnt++;
-    }
-    ctx->check_sha_frame_cnt++;
-    st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
-  }
+  st20_digest_rx_check_common((tests_context*)args, true);
 }

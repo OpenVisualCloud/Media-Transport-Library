@@ -2,329 +2,344 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <mutex>
+#include <set>
 #include <thread>
+#include <utility>
+#include <vector>
 
+#include "harness/mock_plugin.hpp"
+#include "harness/pcapng.hpp"
 #include "log.h"
-#include "tests.hpp"
+#include "test_harness.hpp"
 
 #define ST22P_TEST_PAYLOAD_TYPE (114)
 #define ST22P_TEST_UDP_PORT (16000)
 
-static int test_encode_frame(struct test_st22_encoder_session* s,
-                             struct st22_encode_frame_meta* frame) {
-  struct st22_encoder_create_req* req = &s->req;
-  size_t codestream_size = req->max_codestream_size;
+namespace {
 
-  /* check frame sanity */
-  if (frame->src->width != req->width) return -EIO;
-  if (frame->dst->width != req->width) return -EIO;
-  if (frame->src->height != req->height) return -EIO;
-  if (frame->dst->height != req->height) return -EIO;
-  if (frame->src->fmt != req->input_fmt) return -EIO;
-  if (frame->dst->fmt != req->output_fmt) return -EIO;
+using ScopedSt22pTx = mtl_test::ScopedHandle<st22p_tx_handle, st22p_tx_free>;
+using ScopedSt22pRx = mtl_test::ScopedHandle<st22p_rx_handle, st22p_rx_free>;
+using ScopedSt22EncoderDev =
+    mtl_test::ScopedHandle<st22_encoder_dev_handle, st22_encoder_unregister>;
+using ScopedSt22DecoderDev =
+    mtl_test::ScopedHandle<st22_decoder_dev_handle, st22_decoder_unregister>;
 
-  /* copy src sha to the start of encode frame */
-  memcpy(frame->dst->addr[0],
-         (uint8_t*)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
-         SHA256_DIGEST_LENGTH);
-  st_usleep(s->sleep_time_us);
-  /* data size indicate the encode stream size for current frame */
-  if (s->rand_ratio) {
-    int rand_ratio = 100 - (rand() % s->rand_ratio);
-    codestream_size = codestream_size * rand_ratio / 100;
+struct UnlinkGuard {
+  const char* path = nullptr;
+  ~UnlinkGuard() {
+    if (path && path[0] != '\0') unlink(path);
   }
-  frame->dst->data_size = codestream_size;
+};
 
-  s->frame_cnt++;
-  dbg("%s(%d), succ, codestream_size %" PRIu64 "\n", __func__, s->idx, codestream_size);
+/* Extended test context owning atomic, dynamically sized external frame slots. */
+struct St22pContext : public tests_context {
+  mtl_test::ScopedExtFrames ext_frames;
+  /* Optional secondary TX SHA table for source-switch verification. */
+  bool check_dual_sha = false;
+  uint8_t alt_shas[ST22_TEST_SHA_HIST_NUM][SHA256_DIGEST_LENGTH] = {};
+  std::atomic<int> matched_tx0{0};
+  std::atomic<int> matched_tx1{0};
+  /* Optional interlaced field metadata tracking. */
+  bool expect_interlaced = false;
+  std::atomic<int> first_field_cnt{0};
+  std::atomic<int> second_field_cnt{0};
+  std::atomic<int> interlace_meta_fail_cnt{0};
+};
 
-  /* simulate fail and timeout */
-  if (s->fail_interval) {
-    if (!(s->frame_cnt % s->fail_interval)) {
-      return -EIO;
-    }
+struct St22pContextDeleter {
+  void operator()(St22pContext* c) const {
+    if (!c) return;
+    tests_context_unit(c);
+    delete c;
   }
-  if (s->timeout_interval) {
-    if (!(s->frame_cnt % s->timeout_interval)) {
-      st_usleep(s->timeout_ms * 1000);
-    }
-  }
+};
 
-  return 0;
+using ScopedSt22pContext = std::unique_ptr<St22pContext, St22pContextDeleter>;
+
+ScopedSt22pContext make_st22p_context(struct st_tests_context* global_ctx, int idx = 0,
+                                      uint16_t fb_cnt = 3, bool check_sha = false) {
+  ScopedSt22pContext c(new St22pContext());
+  c->ctx = global_ctx;
+  c->idx = idx;
+  c->fb_cnt = fb_cnt;
+  c->fb_idx = 0;
+  c->check_sha = check_sha;
+  return c;
 }
 
-static void* test_encode_thread(void* arg) {
-  struct test_st22_encoder_session* s = (struct test_st22_encoder_session*)arg;
-  st22p_encode_session session_p = s->session_p;
-  struct st_tests_context* ctx = s->ctx;
-  struct st22_encode_frame_meta* frame;
-  int result;
-
-  if (ctx->encoder_use_block_get) st22_encoder_set_block_timeout(session_p, NS_PER_S);
-
-  dbg("%s(%d), start\n", __func__, s->idx);
-  while (!s->stop) {
-    frame = st22_encoder_get_frame(session_p);
-    if (!frame) { /* no frame */
-      if (!ctx->encoder_use_block_get) {
-        st_pthread_mutex_lock(&s->wake_mutex);
-        if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-        st_pthread_mutex_unlock(&s->wake_mutex);
-      }
-      continue;
-    }
-    result = test_encode_frame(s, frame);
-    st22_encoder_put_frame(session_p, frame, result);
-  }
-  dbg("%s(%d), stop\n", __func__, s->idx);
-
-  return NULL;
+uint64_t next_prng_u64() {
+  thread_local uint64_t state = 0x9e3779b97f4a7c15ULL;
+  state ^= state >> 12;
+  state ^= state << 25;
+  state ^= state >> 27;
+  return state * 0x2545f4914f6cdd1dULL;
 }
 
-static st22_encode_priv test_encoder_create_session(void* priv,
-                                                    st22p_encode_session session_p,
-                                                    struct st22_encoder_create_req* req) {
-  struct st_tests_context* ctx = (struct st_tests_context*)priv;
-  struct test_st22_encoder_session* session = NULL;
-  int ret;
+inline int atomic_inc(int* p) {
+  return __atomic_fetch_add(p, 1, __ATOMIC_RELAXED);
+}
 
-  for (int i = 0; i < MAX_TEST_ENCODER_SESSIONS; i++) {
-    if (ctx->encoder_sessions[i]) continue;
-    session = (struct test_st22_encoder_session*)malloc(sizeof(*session));
-    if (!session) return NULL;
-    memset(session, 0, sizeof(*session));
-    session->ctx = ctx;
-    session->idx = i;
-    st_pthread_mutex_init(&session->wake_mutex, NULL);
-    st_pthread_cond_init(&session->wake_cond, NULL);
+inline void set_handle(tests_context* c, void* h) {
+  __atomic_store_n(&c->handle, h, __ATOMIC_RELEASE);
+}
 
+inline void* get_handle(const tests_context* c) {
+  return __atomic_load_n(&c->handle, __ATOMIC_ACQUIRE);
+}
+
+/*
+ * Steady-state measurement window for ST 2110-22 pipeline (50-59.94 fps):
+ *   - warmup_frames = 3 absorbs pipeline bring-up and RL pacing training.
+ *   - min_window_ms = 1000, min_delta_frames = 25 collects 50-60 frames and
+ *     vsync ticks at 50-59.94 fps (<= 2.0% edge quantization error, inside
+ *     +/-10% FPS and vsync tolerances) and exercises >= 18 fault intervals.
+ */
+constexpr int kSt22pRateWarmupFrames = 6;
+constexpr int kSt22pRateMinDeltaFrames = 50;
+constexpr int kSt22pRateMinWindowMs = 2000;
+
+/* Member order guarantees RAII teardown: handle free -> DMA unmap -> context free. */
+struct St22pTxSession {
+  ScopedSt22pContext ctx;
+  ScopedSt22pTx handle;
+};
+
+struct St22pRxSession {
+  ScopedSt22pContext ctx;
+  ScopedSt22pRx handle;
+};
+
+template <typename SessionVec>
+std::vector<tests_context*> collect_ctxs(const SessionVec& sessions) {
+  std::vector<tests_context*> ptrs;
+  ptrs.reserve(sessions.size());
+  for (const auto& s : sessions) ptrs.push_back(s.ctx.get());
+  return ptrs;
+}
+
+struct St22pStreamSpec {
+  enum st_fps fps = ST_FPS_P59_94;
+  int width = 1920;
+  int height = 1080;
+  enum st_frame_fmt fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  enum st22_codec codec = ST22_CODEC_JPEGXS;
+  int compress_ratio = 10;
+};
+
+struct St22pDigestScenario {
+  std::vector<St22pStreamSpec> streams;
+  int fail_interval = 0;
+  int timeout_interval = 0;
+  int timeout_ms = 0;
+  int rand_ratio = 0;
+  bool check_fps = true;
+  bool user_timestamp = false;
+  bool vsync = true;
+  bool rtcp = false;
+  bool tx_ext = false;
+  bool rx_ext = false;
+  bool interlace = false;
+  uint32_t ssrc = 0;
+  bool block_get = false;
+  bool codec_block_get = false;
+  bool derive = false;
+};
+
+constexpr uint32_t kSt22SizeTagMagic = 0x53543232U;
+
+struct St22RandSizeTracker {
+  std::mutex mtx;
+  int checked_frames = 0;
+  int mismatch_cnt = 0;
+  std::set<size_t> distinct_sizes_below_buf;
+
+  void reset() {
+    std::lock_guard<std::mutex> lk(mtx);
+    checked_frames = 0;
+    mismatch_cnt = 0;
+    distinct_sizes_below_buf.clear();
+  }
+};
+
+St22RandSizeTracker g_rand_size_tracker;
+
+struct St22EncoderTraits {
+  using SessionHandle = st22p_encode_session;
+  using PrivHandle = st22_encode_priv;
+  using CreateReq = struct st22_encoder_create_req;
+  using FrameMeta = struct st22_encode_frame_meta;
+
+  static bool use_block_get(struct st_tests_context* ctx) {
+    return ctx->encoder_use_block_get;
+  }
+
+  static void on_create_req(struct st_tests_context* ctx, CreateReq* req,
+                            int& sleep_time_us) {
     req->max_codestream_size = req->codestream_size;
     if (ctx->encoder_use_block_get) req->resp_flag |= ST22_ENCODER_RESP_FLAG_BLOCK_GET;
-
-    session->req = *req;
-    session->session_p = session_p;
     double fps = st_frame_rate(req->fps);
     if (!fps) fps = 60;
-    session->sleep_time_us = 1000 * 1000 / fps * 8 / 10;
-    dbg("%s(%d), sleep_time_us %d\n", __func__, i, session->sleep_time_us);
-    session->fail_interval = ctx->plugin_fail_interval;
-    session->timeout_interval = ctx->plugin_timeout_interval;
-    session->timeout_ms = ctx->plugin_timeout_ms;
-    session->rand_ratio = ctx->plugin_rand_ratio;
+    sleep_time_us = static_cast<int>(1000 * 1000 / fps * 8 / 10);
+  }
 
-    ret = pthread_create(&session->encode_thread, NULL, test_encode_thread, session);
-    if (ret < 0) {
-      err("%s(%d), thread create fail %d\n", __func__, i, ret);
-      st_pthread_mutex_destroy(&session->wake_mutex);
-      st_pthread_cond_destroy(&session->wake_cond);
-      free(session);
-      return NULL;
+  static void set_block_timeout(SessionHandle s, uint64_t ns) {
+    st22_encoder_set_block_timeout(s, ns);
+  }
+
+  static void wake_block(SessionHandle s) {
+    st22_encoder_wake_block(s);
+  }
+
+  static FrameMeta* get_frame(SessionHandle s) {
+    return st22_encoder_get_frame(s);
+  }
+
+  static int put_frame(SessionHandle s, FrameMeta* f, int result) {
+    return st22_encoder_put_frame(s, f, result);
+  }
+
+  static void poison_failed_frame(const CreateReq& req, FrameMeta* f) {
+    if (!f || !f->dst || !f->dst->addr[0]) return;
+    /* Keep size > ST22_ENCODE_MIN_FRAME_SZ so ignoring result < 0 sends poisoned bytes.
+     */
+    constexpr size_t kMinValidCodestreamSz =
+        5 * static_cast<size_t>(MTL_PKT_MAX_RTP_BYTES) + 64;
+    size_t sz = req.max_codestream_size;
+    if (sz > kMinValidCodestreamSz) sz = kMinValidCodestreamSz;
+    if (sz > f->dst->buffer_size) sz = f->dst->buffer_size;
+    f->dst->data_size = sz;
+    auto* base = static_cast<uint8_t*>(f->dst->addr[0]);
+    const size_t head = sz < 64 ? sz : 64;
+    memset(base, 0xDE, head);
+    constexpr size_t kShaLen = static_cast<size_t>(SHA256_DIGEST_LENGTH);
+    if (sz >= kShaLen) {
+      memset(base + sz - kShaLen, 0xDE, kShaLen);
     }
-
-    ctx->encoder_sessions[i] = session;
-    dbg("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
-        st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
-    dbg("%s(%d), frame_max_size %" PRIu64 "\n", __func__, i, frame_max_size);
-    return session;
   }
 
-  dbg("%s, all session slot are used\n", __func__);
-  return NULL;
-}
-
-static int test_encoder_free_session(void* priv, st22_encode_priv session) {
-  struct st_tests_context* ctx = (struct st_tests_context*)priv;
-  struct test_st22_encoder_session* encoder_session =
-      (struct test_st22_encoder_session*)session;
-  int idx = encoder_session->idx;
-
-  encoder_session->stop = true;
-  if (ctx->encoder_use_block_get) {
-    st22_encoder_wake_block(encoder_session->session_p);
-  } else {
-    st_pthread_mutex_lock(&encoder_session->wake_mutex);
-    st_pthread_cond_signal(&encoder_session->wake_cond);
-    st_pthread_mutex_unlock(&encoder_session->wake_mutex);
-  }
-  pthread_join(encoder_session->encode_thread, NULL);
-
-  st_pthread_mutex_destroy(&encoder_session->wake_mutex);
-  st_pthread_cond_destroy(&encoder_session->wake_cond);
-
-  dbg("%s(%d), total %d encode frames\n", __func__, idx, encoder_session->frame_cnt);
-  free(encoder_session);
-  ctx->encoder_sessions[idx] = NULL;
-  return 0;
-}
-
-static int test_encoder_frame_available(void* priv) {
-  struct test_st22_encoder_session* s = (struct test_st22_encoder_session*)priv;
-  struct st_tests_context* ctx = s->ctx;
-
-  if (ctx->encoder_use_block_get) return 0;
-
-  // dbg("%s(%d)\n", __func__, s->idx);
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-
-  return 0;
-}
-
-static int test_decode_frame(struct test_st22_decoder_session* s,
-                             struct st22_decode_frame_meta* frame) {
-  struct st22_decoder_create_req* req = &s->req;
-
-  /* check frame sanity */
-  if (frame->src->width != req->width) return -EIO;
-  if (frame->dst->width != req->width) return -EIO;
-  if (frame->src->height != req->height) return -EIO;
-  if (frame->dst->height != req->height) return -EIO;
-  if (frame->src->fmt != req->input_fmt) return -EIO;
-  if (frame->dst->fmt != req->output_fmt) return -EIO;
-  if (frame->src->data_size > frame->src->buffer_size) return -EIO;
-
-  /* copy sha to the end of decode frame */
-  memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
-         frame->src->addr[0], SHA256_DIGEST_LENGTH);
-  st_usleep(s->sleep_time_us);
-
-  s->frame_cnt++;
-  // dbg("%s(%d), succ\n", __func__, s->idx);
-
-  /* simulate fail and timeout */
-  if (s->fail_interval) {
-    if (!(s->frame_cnt % s->fail_interval)) {
+  static int process_frame(const CreateReq& req, FrameMeta* f, int sleep_time_us,
+                           int rand_ratio, int& frame_cnt) {
+    size_t codestream_size = req.max_codestream_size;
+    if (f->src->width != req.width || f->dst->width != req.width ||
+        f->src->height != req.height || f->dst->height != req.height ||
+        f->src->fmt != req.input_fmt || f->dst->fmt != req.output_fmt) {
       return -EIO;
     }
-  }
-  if (s->timeout_interval) {
-    if (!(s->frame_cnt % s->timeout_interval)) {
-      st_usleep(s->timeout_ms * 1000);
+
+    /* copy src sha to the start of encode frame */
+    memcpy(
+        f->dst->addr[0],
+        static_cast<uint8_t*>(f->src->addr[0]) + f->src->data_size - SHA256_DIGEST_LENGTH,
+        SHA256_DIGEST_LENGTH);
+    if (sleep_time_us > 0) st_usleep(static_cast<unsigned int>(sleep_time_us));
+    if (rand_ratio > 0) {
+      int ratio =
+          100 - static_cast<int>(next_prng_u64() % static_cast<uint64_t>(rand_ratio));
+      codestream_size = codestream_size * static_cast<size_t>(ratio) / 100;
     }
+    constexpr size_t kShaLen = static_cast<size_t>(SHA256_DIGEST_LENGTH);
+    if (codestream_size >= kShaLen + 2 * sizeof(uint32_t)) {
+      auto* tag = static_cast<uint8_t*>(f->dst->addr[0]) + kShaLen;
+      const uint32_t magic = kSt22SizeTagMagic;
+      const uint32_t encoded_sz = static_cast<uint32_t>(codestream_size);
+      memcpy(tag, &magic, sizeof(magic));
+      memcpy(tag + sizeof(magic), &encoded_sz, sizeof(encoded_sz));
+    }
+    f->dst->data_size = codestream_size;
+    frame_cnt++;
+    return 0;
+  }
+};
+
+struct St22DecoderTraits {
+  using SessionHandle = st22p_decode_session;
+  using PrivHandle = st22_decode_priv;
+  using CreateReq = struct st22_decoder_create_req;
+  using FrameMeta = struct st22_decode_frame_meta;
+  /* Use a coprime interval vs encoder so failed TX frames never phase-lock
+   * with RX decoder failures and silently cancel out. */
+  static constexpr int kFailIntervalDelta = 1;
+
+  static bool use_block_get(struct st_tests_context* ctx) {
+    return ctx->decoder_use_block_get;
   }
 
-  return 0;
-}
-
-static void* test_decode_thread(void* arg) {
-  struct test_st22_decoder_session* s = (struct test_st22_decoder_session*)arg;
-  st22p_decode_session session_p = s->session_p;
-  struct st_tests_context* ctx = s->ctx;
-  struct st22_decode_frame_meta* frame;
-  int result;
-
-  if (ctx->encoder_use_block_get) st22_decoder_set_block_timeout(session_p, NS_PER_S);
-
-  dbg("%s(%d), start\n", __func__, s->idx);
-  while (!s->stop) {
-    frame = st22_decoder_get_frame(session_p);
-    if (!frame) { /* no frame */
-      if (!ctx->decoder_use_block_get) {
-        st_pthread_mutex_lock(&s->wake_mutex);
-        if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-        st_pthread_mutex_unlock(&s->wake_mutex);
-      }
-      continue;
-    }
-    result = test_decode_frame(s, frame);
-    st22_decoder_put_frame(session_p, frame, result);
-  }
-  dbg("%s(%d), stop\n", __func__, s->idx);
-
-  return NULL;
-}
-
-static st22_decode_priv test_decoder_create_session(void* priv,
-                                                    st22p_decode_session session_p,
-                                                    struct st22_decoder_create_req* req) {
-  struct st_tests_context* ctx = (struct st_tests_context*)priv;
-  struct test_st22_decoder_session* session = NULL;
-  int ret;
-
-  for (int i = 0; i < MAX_TEST_DECODER_SESSIONS; i++) {
-    if (ctx->decoder_sessions[i]) continue;
-    session = (struct test_st22_decoder_session*)malloc(sizeof(*session));
-    if (!session) return NULL;
-    memset(session, 0, sizeof(*session));
-    session->idx = i;
-    session->ctx = ctx;
-    st_pthread_mutex_init(&session->wake_mutex, NULL);
-    st_pthread_cond_init(&session->wake_cond, NULL);
-
-    if (ctx->decoder_use_block_get) {
-      req->resp_flag |= ST22_DECODER_RESP_FLAG_BLOCK_GET;
-    }
-
-    session->req = *req;
-    session->session_p = session_p;
+  static void on_create_req(struct st_tests_context* ctx, CreateReq* req,
+                            int& sleep_time_us) {
+    if (ctx->decoder_use_block_get) req->resp_flag |= ST22_DECODER_RESP_FLAG_BLOCK_GET;
     double fps = st_frame_rate(req->fps);
     if (!fps) fps = 60;
-    session->sleep_time_us = 1000 * 1000 / fps * 8 / 10;
-    dbg("%s(%d), sleep_time_us %d\n", __func__, i, session->sleep_time_us);
-    session->fail_interval = ctx->plugin_fail_interval;
-    session->timeout_interval = ctx->plugin_timeout_interval;
-    session->timeout_ms = ctx->plugin_timeout_ms;
+    sleep_time_us = static_cast<int>(1000 * 1000 / fps * 8 / 10);
+  }
 
-    ret = pthread_create(&session->decode_thread, NULL, test_decode_thread, session);
-    if (ret < 0) {
-      err("%s(%d), thread create fail %d\n", __func__, i, ret);
-      st_pthread_mutex_destroy(&session->wake_mutex);
-      st_pthread_cond_destroy(&session->wake_cond);
-      free(session);
-      return NULL;
+  static void set_block_timeout(SessionHandle s, uint64_t ns) {
+    st22_decoder_set_block_timeout(s, ns);
+  }
+
+  static void wake_block(SessionHandle s) {
+    st22_decoder_wake_block(s);
+  }
+
+  static FrameMeta* get_frame(SessionHandle s) {
+    return st22_decoder_get_frame(s);
+  }
+
+  static int put_frame(SessionHandle s, FrameMeta* f, int result) {
+    return st22_decoder_put_frame(s, f, result);
+  }
+
+  static int process_frame(const CreateReq& req, FrameMeta* f, int sleep_time_us,
+                           int rand_ratio, int& frame_cnt) {
+    if (f->src->width != req.width || f->dst->width != req.width ||
+        f->src->height != req.height || f->dst->height != req.height ||
+        f->src->fmt != req.input_fmt || f->dst->fmt != req.output_fmt ||
+        f->src->data_size > f->src->buffer_size) {
+      return -EIO;
     }
 
-    ctx->decoder_sessions[i] = session;
-    dbg("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
-        st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
-    return session;
+    if (rand_ratio > 0) {
+      constexpr size_t kShaLen = static_cast<size_t>(SHA256_DIGEST_LENGTH);
+      uint32_t magic = 0;
+      uint32_t expected_sz = 0;
+      if (f->src->data_size >= kShaLen + 2 * sizeof(uint32_t)) {
+        const auto* tag = static_cast<const uint8_t*>(f->src->addr[0]) + kShaLen;
+        memcpy(&magic, tag, sizeof(magic));
+        memcpy(&expected_sz, tag + sizeof(magic), sizeof(expected_sz));
+      }
+      std::lock_guard<std::mutex> lk(g_rand_size_tracker.mtx);
+      g_rand_size_tracker.checked_frames++;
+      if (magic != kSt22SizeTagMagic ||
+          f->src->data_size != static_cast<size_t>(expected_sz)) {
+        g_rand_size_tracker.mismatch_cnt++;
+      }
+      if (f->src->data_size < f->src->buffer_size) {
+        g_rand_size_tracker.distinct_sizes_below_buf.insert(f->src->data_size);
+      }
+    }
+
+    /* copy sha to the end of decode frame */
+    memcpy(
+        static_cast<uint8_t*>(f->dst->addr[0]) + f->dst->data_size - SHA256_DIGEST_LENGTH,
+        f->src->addr[0], SHA256_DIGEST_LENGTH);
+    if (sleep_time_us > 0) st_usleep(static_cast<unsigned int>(sleep_time_us));
+    frame_cnt++;
+    return 0;
   }
+};
 
-  dbg("%s, all session slot are used\n", __func__);
-  return NULL;
-}
+using St22MockEncoder = mtl_test::MockPluginPool<St22EncoderTraits>;
+using St22MockDecoder = mtl_test::MockPluginPool<St22DecoderTraits>;
 
-static int test_decoder_free_session(void* priv, st22_decode_priv session) {
-  struct st_tests_context* ctx = (struct st_tests_context*)priv;
-  struct test_st22_decoder_session* decoder_session =
-      (struct test_st22_decoder_session*)session;
-  int idx = decoder_session->idx;
-
-  decoder_session->stop = true;
-  if (ctx->encoder_use_block_get) {
-    st22_decoder_wake_block(decoder_session->session_p);
-  } else {
-    st_pthread_mutex_lock(&decoder_session->wake_mutex);
-    st_pthread_cond_signal(&decoder_session->wake_cond);
-    st_pthread_mutex_unlock(&decoder_session->wake_mutex);
-  }
-  pthread_join(decoder_session->decode_thread, NULL);
-
-  st_pthread_mutex_destroy(&decoder_session->wake_mutex);
-  st_pthread_cond_destroy(&decoder_session->wake_cond);
-
-  dbg("%s(%d), total %d decode frames\n", __func__, idx, decoder_session->frame_cnt);
-  free(decoder_session);
-  ctx->decoder_sessions[idx] = NULL;
-  return 0;
-}
-
-static int test_decoder_frame_available(void* priv) {
-  struct test_st22_decoder_session* s = (struct test_st22_decoder_session*)priv;
-  struct st_tests_context* ctx = s->ctx;
-
-  if (ctx->decoder_use_block_get) return 0;
-
-  // dbg("%s(%d)\n", __func__, s->idx);
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-
-  return 0;
-}
+}  // namespace
 
 int st_test_st22_plugin_unregister(struct st_tests_context* ctx) {
   if (ctx->decoder_dev_handle) {
@@ -335,152 +350,169 @@ int st_test_st22_plugin_unregister(struct st_tests_context* ctx) {
     st22_encoder_unregister(ctx->encoder_dev_handle);
     ctx->encoder_dev_handle = NULL;
   }
-
   return 0;
 }
 
 int st_test_st22_plugin_register(struct st_tests_context* ctx) {
   auto st = ctx->handle;
-  int ret = 0;
 
-  struct st22_decoder_dev d_dev;
-  memset(&d_dev, 0, sizeof(d_dev));
+  struct st22_decoder_dev d_dev = {};
   d_dev.name = "st22_test_decoder";
   d_dev.priv = ctx;
   d_dev.target_device = ST_PLUGIN_DEVICE_TEST;
   d_dev.input_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   d_dev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8;
-  d_dev.create_session = test_decoder_create_session;
-  d_dev.free_session = test_decoder_free_session;
-  d_dev.notify_frame_available = test_decoder_frame_available;
+  d_dev.create_session = St22MockDecoder::create_session;
+  d_dev.free_session = St22MockDecoder::free_session;
+  d_dev.notify_frame_available = St22MockDecoder::notify_frame_available;
   ctx->decoder_dev_handle = st22_decoder_register(st, &d_dev);
   if (!ctx->decoder_dev_handle) {
     err("%s, decoder register fail\n", __func__);
-    return ret;
+    return -EIO;
   }
 
-  struct st22_encoder_dev e_dev;
-  memset(&e_dev, 0, sizeof(e_dev));
+  struct st22_encoder_dev e_dev = {};
   e_dev.name = "st22_test_encoder";
   e_dev.priv = ctx;
   e_dev.target_device = ST_PLUGIN_DEVICE_TEST;
   e_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8;
   e_dev.output_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
-  e_dev.create_session = test_encoder_create_session;
-  e_dev.free_session = test_encoder_free_session;
-  e_dev.notify_frame_available = test_encoder_frame_available;
+  e_dev.create_session = St22MockEncoder::create_session;
+  e_dev.free_session = St22MockEncoder::free_session;
+  e_dev.notify_frame_available = St22MockEncoder::notify_frame_available;
   ctx->encoder_dev_handle = st22_encoder_register(st, &e_dev);
   if (!ctx->encoder_dev_handle) {
     err("%s, encoder register fail\n", __func__);
-    return ret;
+    st_test_st22_plugin_unregister(ctx);
+    return -EIO;
   }
 
   info("%s, succ\n", __func__);
   return 0;
 }
 
-static void plugin_register_test(const char* so_name, bool expect_succ) {
-  auto ctx = st_test_ctx();
-  auto st = ctx->handle;
+template <typename Dev, typename ScopedDev, typename CreateFn, typename FreeFn,
+          typename RegFn>
+void verify_codec_plugin_reg(mtl_handle st, Dev dev, CreateFn noop_create,
+                             FreeFn noop_free, RegFn reg_fn) {
+  dev.create_session = nullptr;
+  dev.free_session = noop_free;
+  EXPECT_EQ(reg_fn(st, &dev), nullptr);
 
-  int pre_nb = st_get_plugins_nb(st);
-  int ret = st_plugin_register(st, so_name);
-  int new_nb = st_get_plugins_nb(st);
+  dev.create_session = noop_create;
+  dev.free_session = nullptr;
+  EXPECT_EQ(reg_fn(st, &dev), nullptr);
 
-  EXPECT_EQ(ret >= 0, expect_succ);
-  if (ret < 0) {
-    EXPECT_EQ(pre_nb, new_nb);
-  } else {
-    EXPECT_EQ(pre_nb + 1, new_nb);
-    EXPECT_GE(st_plugin_unregister(st, so_name), 0);
+  dev.free_session = noop_free;
+  /* Exceed the 8-slot plugin table so a no-op unregister fails cleanly. */
+  constexpr int kRegUnregCycles = 10;
+  for (int i = 0; i < kRegUnregCycles; ++i) {
+    ScopedDev handle(reg_fn(st, &dev));
+    ASSERT_TRUE(static_cast<bool>(handle)) << "plugin register failed on cycle " << i;
+    handle.reset();
   }
 }
 
-/* Via KahawaiTest's DT_RPATH (build.sh prefix) or the loader's search (/usr/local) */
-TEST(St22p, plugin_register_single) {
-  plugin_register_test("libst_plugin_convert_sample.so", true);
-}
-TEST(St22p, plugin_register_fail) {
-  plugin_register_test("/usr/local/lib/x86_64-linux-gnu/libst_plugin_sample_fail.so",
-                       false);
-}
+static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx);
+static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx);
 
-static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
-                                 uint32_t logo_w, uint32_t logo_h, uint32_t x, uint32_t y,
-                                 bool expect) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  auto st = ctx->handle;
-  size_t logo_size = st_frame_size(fmt, logo_w, logo_h, false);
-  size_t frame_size = st_frame_size(fmt, w, h, false);
-  void* frame_buf = mtl_hp_malloc(st, frame_size, MTL_PORT_P);
-  if (!frame_buf) {
-    err("%s, frame_buf malloc fail\n", __func__);
-    return;
+TEST(St22p, codec_plugin_register_unregister) {
+  auto st = st_test_ctx()->handle;
+
+  struct st22_encoder_dev edev = {};
+  edev.name = "st22_test_enc_reg";
+  edev.target_device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  edev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE;
+  edev.output_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM;
+  verify_codec_plugin_reg<struct st22_encoder_dev, ScopedSt22EncoderDev>(
+      st, edev,
+      +[](void*, st22p_encode_session,
+          struct st22_encoder_create_req*) -> st22_encode_priv { return nullptr; },
+      +[](void*, st22_encode_priv) -> int { return 0; }, st22_encoder_register);
+
+  struct st22_decoder_dev ddev = {};
+  ddev.name = "st22_test_dec_reg";
+  ddev.target_device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  ddev.input_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM;
+  ddev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE;
+  verify_codec_plugin_reg<struct st22_decoder_dev, ScopedSt22DecoderDev>(
+      st, ddev,
+      +[](void*, st22p_decode_session,
+          struct st22_decoder_create_req*) -> st22_decode_priv { return nullptr; },
+      +[](void*, st22_decode_priv) -> int { return 0; }, st22_decoder_register);
+
+  /* Active session must hold a plugin ref_cnt so unregister fails with -EBUSY. */
+  auto* ctx = st_test_ctx();
+  {
+    struct st22_encoder_dev busy_edev = edev;
+    busy_edev.name = "st22_test_enc_busy";
+    busy_edev.create_session = +[](void*, st22p_encode_session,
+                                   struct st22_encoder_create_req*) -> st22_encode_priv {
+      return reinterpret_cast<st22_encode_priv>(static_cast<uintptr_t>(0x1));
+    };
+    busy_edev.free_session = +[](void*, st22_encode_priv) -> int { return 0; };
+    ScopedSt22EncoderDev enc_dev(st22_encoder_register(st, &busy_edev));
+    ASSERT_TRUE(static_cast<bool>(enc_dev));
+
+    auto tx_ctx = make_st22p_context(ctx, 0, 2);
+    struct st22p_tx_ops ops_tx;
+    st22p_tx_ops_init(tx_ctx.get(), &ops_tx);
+    ops_tx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+    ScopedSt22pTx tx_h(st22p_tx_create(st, &ops_tx));
+    ASSERT_TRUE(static_cast<bool>(tx_h));
+    const int unreg_ret = st22_encoder_unregister(enc_dev.get());
+    EXPECT_EQ(unreg_ret, -EBUSY);
+    if (unreg_ret == 0) {
+      /* Avoid double-free if a broken implementation ignored ref_cnt. */
+      (void)enc_dev.release();
+    }
+    tx_h.reset();
   }
-  void* logo_buf = mtl_hp_malloc(st, logo_size, MTL_PORT_P);
-  if (!logo_buf) {
-    err("%s, logo_buf malloc fail\n", __func__);
-    mtl_hp_free(st, frame_buf);
-    return;
+  {
+    struct st22_decoder_dev busy_ddev = ddev;
+    busy_ddev.name = "st22_test_dec_busy";
+    busy_ddev.create_session = +[](void*, st22p_decode_session,
+                                   struct st22_decoder_create_req*) -> st22_decode_priv {
+      return reinterpret_cast<st22_decode_priv>(static_cast<uintptr_t>(0x1));
+    };
+    busy_ddev.free_session = +[](void*, st22_decode_priv) -> int { return 0; };
+    ScopedSt22DecoderDev dec_dev(st22_decoder_register(st, &busy_ddev));
+    ASSERT_TRUE(static_cast<bool>(dec_dev));
+
+    auto rx_ctx = make_st22p_context(ctx, 0, 2);
+    struct st22p_rx_ops ops_rx;
+    st22p_rx_ops_init(rx_ctx.get(), &ops_rx);
+    ops_rx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+    ScopedSt22pRx rx_h(st22p_rx_create(st, &ops_rx));
+    ASSERT_TRUE(static_cast<bool>(rx_h));
+    const int unreg_ret = st22_decoder_unregister(dec_dev.get());
+    EXPECT_EQ(unreg_ret, -EBUSY);
+    if (unreg_ret == 0) {
+      (void)dec_dev.release();
+    }
+    rx_h.reset();
   }
-
-  struct st_frame frame_meta;
-  struct st_frame logo_meta;
-  frame_meta.addr[0] = frame_buf;
-  frame_meta.fmt = fmt;
-  frame_meta.width = w;
-  frame_meta.height = h;
-  logo_meta.addr[0] = logo_buf;
-  logo_meta.fmt = fmt;
-  logo_meta.width = logo_w;
-  logo_meta.height = logo_h;
-
-  int ret = st_draw_logo(&frame_meta, &logo_meta, x, y);
-  if (expect)
-    EXPECT_GE(ret, 0);
-  else
-    EXPECT_LT(ret, 0);
-
-  mtl_hp_free(st, logo_buf);
-  mtl_hp_free(st, frame_buf);
 }
 
-TEST(St22p, draw_logo_rfc4175_1080p) {
-  frame_draw_logo_test(ST_FRAME_FMT_YUV422RFC4175PG2BE10, 1920, 1080, 200, 200, 16, 16,
-                       true);
-}
-
-TEST(St22p, draw_logo_rfc4175_1080p_full) {
-  frame_draw_logo_test(ST_FRAME_FMT_YUV422RFC4175PG2BE10, 1920, 1080, 1920, 1080, 0, 0,
-                       true);
-}
-
-TEST(St22p, draw_logo_rfc4175_1080p_fail) {
-  frame_draw_logo_test(ST_FRAME_FMT_YUV422RFC4175PG2BE10, 1920, 1080, 1920, 1080, 100,
-                       100, false);
-}
-
-static int test_st22p_tx_frame_available(void* priv) {
-  tests_context* s = (tests_context*)priv;
-
+static int test_st22p_frame_available(void* priv) {
+  auto* s = static_cast<tests_context*>(priv);
+  std::lock_guard<std::mutex> lck(s->mtx);
   s->cv.notify_all();
-
   return 0;
 }
 
 static int test_st22p_tx_frame_done(void* priv, struct st_frame* frame) {
-  tests_context* s = (tests_context*)priv;
+  auto* s = static_cast<St22pContext*>(priv);
+  if (!get_handle(s)) return -EIO;
 
-  if (!s->handle) return -EIO; /* not ready */
-
-  s->fb_send_done++;
-
+  atomic_inc(&s->fb_send_done);
   if (!(frame->flags & ST_FRAME_FLAG_EXT_BUF)) return 0;
 
-  for (int i = 0; i < s->fb_cnt; ++i) {
-    if (frame->addr[0] == s->ext_fb + i * s->frame_size) {
-      s->ext_fb_in_use[i] = false;
-      dbg("%s(%d), frame done at %d\n", __func__, i, s->idx);
+  const size_t n = s->ext_frames.count();
+  for (size_t i = 0; i < n; ++i) {
+    if (frame->addr[0] == s->ext_frames.frames()[i].addr[0]) {
+      s->ext_frames.release_slot(i);
+      dbg("%s(%zu), frame done at %d\n", __func__, i, s->idx);
       return 0;
     }
   }
@@ -489,34 +521,29 @@ static int test_st22p_tx_frame_done(void* priv, struct st_frame* frame) {
   return 0;
 }
 
-static int test_st22p_rx_frame_available(void* priv) {
-  tests_context* s = (tests_context*)priv;
-
-  s->cv.notify_all();
-
-  return 0;
-}
-
 static int test_st22p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
                                          struct st22_rx_frame_meta* /*meta*/) {
-  auto ctx = (tests_context*)priv;
-  if (!ctx->handle) return -EIO; /* not ready */
-  int i = ctx->ext_idx;
+  auto* s = static_cast<St22pContext*>(priv);
+  if (!get_handle(s)) return -EIO;
 
-  /* check ext_fb_in_use */
-  if (ctx->ext_fb_in_use[i]) {
-    err("%s(%d), ext frame %d in use\n", __func__, ctx->idx, i);
-    return -EIO;
+  const size_t n = s->ext_frames.count();
+  if (n == 0) return -EIO;
+
+  const size_t start = static_cast<size_t>(s->ext_idx) % n;
+  for (size_t attempt = 0; attempt < n; ++attempt) {
+    const size_t i = (start + attempt) % n;
+    if (!s->ext_frames.try_acquire_slot(i)) continue;
+
+    *ext_frame = s->ext_frames.frames()[i];
+    ext_frame->opaque = s->ext_frames.in_use_slot(i);
+    dbg("%s(%d), set ext frame %zu(%p) to use\n", __func__, s->idx, i,
+        ext_frame->addr[0]);
+    s->ext_idx = static_cast<int>((i + 1) % n);
+    return 0;
   }
-  *ext_frame = ctx->p_ext_frames[i];
 
-  dbg("%s(%d), set ext frame %d(%p) to use\n", __func__, ctx->idx, i, ext_frame->addr);
-  ctx->ext_fb_in_use[i] = true;
-
-  ext_frame->opaque = &ctx->ext_fb_in_use[i];
-
-  if (++ctx->ext_idx >= ctx->fb_cnt) ctx->ext_idx = 0;
-  return 0;
+  err("%s(%d), all %zu ext frames in use\n", __func__, s->idx, n);
+  return -EIO;
 }
 
 static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) {
@@ -541,7 +568,7 @@ static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) 
   ops_tx->device = ST_PLUGIN_DEVICE_TEST;
   ops_tx->quality = ST22_QUALITY_MODE_QUALITY;
   ops_tx->framebuff_cnt = st22->fb_cnt;
-  ops_tx->notify_frame_available = test_st22p_tx_frame_available;
+  ops_tx->notify_frame_available = test_st22p_frame_available;
   st22->frame_size =
       st_frame_size(ops_tx->input_fmt, ops_tx->width, ops_tx->height, false);
   ops_tx->codestream_size = st22->frame_size / 8;
@@ -569,7 +596,7 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
   ops_rx->codec = ST22_CODEC_JPEGXS;
   ops_rx->device = ST_PLUGIN_DEVICE_TEST;
   ops_rx->framebuff_cnt = st22->fb_cnt;
-  ops_rx->notify_frame_available = test_st22p_rx_frame_available;
+  ops_rx->notify_frame_available = test_st22p_frame_available;
   st22->frame_size =
       st_frame_size(ops_rx->output_fmt, ops_rx->width, ops_rx->height, false);
   ops_rx->notify_event = test_ctx_notify_event;
@@ -577,1015 +604,945 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
 
 static void st22p_tx_assert_cnt(int expect_s22_tx_cnt) {
   auto ctx = st_test_ctx();
-  auto handle = ctx->handle;
   struct st_var_info var;
-  int ret;
-
-  ret = st_get_var_info(handle, &var);
-  EXPECT_GE(ret, 0);
+  EXPECT_GE(st_get_var_info(ctx->handle, &var), 0);
   EXPECT_EQ(var.st22_tx_sessions_cnt, expect_s22_tx_cnt);
 }
 
 static void st22p_rx_assert_cnt(int expect_s22_rx_cnt) {
   auto ctx = st_test_ctx();
-  auto handle = ctx->handle;
   struct st_var_info var;
-  int ret;
-
-  ret = st_get_var_info(handle, &var);
-  EXPECT_GE(ret, 0);
+  EXPECT_GE(st_get_var_info(ctx->handle, &var), 0);
   EXPECT_EQ(var.st22_rx_sessions_cnt, expect_s22_rx_cnt);
 }
 
-TEST(St22p, tx_create_free_single) {
-  pipeline_create_free_test(st22p_tx, 0, 1, 1);
-}
-TEST(St22p, tx_create_free_multi) {
-  pipeline_create_free_test(st22p_tx, 0, 1, 6);
-}
 TEST(St22p, tx_create_free_mix) {
-  pipeline_create_free_test(st22p_tx, 2, 3, 4);
-}
-TEST(St22p, rx_create_free_single) {
-  pipeline_create_free_test(st22p_rx, 0, 1, 1);
-}
-TEST(St22p, rx_create_free_multi) {
-  pipeline_create_free_test(st22p_rx, 0, 1, 6);
+  mtl_test::verify_create_free<struct st22p_tx_ops, st22p_tx_handle, st22p_tx_create,
+                               st22p_tx_free>(st22p_tx_ops_init, st22p_tx_assert_cnt, 2,
+                                              3, 4);
 }
 TEST(St22p, rx_create_free_mix) {
-  pipeline_create_free_test(st22p_rx, 2, 3, 4);
+  mtl_test::verify_create_free<struct st22p_rx_ops, st22p_rx_handle, st22p_rx_create,
+                               st22p_rx_free>(st22p_rx_ops_init, st22p_rx_assert_cnt, 2,
+                                              3, 4);
 }
 TEST(St22p, tx_create_free_max) {
-  pipeline_create_free_max(st22p_tx, TEST_CREATE_FREE_MAX);
+  mtl_test::verify_create_free_max<struct st22p_tx_ops, st22p_tx_handle, st22p_tx_create,
+                                   st22p_tx_free>(st22p_tx_ops_init, st22p_tx_assert_cnt,
+                                                  TEST_CREATE_FREE_MAX);
 }
 TEST(St22p, rx_create_free_max) {
-  pipeline_create_free_max(st22p_rx, TEST_CREATE_FREE_MAX);
+  mtl_test::verify_create_free_max<struct st22p_rx_ops, st22p_rx_handle, st22p_rx_create,
+                                   st22p_rx_free>(st22p_rx_ops_init, st22p_rx_assert_cnt,
+                                                  TEST_CREATE_FREE_MAX);
 }
 TEST(St22p, tx_create_expect_fail) {
-  pipeline_expect_fail_test(st22p_tx);
+  mtl_test::verify_invalid_ports<struct st22p_tx_ops, st22p_tx_handle, st22p_tx_create,
+                                 st22p_tx_free>(st22p_tx_ops_init);
 }
 TEST(St22p, rx_create_expect_fail) {
-  pipeline_expect_fail_test(st22p_rx);
+  mtl_test::verify_invalid_ports<struct st22p_rx_ops, st22p_rx_handle, st22p_rx_create,
+                                 st22p_rx_free>(st22p_rx_ops_init);
 }
 TEST(St22p, tx_create_expect_fail_fb_cnt) {
-  uint16_t fbcnt = 1;
-  pipeline_expect_fail_test_fb_cnt(st22p_tx, fbcnt);
-  fbcnt = ST22_FB_MAX_COUNT + 1;
-  pipeline_expect_fail_test_fb_cnt(st22p_tx, fbcnt);
+  mtl_test::verify_invalid_fb_cnt<struct st22p_tx_ops, st22p_tx_handle, st22p_tx_create,
+                                  st22p_tx_free>(st22p_tx_ops_init, 1);
+  mtl_test::verify_invalid_fb_cnt<struct st22p_tx_ops, st22p_tx_handle, st22p_tx_create,
+                                  st22p_tx_free>(st22p_tx_ops_init,
+                                                 ST22_FB_MAX_COUNT + 1);
 }
 TEST(St22p, rx_create_expect_fail_fb_cnt) {
-  uint16_t fbcnt = 1;
-  pipeline_expect_fail_test_fb_cnt(st22p_rx, fbcnt);
-  fbcnt = ST22_FB_MAX_COUNT + 1;
-  pipeline_expect_fail_test_fb_cnt(st22p_rx, fbcnt);
+  mtl_test::verify_invalid_fb_cnt<struct st22p_rx_ops, st22p_rx_handle, st22p_rx_create,
+                                  st22p_rx_free>(st22p_rx_ops_init, 1);
+  mtl_test::verify_invalid_fb_cnt<struct st22p_rx_ops, st22p_rx_handle, st22p_rx_create,
+                                  st22p_rx_free>(st22p_rx_ops_init,
+                                                 ST22_FB_MAX_COUNT + 1);
+}
+TEST(St22p, tx_query_params) {
+  auto ctx = st_test_ctx();
+  constexpr uint16_t kFbCnt = 3;
+  auto test_ctx = mtl_test::make_context(ctx, 0, kFbCnt);
+
+  struct st22p_tx_ops ops;
+  st22p_tx_ops_init(test_ctx.get(), &ops);
+  ScopedSt22pTx handle(st22p_tx_create(ctx->handle, &ops));
+  ASSERT_TRUE(static_cast<bool>(handle));
+
+  EXPECT_EQ(st22p_tx_frame_size(handle.get()), test_ctx->frame_size);
+  void* addrs[kFbCnt] = {};
+  for (uint16_t idx = 0; idx < kFbCnt; idx++) {
+    addrs[idx] = st22p_tx_get_fb_addr(handle.get(), idx);
+    EXPECT_NE(addrs[idx], nullptr);
+    for (uint16_t prev = 0; prev < idx; prev++) {
+      EXPECT_NE(addrs[idx], addrs[prev]);
+    }
+  }
+  EXPECT_EQ(st22p_tx_get_fb_addr(handle.get(), kFbCnt), nullptr);
+  EXPECT_EQ(st22p_tx_get_fb_addr(handle.get(), kFbCnt * 2), nullptr);
+}
+TEST(St22p, rx_query_params) {
+  auto ctx = st_test_ctx();
+  constexpr uint16_t kFbCnt = 3;
+  auto test_ctx = mtl_test::make_context(ctx, 0, kFbCnt);
+
+  struct st22p_rx_ops ops;
+  st22p_rx_ops_init(test_ctx.get(), &ops);
+  ScopedSt22pRx handle(st22p_rx_create(ctx->handle, &ops));
+  ASSERT_TRUE(static_cast<bool>(handle));
+
+  EXPECT_EQ(st22p_rx_frame_size(handle.get()), test_ctx->frame_size);
+  void* addrs[kFbCnt] = {};
+  for (uint16_t idx = 0; idx < kFbCnt; idx++) {
+    addrs[idx] = st22p_rx_get_fb_addr(handle.get(), idx);
+    EXPECT_NE(addrs[idx], nullptr);
+    for (uint16_t prev = 0; prev < idx; prev++) {
+      EXPECT_NE(addrs[idx], addrs[prev]);
+    }
+  }
+  EXPECT_EQ(st22p_rx_get_fb_addr(handle.get(), kFbCnt), nullptr);
+  EXPECT_EQ(st22p_rx_get_fb_addr(handle.get(), kFbCnt * 2), nullptr);
 }
 
-static void test_st22p_tx_frame_thread(void* args) {
-  tests_context* s = (tests_context*)args;
-  auto handle = s->handle;
-  struct st_frame* frame;
-  std::unique_lock<std::mutex> lck(s->mtx, std::defer_lock);
+template <typename GetFn>
+static struct st_frame* st22p_get_frame_or_wait(St22pContext* s, GetFn&& get_fn) {
+  struct st_frame* frame = get_fn();
+  if (frame || s->block_get) return frame;
+  std::unique_lock<std::mutex> lck(s->mtx);
+  frame = get_fn();
+  if (!frame && !s->stop) s->cv.wait(lck);
+  return frame;
+}
+
+static void populate_st22p_tx_sha(St22pContext* ctx, st22p_tx_handle handle,
+                                  bool tx_ext) {
+  const size_t frame_size = ctx->frame_size;
+  for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
+    uint8_t* fb = tx_ext ? (ctx->ext_frames.data() + frame * frame_size)
+                         : (uint8_t*)st22p_tx_get_fb_addr(handle, frame);
+    ASSERT_NE(fb, nullptr);
+    st_test_rand_data(fb, frame_size,
+                      static_cast<uint8_t>(ctx->idx * ST22_TEST_SHA_HIST_NUM + frame));
+    SHA256((unsigned char*)fb, frame_size, ctx->shas[frame]);
+    test_sha_dump("st22p_tx", ctx->shas[frame]);
+    memcpy(fb + frame_size - SHA256_DIGEST_LENGTH, ctx->shas[frame],
+           SHA256_DIGEST_LENGTH);
+  }
+}
+
+static void test_st22p_tx_frame_thread(St22pContext* s) {
+  auto handle = static_cast<st22p_tx_handle>(get_handle(s));
 
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
-    frame = st22p_tx_get_frame((st22p_tx_handle)handle);
-    if (!frame) { /* no frame */
-      if (!s->block_get) {
-        lck.lock();
-        if (!s->stop) s->cv.wait(lck);
-        lck.unlock();
-      }
-      continue;
+    struct st_frame* frame =
+        st22p_get_frame_or_wait(s, [handle]() { return st22p_tx_get_frame(handle); });
+    if (!frame) continue;
+    if (frame->data_size != s->frame_size || frame->buffer_size != s->frame_size ||
+        frame->width != s->width || frame->height != s->height || frame->fmt != s->fmt) {
+      atomic_inc(&s->incomplete_frame_cnt);
     }
-    if (frame->data_size != s->frame_size) s->incomplete_frame_cnt++;
-    if (frame->buffer_size != s->frame_size) s->incomplete_frame_cnt++;
-    if (frame->width != s->width) s->incomplete_frame_cnt++;
-    if (frame->height != s->height) s->incomplete_frame_cnt++;
-    if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
     if (s->user_timestamp) {
+      const int sent = mtl_test::tx_frames(s);
       frame->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-      frame->timestamp = s->fb_send + 1; /* add one to avoid zero timestamp */
-      dbg("%s(%d), timestamp %d\n", __func__, s->idx, s->fb_send);
+      frame->timestamp = sent + 1; /* add one to avoid zero timestamp */
+      dbg("%s(%d), timestamp %d\n", __func__, s->idx, sent);
     }
-    if (s->p_ext_frames) {
-      int ret = st22p_tx_put_ext_frame((st22p_tx_handle)handle, frame,
-                                       &s->p_ext_frames[s->ext_idx]);
+    if (s->ext_frames.count() > 0) {
+      const size_t n = s->ext_frames.count();
+      size_t slot = static_cast<size_t>(s->ext_idx) % n;
+      bool acquired = false;
+      while (!s->stop) {
+        for (size_t attempt = 0; attempt < n; ++attempt) {
+          const size_t cand = (slot + attempt) % n;
+          if (s->ext_frames.try_acquire_slot(cand)) {
+            slot = cand;
+            acquired = true;
+            break;
+          }
+        }
+        if (acquired) break;
+        std::this_thread::yield();
+      }
+      if (!acquired) {
+        st22p_tx_put_frame_abort(handle, frame);
+        break;
+      }
+      int ret = st22p_tx_put_ext_frame(handle, frame, &s->ext_frames.frames()[slot]);
       if (ret < 0) {
-        err("%s, put ext framebuffer fail %d fb_idx %d\n", __func__, ret, s->ext_idx);
+        s->ext_frames.release_slot(slot);
+        st22p_tx_put_frame_abort(handle, frame);
+        err("%s, put ext framebuffer fail %d fb_idx %zu\n", __func__, ret, slot);
         continue;
       }
-      s->ext_fb_in_use[s->ext_idx] = true;
-      s->ext_idx++;
-      if (s->ext_idx >= s->fb_cnt) s->ext_idx = 0;
+      s->ext_idx = static_cast<int>((slot + 1) % n);
     } else {
-      /* directly put */
-      st22p_tx_put_frame((st22p_tx_handle)handle, frame);
+      st22p_tx_put_frame(handle, frame);
     }
-    s->fb_send++;
-    if (!s->start_time) {
-      s->start_time = st_test_get_monotonic_time();
-      dbg("%s(%d), start_time %" PRIu64 "\n", __func__, s->idx, s->start_time);
-    }
+    atomic_inc(&s->fb_send);
   }
   dbg("%s(%d), stop\n", __func__, s->idx);
 }
 
-static void test_st22p_rx_frame_thread(void* args) {
-  tests_context* s = (tests_context*)args;
-  auto handle = s->handle;
-  struct st_frame* frame;
-  std::unique_lock<std::mutex> lck(s->mtx, std::defer_lock);
+static void test_st22p_rx_frame_thread(St22pContext* s) {
+  auto handle = static_cast<st22p_rx_handle>(get_handle(s));
 
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
-    frame = st22p_rx_get_frame((st22p_rx_handle)handle);
-    if (!frame) { /* no frame */
-      if (!s->block_get) {
-        lck.lock();
-        if (!s->stop) s->cv.wait(lck);
-        lck.unlock();
-      }
-      continue;
-    }
+    struct st_frame* frame =
+        st22p_get_frame_or_wait(s, [handle]() { return st22p_rx_get_frame(handle); });
+    if (!frame) continue;
 
-    if (frame->data_size != s->frame_size) s->incomplete_frame_cnt++;
-    if (frame->buffer_size < s->frame_size) s->incomplete_frame_cnt++;
-    if (frame->width != s->width) s->incomplete_frame_cnt++;
-    if (frame->height != s->height) s->incomplete_frame_cnt++;
-    if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
+    auto* in_use = static_cast<std::atomic<bool>*>(frame->opaque);
+
+    if (frame->data_size != s->frame_size || frame->buffer_size < s->frame_size ||
+        frame->width != s->width || frame->height != s->height || frame->fmt != s->fmt ||
+        frame->timestamp == 0) {
+      atomic_inc(&s->incomplete_frame_cnt);
+    }
     dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
-    if (frame->timestamp == 0) s->incomplete_frame_cnt++;
 
-    if (frame->opaque) {
-      /* free dynamic ext frame */
-      bool* in_use = (bool*)frame->opaque;
-      EXPECT_TRUE(*in_use);
-      *in_use = false;
-    }
-
-    /* check user timestamp if it has */
     if (s->user_timestamp && !s->user_pacing) {
-      if (s->pre_timestamp) {
-        /*
-         * some frame may drop as SHA256 is slow,
-         * just check timestamp is adding with small step
-         */
-        if (((uint32_t)frame->timestamp - s->pre_timestamp) > 4) {
-          s->incomplete_frame_cnt++;
-          err("%s(%d), frame user timestamp %" PRIu64 " pre_timestamp %u\n", __func__,
-              s->idx, frame->timestamp, s->pre_timestamp);
-        }
+      if (s->pre_timestamp && ((uint32_t)frame->timestamp - s->pre_timestamp) > 4) {
+        atomic_inc(&s->incomplete_frame_cnt);
+        err("%s(%d), frame user timestamp %" PRIu64 " pre_timestamp %u\n", __func__,
+            s->idx, frame->timestamp, s->pre_timestamp);
       }
       s->pre_timestamp = (uint32_t)frame->timestamp;
     }
 
+    if (s->expect_interlaced) {
+      if (!frame->interlaced) {
+        s->interlace_meta_fail_cnt.fetch_add(1, std::memory_order_relaxed);
+      } else if (frame->second_field) {
+        s->second_field_cnt.fetch_add(1, std::memory_order_relaxed);
+      } else {
+        s->first_field_cnt.fetch_add(1, std::memory_order_relaxed);
+      }
+    }
+
     unsigned char* sha =
         (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
-    int i = 0;
-    for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
-      unsigned char* target_sha = s->shas[i];
-      if (!memcmp(sha, target_sha, SHA256_DIGEST_LENGTH)) break;
+    bool matched = false;
+    for (int i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
+      if (!memcmp(sha, s->shas[i], SHA256_DIGEST_LENGTH)) {
+        s->matched_tx0.fetch_add(1, std::memory_order_relaxed);
+        matched = true;
+        break;
+      }
     }
-    if (i >= ST22_TEST_SHA_HIST_NUM) {
+    if (!matched && s->check_dual_sha) {
+      for (int i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
+        if (!memcmp(sha, s->alt_shas[i], SHA256_DIGEST_LENGTH)) {
+          s->matched_tx1.fetch_add(1, std::memory_order_relaxed);
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched) {
       test_sha_dump("st22p_rx_error_sha", sha);
-      s->sha_fail_cnt++;
+      atomic_inc(&s->sha_fail_cnt);
     }
-    /* directly put */
-    st22p_rx_put_frame((st22p_rx_handle)handle, frame);
-    s->fb_rec++;
-    if (!s->start_time) s->start_time = st_test_get_monotonic_time();
+    st22p_rx_put_frame(handle, frame);
+    if (in_use && !in_use->exchange(false, std::memory_order_acq_rel)) {
+      atomic_inc(&s->incomplete_frame_cnt);
+    }
+    atomic_inc(&s->fb_rec);
   }
   dbg("%s(%d), stop\n", __func__, s->idx);
 }
 
-struct st22p_rx_digest_test_para {
-  int sessions;
-  int fail_interval;
-  int timeout_interval;
-  int timeout_ms;
-  int rand_ratio;
-  bool check_fps;
-  enum st_test_level level;
-  bool user_timestamp;
-  bool vsync;
-  bool rtcp;
-  bool tx_ext;
-  bool rx_ext;
-  bool interlace;
-  uint32_t ssrc;
-  bool block_get;
-  bool codec_block_get;
-  bool derive;
-};
-
-static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
-  memset(para, 0, sizeof(*para));
-
-  para->sessions = 1;
-  para->fail_interval = 0;
-  para->timeout_interval = 0;
-  para->timeout_ms = 0;
-  para->rand_ratio = 0;
-  para->check_fps = true;
-  para->level = ST_TEST_LEVEL_MANDATORY;
-  para->user_timestamp = false;
-  para->vsync = true;
-  para->rtcp = false;
-  para->tx_ext = false;
-  para->rx_ext = false;
-  para->interlace = false;
-  para->ssrc = 0;
-  para->block_get = false;
-  para->codec_block_get = false;
-}
-
-static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
-                                 enum st_frame_fmt fmt[], enum st22_codec codec[],
-                                 int compress_ratio[],
-                                 struct st22p_rx_digest_test_para* para) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
+  auto ctx = st_test_ctx();
   auto st = ctx->handle;
-  int ret;
-  struct st22p_tx_ops ops_tx;
-  struct st22p_rx_ops ops_rx;
-  int sessions = para->sessions;
 
-  st_test_jxs_fail_interval(ctx, para->fail_interval);
-  st_test_jxs_timeout_interval(ctx, para->timeout_interval);
-  st_test_jxs_timeout_ms(ctx, para->timeout_ms);
-  st_test_jxs_rand_ratio(ctx, para->rand_ratio);
-  st_test_jxs_use_block_get(ctx, para->codec_block_get);
+  /* All GTEST_SKIP() precondition checks MUST precede plugin state mutation. */
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+  if (sc.tx_ext || sc.rx_ext) MTL_TEST_REQUIRE_IOVA_VA(ctx);
 
-  if (ctx->para.num_ports < 2) {
-    info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
-    throw std::runtime_error("Dual port not enabled");
-  }
+  mtl_test::ScopedPluginFaults plugin_cfg(ctx, sc.fail_interval, sc.timeout_interval,
+                                          sc.timeout_ms, sc.rand_ratio,
+                                          sc.codec_block_get);
+  if (sc.rand_ratio > 0) g_rand_size_tracker.reset();
 
-  /* return if level lower than global */
-  if (para->level < ctx->level) return;
+  const size_t sessions = sc.streams.size();
+  std::vector<St22pTxSession> tx;
+  std::vector<St22pRxSession> rx;
+  mtl_test::ScopedMtlStart mtl_guard(st);
+  std::vector<mtl_test::ScopedWorker> workers;
+  std::vector<double> expect_framerate_tx(sessions);
+  std::vector<double> expect_framerate_rx(sessions);
+  tx.reserve(sessions);
+  rx.reserve(sessions);
 
-  if (para->tx_ext || para->rx_ext) {
-    if (ctx->iova == MTL_IOVA_MODE_PA) {
-      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
-      return;
-    }
-  }
+  for (size_t i = 0; i < sessions; i++) {
+    const auto& stream = sc.streams[i];
+    const uint16_t udp_port = ST22P_TEST_UDP_PORT + static_cast<uint16_t>(i * 2);
 
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
-  std::vector<st22p_tx_handle> tx_handle;
-  std::vector<st22p_rx_handle> rx_handle;
-  std::vector<double> expect_framerate_tx;
-  std::vector<double> expect_framerate_rx;
-  std::vector<double> framerate_tx;
-  std::vector<double> framerate_rx;
-  std::vector<double> vsyncrate_tx;
-  std::vector<double> vsyncrate_rx;
-  std::vector<std::thread> tx_thread;
-  std::vector<std::thread> rx_thread;
-
-  test_ctx_tx.resize(sessions);
-  test_ctx_rx.resize(sessions);
-  tx_handle.resize(sessions);
-  rx_handle.resize(sessions);
-  expect_framerate_tx.resize(sessions);
-  expect_framerate_rx.resize(sessions);
-  framerate_tx.resize(sessions);
-  framerate_rx.resize(sessions);
-  vsyncrate_tx.resize(sessions);
-  vsyncrate_rx.resize(sessions);
-  tx_thread.resize(sessions);
-  rx_thread.resize(sessions);
-
-  for (int i = 0; i < sessions; i++) {
-    expect_framerate_tx[i] = st_frame_rate(fps[i]);
-    if (para->timeout_interval) {
+    expect_framerate_tx[i] = st_frame_rate(stream.fps);
+    if (sc.timeout_interval) {
       expect_framerate_tx[i] =
-          expect_framerate_tx[i] * (para->timeout_interval - 1) / para->timeout_interval;
+          expect_framerate_tx[i] * (sc.timeout_interval - 1) / sc.timeout_interval;
     }
 
-    test_ctx_tx[i] = new tests_context();
-    ASSERT_TRUE(test_ctx_tx[i] != NULL);
+    tx.emplace_back();
+    auto& s = tx.back();
+    s.ctx = make_st22p_context(ctx, static_cast<int>(i), ST22_TEST_SHA_HIST_NUM);
+    s.ctx->width = stream.width;
+    s.ctx->height = stream.height;
+    s.ctx->fmt = stream.fmt;
+    s.ctx->user_timestamp = sc.user_timestamp;
+    s.ctx->block_get = sc.block_get;
 
-    test_ctx_tx[i]->idx = i;
-    test_ctx_tx[i]->ctx = ctx;
-    test_ctx_tx[i]->fb_cnt = ST22_TEST_SHA_HIST_NUM;
-    test_ctx_tx[i]->fb_idx = 0;
-    test_ctx_tx[i]->width = width[i];
-    test_ctx_tx[i]->height = height[i];
-    test_ctx_tx[i]->fmt = fmt[i];
-    test_ctx_tx[i]->user_timestamp = para->user_timestamp;
-    test_ctx_tx[i]->block_get = para->block_get;
-
-    memset(&ops_tx, 0, sizeof(ops_tx));
-    ops_tx.name = "st22p_test";
-    ops_tx.priv = test_ctx_tx[i];
-    ops_tx.port.num_port = 1;
-    if (ctx->mcast_only)
-      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-             MTL_IP_ADDR_LEN);
-    else
-      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-             MTL_IP_ADDR_LEN);
-    snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-             ctx->para.port[MTL_PORT_P]);
-    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i * 2;
-    ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
-    ops_tx.port.ssrc = para->ssrc;
-    ops_tx.width = width[i];
-    ops_tx.height = height[i];
-    ops_tx.fps = fps[i];
-    ops_tx.interlaced = para->interlace;
-    ops_tx.input_fmt = fmt[i];
-    ops_tx.pack_type = ST22_PACK_CODESTREAM;
-    ops_tx.codec = codec[i];
-    ops_tx.device = ST_PLUGIN_DEVICE_TEST;
-    ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
-    ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    if (para->block_get)
-      ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
-    else
-      ops_tx.notify_frame_available = test_st22p_tx_frame_available;
-    ops_tx.notify_event = test_ctx_notify_event;
+    struct st22p_tx_ops ops_tx;
+    st22p_tx_ops_init(s.ctx.get(), &ops_tx);
+    mtl_test::fill_tx_port(ops_tx.port, ctx, udp_port, ST22P_TEST_PAYLOAD_TYPE, sc.ssrc);
+    ops_tx.width = stream.width;
+    ops_tx.height = stream.height;
+    ops_tx.fps = stream.fps;
+    ops_tx.interlaced = sc.interlace;
+    ops_tx.input_fmt = stream.fmt;
+    ops_tx.codec = stream.codec;
     ops_tx.notify_frame_done = test_st22p_tx_frame_done;
-    if (para->user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
-    if (para->vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
-    if (para->tx_ext) {
-      ops_tx.flags |= ST22P_TX_FLAG_EXT_FRAME;
+    if (sc.block_get) {
+      ops_tx.notify_frame_available = nullptr;
+      ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
     }
-
-    if (para->rtcp) {
+    if (sc.user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
+    if (sc.vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
+    if (sc.tx_ext) ops_tx.flags |= ST22P_TX_FLAG_EXT_FRAME;
+    if (sc.rtcp) {
       ops_tx.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
       ops_tx.rtcp.buffer_size = 512;
     }
 
-    if (para->derive) {
-      ops_tx.codestream_size = ops_tx.width * ops_tx.height / compress_ratio[i];
-      test_ctx_tx[i]->frame_size = ops_tx.codestream_size;
+    if (sc.derive) {
+      ops_tx.codestream_size = ops_tx.width * ops_tx.height / stream.compress_ratio;
+      s.ctx->frame_size = ops_tx.codestream_size;
     } else {
-      test_ctx_tx[i]->frame_size =
+      s.ctx->frame_size =
           st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, ops_tx.interlaced);
-      ops_tx.codestream_size = test_ctx_tx[i]->frame_size / compress_ratio[i];
+      ops_tx.codestream_size = s.ctx->frame_size / stream.compress_ratio;
     }
 
-    tx_handle[i] = st22p_tx_create(st, &ops_tx);
-    ASSERT_TRUE(tx_handle[i] != NULL);
-
-    EXPECT_EQ(test_ctx_tx[i]->frame_size, st22p_tx_frame_size(tx_handle[i]));
-    if (para->block_get) {
-      ret = st22p_tx_set_block_timeout(tx_handle[i], NS_PER_S);
-      EXPECT_EQ(ret, 0);
+    s.handle.reset(st22p_tx_create(st, &ops_tx));
+    ASSERT_TRUE(static_cast<bool>(s.handle));
+    EXPECT_EQ(s.ctx->frame_size, st22p_tx_frame_size(s.handle.get()));
+    if (sc.block_get) {
+      EXPECT_EQ(st22p_tx_set_block_timeout(s.handle.get(), NS_PER_S), 0);
     }
 
-    /* init ext frames, only for no convert */
-    if (para->tx_ext) {
-      uint8_t planes = st_frame_fmt_planes(fmt[i]);
-      size_t frame_size = test_ctx_tx[i]->frame_size;
-
-      test_ctx_tx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
-          sizeof(*test_ctx_tx[i]->p_ext_frames) * test_ctx_tx[i]->fb_cnt);
-      size_t pg_sz = mtl_page_size(st);
-      size_t fb_size = test_ctx_tx[i]->frame_size * test_ctx_tx[i]->fb_cnt;
-      test_ctx_tx[i]->ext_fb_iova_map_sz =
-          mtl_size_page_align(fb_size, pg_sz); /* align */
-      size_t fb_size_malloc = test_ctx_tx[i]->ext_fb_iova_map_sz + pg_sz;
-      test_ctx_tx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
-      ASSERT_TRUE(test_ctx_tx[i]->ext_fb_malloc != NULL);
-      test_ctx_tx[i]->ext_fb =
-          (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
-      test_ctx_tx[i]->ext_fb_iova =
-          mtl_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
-      ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != MTL_BAD_IOVA);
-      info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_tx[i]->ext_fb);
-
-      for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
-        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continuous */
-          test_ctx_tx[i]->p_ext_frames[j].linesize[plane] =
-              st_frame_least_linesize(fmt[i], width[i], plane);
-          if (plane == 0) {
-            test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
-                test_ctx_tx[i]->ext_fb + j * frame_size;
-            test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
-                test_ctx_tx[i]->ext_fb_iova + j * frame_size;
-          } else {
-            test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
-                (uint8_t*)test_ctx_tx[i]->p_ext_frames[j].addr[plane - 1] +
-                test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
-            test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
-                test_ctx_tx[i]->p_ext_frames[j].iova[plane - 1] +
-                test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
-          }
-        }
-        test_ctx_tx[i]->p_ext_frames[j].size = frame_size;
-        test_ctx_tx[i]->p_ext_frames[j].opaque = NULL;
-      }
+    if (sc.tx_ext) {
+      ASSERT_TRUE(s.ctx->ext_frames.init(st, stream.fmt, stream.width, stream.height,
+                                         sc.interlace, s.ctx->fb_cnt));
+      info("%s, session %zu tx ext_frames %p\n", __func__, i, s.ctx->ext_frames.data());
     }
 
-    /* sha calculate */
-    size_t frame_size = test_ctx_tx[i]->frame_size;
-    uint8_t* fb;
-    for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
-      if (para->tx_ext)
-        fb = (uint8_t*)test_ctx_tx[i]->ext_fb + frame * frame_size;
-      else
-        fb = (uint8_t*)st22p_tx_get_fb_addr(tx_handle[i], frame);
-      ASSERT_TRUE(fb != NULL);
-      st_test_rand_data(fb, frame_size, frame);
-      unsigned char* result = test_ctx_tx[i]->shas[frame];
-      SHA256((unsigned char*)fb, frame_size, result);
-      test_sha_dump("st22p_tx", result);
-      /* copy sha to the end of frame */
-      memcpy(fb + frame_size - SHA256_DIGEST_LENGTH, result, SHA256_DIGEST_LENGTH);
-    }
+    populate_st22p_tx_sha(s.ctx.get(), s.handle.get(), sc.tx_ext);
+    if (::testing::Test::HasFatalFailure()) return;
 
-    test_ctx_tx[i]->handle = tx_handle[i];
-
-    tx_thread[i] = std::thread(test_st22p_tx_frame_thread, test_ctx_tx[i]);
+    set_handle(s.ctx.get(), s.handle.get());
+    st22p_tx_handle raw_h = s.handle.get();
+    workers.emplace_back(
+        s.ctx.get(), std::thread(test_st22p_tx_frame_thread, s.ctx.get()),
+        sc.block_get ? std::function<void()>([raw_h]() { st22p_tx_wake_block(raw_h); })
+                     : nullptr);
   }
 
-  for (int i = 0; i < sessions; i++) {
-    if (para->fail_interval) {
-      /* loss in the tx */
+  for (size_t i = 0; i < sessions; i++) {
+    const auto& stream = sc.streams[i];
+    const uint16_t udp_port = ST22P_TEST_UDP_PORT + static_cast<uint16_t>(i * 2);
+
+    if (sc.fail_interval) {
       expect_framerate_tx[i] =
-          expect_framerate_tx[i] * (para->fail_interval - 1) / para->fail_interval;
+          expect_framerate_tx[i] * (sc.fail_interval - 1) / sc.fail_interval;
     }
     expect_framerate_rx[i] = expect_framerate_tx[i];
-    test_ctx_rx[i] = new tests_context();
-    ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
-    test_ctx_rx[i]->ctx = ctx;
-    test_ctx_rx[i]->fb_cnt = ST22_TEST_SHA_HIST_NUM;
-    test_ctx_rx[i]->fb_idx = 0;
-    test_ctx_rx[i]->width = width[i];
-    test_ctx_rx[i]->height = height[i];
-    test_ctx_rx[i]->fmt = fmt[i];
-    test_ctx_rx[i]->user_timestamp = para->user_timestamp;
-    test_ctx_rx[i]->block_get = para->block_get;
-    /* copy sha */
-    memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
-           ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
+    rx.emplace_back();
+    auto& s = rx.back();
+    s.ctx = make_st22p_context(ctx, static_cast<int>(i), ST22_TEST_SHA_HIST_NUM);
+    s.ctx->width = stream.width;
+    s.ctx->height = stream.height;
+    s.ctx->fmt = stream.fmt;
+    s.ctx->user_timestamp = sc.user_timestamp;
+    s.ctx->block_get = sc.block_get;
+    s.ctx->expect_interlaced = sc.interlace;
+    memcpy(s.ctx->shas, tx[i].ctx->shas, ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
 
-    if (para->rx_ext) {
-      uint8_t planes = st_frame_fmt_planes(fmt[i]);
-      test_ctx_rx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
-          sizeof(*test_ctx_rx[i]->p_ext_frames) * test_ctx_rx[i]->fb_cnt);
-      size_t frame_size = st_frame_size(fmt[i], width[i], height[i], false);
-      size_t pg_sz = mtl_page_size(st);
-      size_t fb_size = frame_size * test_ctx_rx[i]->fb_cnt;
-      test_ctx_rx[i]->ext_fb_iova_map_sz =
-          mtl_size_page_align(fb_size, pg_sz); /* align */
-      size_t fb_size_malloc = test_ctx_rx[i]->ext_fb_iova_map_sz + pg_sz;
-      test_ctx_rx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
-      ASSERT_TRUE(test_ctx_rx[i]->ext_fb_malloc != NULL);
-      test_ctx_rx[i]->ext_fb =
-          (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
-      test_ctx_rx[i]->ext_fb_iova =
-          mtl_dma_map(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
-      info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
-      ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
-
-      for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
-        for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continuous */
-          test_ctx_rx[i]->p_ext_frames[j].linesize[plane] =
-              st_frame_least_linesize(fmt[i], width[i], plane);
-          if (plane == 0) {
-            test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
-                test_ctx_rx[i]->ext_fb + j * frame_size;
-            test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
-                test_ctx_rx[i]->ext_fb_iova + j * frame_size;
-          } else {
-            test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
-                (uint8_t*)test_ctx_rx[i]->p_ext_frames[j].addr[plane - 1] +
-                test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
-            test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
-                test_ctx_rx[i]->p_ext_frames[j].iova[plane - 1] +
-                test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
-          }
-        }
-        test_ctx_rx[i]->p_ext_frames[j].size = frame_size;
-        test_ctx_rx[i]->p_ext_frames[j].opaque = NULL;
-      }
+    if (sc.rx_ext) {
+      /* Allocate extra ext slots above fb_cnt so query_ext_frame never hits a
+       * brief drop window between st22p_rx_put_frame() and slot release. */
+      ASSERT_TRUE(s.ctx->ext_frames.init(st, stream.fmt, stream.width, stream.height,
+                                         sc.interlace, s.ctx->fb_cnt + 2));
+      info("%s, session %zu rx ext_frames %p\n", __func__, i, s.ctx->ext_frames.data());
     }
 
-    memset(&ops_rx, 0, sizeof(ops_rx));
-    ops_rx.name = "st22p_test";
-    ops_rx.priv = test_ctx_rx[i];
-    ops_rx.port.num_port = 1;
-    if (ctx->mcast_only)
-      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-             MTL_IP_ADDR_LEN);
-    else
-      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-             MTL_IP_ADDR_LEN);
-    snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-             ctx->para.port[MTL_PORT_R]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i * 2;
-    ops_rx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
-    ops_rx.port.ssrc = para->ssrc;
-    ops_rx.width = width[i];
-    ops_rx.height = height[i];
-    ops_rx.fps = fps[i];
-    ops_rx.interlaced = para->interlace;
-    ops_rx.output_fmt = fmt[i];
-    ops_rx.pack_type = ST22_PACK_CODESTREAM;
-    ops_rx.codec = codec[i];
-    ops_rx.device = ST_PLUGIN_DEVICE_TEST;
-    ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    if (para->block_get)
+    struct st22p_rx_ops ops_rx;
+    st22p_rx_ops_init(s.ctx.get(), &ops_rx);
+    mtl_test::fill_rx_port(ops_rx.port, ctx, udp_port, ST22P_TEST_PAYLOAD_TYPE, sc.ssrc);
+    ops_rx.width = stream.width;
+    ops_rx.height = stream.height;
+    ops_rx.fps = stream.fps;
+    ops_rx.interlaced = sc.interlace;
+    ops_rx.output_fmt = stream.fmt;
+    ops_rx.codec = stream.codec;
+    if (sc.block_get) {
+      ops_rx.notify_frame_available = nullptr;
       ops_rx.flags |= ST22P_RX_FLAG_BLOCK_GET;
-    else
-      ops_rx.notify_frame_available = test_st22p_rx_frame_available;
-    ops_rx.notify_event = test_ctx_notify_event;
-    if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
-    if (para->rx_ext) {
+    }
+    if (sc.vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
+    if (sc.rx_ext) {
       ops_rx.flags |= ST22P_RX_FLAG_EXT_FRAME;
       ops_rx.query_ext_frame = test_st22p_rx_query_ext_frame;
     }
-
-    if (para->rtcp) {
+    if (sc.rtcp) {
       ops_rx.flags |= ST22P_RX_FLAG_ENABLE_RTCP | ST22P_RX_FLAG_SIMULATE_PKT_LOSS;
       ops_rx.rtcp.nack_interval_us = 100;
       ops_rx.rtcp.seq_skip_window = 0;
       ops_rx.rtcp.burst_loss_max = 4;
-      ops_rx.rtcp.sim_loss_rate = 0.0001;
+      ops_rx.rtcp.sim_loss_rate = 0.002f;
     }
 
-    if (para->derive)
-      test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
-    else
-      test_ctx_rx[i]->frame_size = st_frame_size(ops_rx.output_fmt, ops_rx.width,
-                                                 ops_rx.height, ops_rx.interlaced);
-
-    rx_handle[i] = st22p_rx_create(st, &ops_rx);
-    ASSERT_TRUE(rx_handle[i] != NULL);
-
-    if (!para->derive) {
-      EXPECT_EQ(test_ctx_rx[i]->frame_size, st22p_rx_frame_size(rx_handle[i]));
-    }
-    if (para->block_get) {
-      ret = st22p_rx_set_block_timeout(rx_handle[i], NS_PER_S);
-      EXPECT_EQ(ret, 0);
+    if (sc.derive) {
+      s.ctx->frame_size = tx[i].ctx->frame_size;
+      /* Leave max_codestream_size == 0 on session 0 so the library's 1 MiB default
+       * branch (st22_pipeline_rx.c) executes; set explicit size on session 1+. */
+      if (i > 0) ops_rx.max_codestream_size = s.ctx->frame_size;
+    } else {
+      s.ctx->frame_size = st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height,
+                                        ops_rx.interlaced);
     }
 
-    test_ctx_rx[i]->handle = rx_handle[i];
+    s.handle.reset(st22p_rx_create(st, &ops_rx));
+    ASSERT_TRUE(static_cast<bool>(s.handle));
+    const size_t expect_rx_buf_sz =
+        (sc.derive && ops_rx.max_codestream_size == 0) ? 0x100000u : s.ctx->frame_size;
+    EXPECT_EQ(expect_rx_buf_sz, st22p_rx_frame_size(s.handle.get()));
+    if (sc.block_get) {
+      EXPECT_EQ(st22p_rx_set_block_timeout(s.handle.get(), NS_PER_S), 0);
+    }
 
-    rx_thread[i] = std::thread(test_st22p_rx_frame_thread, test_ctx_rx[i]);
+    set_handle(s.ctx.get(), s.handle.get());
+    st22p_rx_handle raw_h = s.handle.get();
+    workers.emplace_back(
+        s.ctx.get(), std::thread(test_st22p_rx_frame_thread, s.ctx.get()),
+        sc.block_get ? std::function<void()>([raw_h]() { st22p_rx_wake_block(raw_h); })
+                     : nullptr);
 
-    struct st_queue_meta meta;
-    ret = st22p_rx_get_queue_meta(rx_handle[i], &meta);
-    EXPECT_GE(ret, 0);
+    struct st_queue_meta meta = {};
+    EXPECT_GE(st22p_rx_get_queue_meta(s.handle.get(), &meta), 0);
+    EXPECT_EQ(meta.num_port, 1);
   }
 
-  ret = mtl_start(st);
-  EXPECT_GE(ret, 0);
-  sleep(10);
-  ret = mtl_stop(st);
-  EXPECT_GE(ret, 0);
+  EXPECT_GE(mtl_guard.start(), 0);
 
-  for (int i = 0; i < sessions; i++) {
-    uint64_t cur_time_ns = st_test_get_monotonic_time();
-    double time_sec = (double)(cur_time_ns - test_ctx_tx[i]->start_time) / NS_PER_S;
-    framerate_tx[i] = test_ctx_tx[i]->fb_send / time_sec;
+  /* Capture steady-state FPS and vsync rates BEFORE teardown (--auto_start_stop safe). */
+  auto tx_ctxs = collect_ctxs(tx);
+  auto rx_ctxs = collect_ctxs(rx);
+  auto win =
+      mtl_test::measure_pipeline_window(tx_ctxs, rx_ctxs, kSt22pRateWarmupFrames,
+                                        kSt22pRateMinDeltaFrames, kSt22pRateMinWindowMs);
+  EXPECT_TRUE(win.warmed_up);
+  EXPECT_TRUE(win.complete);
 
-    /* vsync check */
-    time_sec = (double)(cur_time_ns - test_ctx_tx[i]->first_vsync_time) / NS_PER_S;
-    vsyncrate_tx[i] = test_ctx_tx[i]->vsync_cnt / time_sec;
-    dbg("%s(%d,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, test_ctx_tx[i],
-        test_ctx_tx[i]->vsync_cnt, vsyncrate_tx[i]);
-    EXPECT_GT(test_ctx_tx[i]->vsync_cnt, 0);
-    EXPECT_NEAR(vsyncrate_tx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
+  for (auto& w : workers) w.stop();
+  EXPECT_GE(mtl_guard.stop(), 0);
 
-    test_ctx_tx[i]->stop = true;
-    if (para->block_get) st22p_tx_wake_block(tx_handle[i]);
-    test_ctx_tx[i]->cv.notify_all();
-    tx_thread[i].join();
-  }
-  for (int i = 0; i < sessions; i++) {
-    uint64_t cur_time_ns = st_test_get_monotonic_time();
-    double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
-    framerate_rx[i] = test_ctx_rx[i]->fb_rec / time_sec;
+  for (size_t i = 0; i < sessions; i++) {
+    const double nominal_fps = st_frame_rate(sc.streams[i].fps);
+    const int tx_vsync = mtl_test::vsync_count(tx[i].ctx.get());
+    const int rx_vsync = mtl_test::vsync_count(rx[i].ctx.get());
+    const int tx_fb_send = mtl_test::tx_frames(tx[i].ctx.get());
+    const int rx_fb_rec = mtl_test::rx_frames(rx[i].ctx.get());
 
-    /* vsync check */
-    time_sec = (double)(cur_time_ns - test_ctx_rx[i]->first_vsync_time) / NS_PER_S;
-    vsyncrate_rx[i] = test_ctx_rx[i]->vsync_cnt / time_sec;
-    dbg("%s(%d,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, test_ctx_rx[i],
-        test_ctx_rx[i]->vsync_cnt, vsyncrate_rx[i]);
-    EXPECT_GT(test_ctx_rx[i]->vsync_cnt, 0);
-    EXPECT_NEAR(vsyncrate_rx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
-
-    test_ctx_rx[i]->stop = true;
-    if (para->block_get) st22p_rx_wake_block(rx_handle[i]);
-    test_ctx_rx[i]->cv.notify_all();
-    rx_thread[i].join();
-  }
-
-  for (int i = 0; i < sessions; i++) {
-    ret = st22p_tx_free(tx_handle[i]);
-    EXPECT_GE(ret, 0);
-    info("%s, session %d fb_send %d framerate %f:%f\n", __func__, i,
-         test_ctx_tx[i]->fb_send, framerate_tx[i], expect_framerate_tx[i]);
-    EXPECT_GE(test_ctx_rx[i]->fb_send, 0);
-    EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
-    if (para->tx_ext) {
-      mtl_dma_unmap(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova,
-                    test_ctx_tx[i]->ext_fb_iova_map_sz);
-      st_test_free(test_ctx_tx[i]->ext_fb_malloc);
-      st_test_free(test_ctx_tx[i]->p_ext_frames);
+    if (sc.vsync) {
+      EXPECT_GT(tx_vsync, 0);
+      EXPECT_NEAR(win.tx_vsync[i], nominal_fps, nominal_fps * 0.1);
+      EXPECT_GT(rx_vsync, 0);
+      EXPECT_NEAR(win.rx_vsync[i], nominal_fps, nominal_fps * 0.1);
     }
-    delete test_ctx_tx[i];
-  }
-  for (int i = 0; i < sessions; i++) {
-    ret = st22p_rx_free(rx_handle[i]);
-    EXPECT_GE(ret, 0);
-    info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
-         test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
-    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
-    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
-    if (para->check_fps) {
-      if (para->fail_interval || para->timeout_interval) {
-        EXPECT_NEAR(framerate_rx[i], expect_framerate_rx[i],
-                    expect_framerate_rx[i] * 0.5);
-      } else {
-        EXPECT_NEAR(framerate_rx[i], expect_framerate_rx[i],
-                    expect_framerate_rx[i] * 0.1);
-      }
+
+    info("%s, session %zu fb_send %d framerate %f:%f\n", __func__, i, tx_fb_send,
+         win.tx_fps[i], expect_framerate_tx[i]);
+    info("%s, session %zu fb_rec %d framerate %f:%f\n", __func__, i, rx_fb_rec,
+         win.rx_fps[i], expect_framerate_rx[i]);
+    EXPECT_GT(tx_fb_send, 0);
+    EXPECT_EQ(mtl_test::relaxed_load(&tx[i].ctx->incomplete_frame_cnt), 0);
+    EXPECT_GT(rx_fb_rec, 0);
+    EXPECT_EQ(mtl_test::relaxed_load(&rx[i].ctx->incomplete_frame_cnt), 0);
+    EXPECT_EQ(mtl_test::relaxed_load(&rx[i].ctx->sha_fail_cnt), 0);
+    if (sc.interlace) {
+      EXPECT_EQ(rx[i].ctx->interlace_meta_fail_cnt.load(std::memory_order_relaxed), 0);
+      EXPECT_GT(rx[i].ctx->first_field_cnt.load(std::memory_order_relaxed), 0);
+      EXPECT_GT(rx[i].ctx->second_field_cnt.load(std::memory_order_relaxed), 0);
     }
-    if (para->rx_ext) {
-      mtl_dma_unmap(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova,
-                    test_ctx_rx[i]->ext_fb_iova_map_sz);
-      st_test_free(test_ctx_rx[i]->ext_fb_malloc);
-      st_test_free(test_ctx_rx[i]->p_ext_frames);
+    if (sc.check_fps) {
+      const double tol = (sc.fail_interval || sc.timeout_interval) ? 0.5 : 0.1;
+      EXPECT_NEAR(win.rx_fps[i], expect_framerate_rx[i], expect_framerate_rx[i] * tol);
     }
-    delete test_ctx_rx[i];
   }
-}
-
-TEST(St22p, digest_st22_1080p_s1) {
-  enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
-  enum st_frame_fmt fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
-  enum st22_codec codec[1] = {ST22_CODEC_JPEGXS};
-  int compress_ratio[1] = {10};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.level = ST_TEST_LEVEL_ALL;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  if (sc.rand_ratio > 0) {
+    std::lock_guard<std::mutex> lk(g_rand_size_tracker.mtx);
+    EXPECT_GT(g_rand_size_tracker.checked_frames, 0);
+    EXPECT_EQ(g_rand_size_tracker.mismatch_cnt, 0);
+    EXPECT_GE(g_rand_size_tracker.distinct_sizes_below_buf.size(),
+              static_cast<size_t>(2));
+  }
 }
 
 TEST(St22p, digest_st22_1080i) {
-  enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
-  enum st_frame_fmt fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
-  enum st22_codec codec[1] = {ST22_CODEC_JPEGXS};
-  int compress_ratio[1] = {10};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.level = ST_TEST_LEVEL_MANDATORY;
-  para.interlace = true;
-  para.block_get = true;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 10},
+  };
+  sc.interlace = true;
+  sc.block_get = true;
+  st22p_rx_digest_test(sc);
 }
 
 TEST(St22p, digest_st22_4k_s1) {
-  enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920 * 2};
-  int height[1] = {1080 * 2};
-  enum st_frame_fmt fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
-  enum st22_codec codec[1] = {ST22_CODEC_JPEGXS};
-  int compress_ratio[1] = {20};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.level = ST_TEST_LEVEL_ALL;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P59_94, 1920 * 2, 1080 * 2, ST_FRAME_FMT_YUV422PLANAR10LE,
+       ST22_CODEC_JPEGXS, 20},
+  };
+  st22p_rx_digest_test(sc);
 }
 
 TEST(St22p, digest_st22_s2) {
-  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
-  enum st_frame_fmt fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE,
-                              ST_FRAME_FMT_YUV422PLANAR10LE};
-  enum st22_codec codec[2] = {ST22_CODEC_JPEGXS, ST22_CODEC_JPEGXS};
-  int compress_ratio[2] = {10, 16};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.sessions = 2;
-  para.user_timestamp = true;
-  para.ssrc = 778899;
-  para.codec_block_get = true;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 10},
+      {ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 16},
+  };
+  sc.user_timestamp = true;
+  sc.ssrc = 778899;
+  sc.codec_block_get = true;
+  st22p_rx_digest_test(sc);
 }
 
 TEST(St22p, digest_st22_1080p_fail_interval) {
-  enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
-  enum st_frame_fmt fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
-  enum st22_codec codec[1] = {ST22_CODEC_JPEGXS};
-  int compress_ratio[1] = {10};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.fail_interval = 3;
-  para.block_get = true;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 10},
+  };
+  sc.fail_interval = 3;
+  sc.block_get = true;
+  st22p_rx_digest_test(sc);
 }
 
 TEST(St22p, digest_st22_1080p_timeout_interval) {
-  enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
-  enum st_frame_fmt fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
-  enum st22_codec codec[1] = {ST22_CODEC_JPEGXS};
-  int compress_ratio[1] = {10};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.timeout_interval = 3;
-  para.timeout_ms = 20;
-  para.codec_block_get = true;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 10},
+  };
+  sc.timeout_interval = 3;
+  sc.timeout_ms = 20;
+  sc.codec_block_get = true;
+  st22p_rx_digest_test(sc);
 }
 
 TEST(St22p, digest_st22_1080p_rand_size) {
-  enum st_fps fps[1] = {ST_FPS_P50};
-  int width[1] = {1920};
-  int height[1] = {1080};
-  enum st_frame_fmt fmt[1] = {ST_FRAME_FMT_YUV422PLANAR8};
-  enum st22_codec codec[1] = {ST22_CODEC_H264_CBR};
-  int compress_ratio[1] = {5};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.rand_ratio = 30;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR8, ST22_CODEC_H264_CBR, 5},
+  };
+  sc.rand_ratio = 30;
+  st22p_rx_digest_test(sc);
 }
 
 TEST(St22p, digest_st22_s2_rtcp) {
-  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
-  enum st_frame_fmt fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE,
-                              ST_FRAME_FMT_YUV422PLANAR10LE};
-  enum st22_codec codec[2] = {ST22_CODEC_JPEGXS, ST22_CODEC_JPEGXS};
-  int compress_ratio[2] = {10, 16};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.sessions = 2;
-  para.check_fps = false;
-  para.rtcp = true;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 10},
+      {ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 16},
+  };
+  sc.check_fps = true;
+  sc.rtcp = true;
+  st22p_rx_digest_test(sc);
 }
 
 TEST(St22p, digest_st22_s2_ext) {
-  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
-  enum st_frame_fmt fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE,
-                              ST_FRAME_FMT_YUV422PLANAR10LE};
-  enum st22_codec codec[2] = {ST22_CODEC_JPEGXS, ST22_CODEC_JPEGXS};
-  int compress_ratio[2] = {10, 16};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.sessions = 2;
-  para.tx_ext = true;
-  para.rx_ext = true;
-  para.codec_block_get = true;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 10},
+      {ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 16},
+  };
+  sc.tx_ext = true;
+  sc.rx_ext = true;
+  sc.codec_block_get = true;
+  st22p_rx_digest_test(sc);
 }
 
 TEST(St22p, digest_derive_s2) {
-  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
-  enum st_frame_fmt fmt[2] = {ST_FRAME_FMT_JPEGXS_CODESTREAM,
-                              ST_FRAME_FMT_H264_CBR_CODESTREAM};
-  enum st22_codec codec[2] = {ST22_CODEC_JPEGXS, ST22_CODEC_H264_CBR};
-  int compress_ratio[2] = {5, 8};
-
-  struct st22p_rx_digest_test_para para;
-  test_st22p_init_rx_digest_para(&para);
-  para.sessions = 2;
-  para.derive = true;
-
-  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+  St22pDigestScenario sc;
+  sc.streams = {
+      {ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_JPEGXS_CODESTREAM, ST22_CODEC_JPEGXS, 5},
+      {ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_H264_CBR_CODESTREAM, ST22_CODEC_H264_CBR, 8},
+  };
+  sc.derive = true;
+  st22p_rx_digest_test(sc);
 }
 
-TEST(St22p, tx_put_frame_abort) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  auto st = ctx->handle;
-  int ret;
-  struct st22p_tx_ops ops_tx;
+namespace {
 
-  auto test_ctx = new tests_context();
-  ASSERT_TRUE(test_ctx != NULL);
-  test_ctx->idx = 0;
-  test_ctx->ctx = ctx;
-  test_ctx->fb_cnt = 3;
+/* Compact RAII ST22p loopback fixture reused by update_src_dst, pcapng, and abort tests.
+ */
+struct St22pLoopback {
+  struct Opts {
+    int tx_sessions = 1;
+    uint16_t fb_cnt = ST22_TEST_SHA_HIST_NUM;
+    bool block_get = true;
+    bool populate_sha = false;
+    bool custom_mcast_tx = false;
+    bool start_tx_workers = true;
+    bool start_rx_worker = true;
+    bool start_mtl = true;
+  };
 
-  memset(&ops_tx, 0, sizeof(ops_tx));
-  ops_tx.name = "st22p_abort_test";
-  ops_tx.priv = test_ctx;
-  ops_tx.port.num_port = 1;
-  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT;
-  ops_tx.port.payload_type = 114;
-  ops_tx.width = 1920;
-  ops_tx.height = 1080;
-  ops_tx.fps = ST_FPS_P59_94;
-  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-  ops_tx.pack_type = ST22_PACK_CODESTREAM;
-  ops_tx.codec = ST22_CODEC_JPEGXS;
-  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
-  ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
-  ops_tx.framebuff_cnt = test_ctx->fb_cnt;
-  ops_tx.codestream_size =
-      st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, false) / 8;
-  ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
+  std::vector<St22pTxSession> tx;
+  std::vector<St22pRxSession> rx;
+  mtl_test::ScopedMtlStart mtl_guard;
+  std::vector<mtl_test::ScopedWorker> workers;
 
-  auto tx_handle = st22p_tx_create(st, &ops_tx);
-  ASSERT_TRUE(tx_handle != NULL);
-  ret = st22p_tx_set_block_timeout(tx_handle, NS_PER_S);
-  EXPECT_EQ(ret, 0);
-
-  struct st_frame* frame = st22p_tx_get_frame(tx_handle);
-  if (frame) {
-    ret = st22p_tx_put_frame_abort(tx_handle, frame);
-    EXPECT_GE(ret, 0);
-    info("%s, st22p_tx_put_frame_abort succeeded\n", __func__);
-  } else {
-    info("%s, no frame available for st22p TX abort test\n", __func__);
+  explicit St22pLoopback(mtl_handle st) : mtl_guard(st) {
   }
 
-  ret = st22p_tx_free(tx_handle);
-  EXPECT_GE(ret, 0);
-  delete test_ctx;
-}
+  void init(struct st_tests_context* ctx, const Opts& opts) {
+    auto st = ctx->handle;
+    const St22pStreamSpec stream;
+    tx.reserve(static_cast<size_t>(opts.tx_sessions));
+    rx.reserve(1);
 
-TEST(St22p, rx_put_frame_abort) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  auto st = ctx->handle;
-  int ret;
-  struct st22p_tx_ops ops_tx;
-  struct st22p_rx_ops ops_rx;
+    for (int i = 0; i < opts.tx_sessions; i++) {
+      tx.emplace_back();
+      auto& s = tx.back();
+      s.ctx = make_st22p_context(ctx, i, opts.fb_cnt);
+      s.ctx->width = stream.width;
+      s.ctx->height = stream.height;
+      s.ctx->fmt = stream.fmt;
+      s.ctx->block_get = opts.block_get;
 
-  if (ctx->para.num_ports < 2) {
-    info("%s, dual port should be enabled\n", __func__);
-    return;
-  }
+      struct st22p_tx_ops ops_tx;
+      st22p_tx_ops_init(s.ctx.get(), &ops_tx);
+      mtl_test::fill_tx_port(ops_tx.port, ctx,
+                             ST22P_TEST_UDP_PORT + static_cast<uint16_t>(i * 2),
+                             ST22P_TEST_PAYLOAD_TYPE);
+      if (opts.custom_mcast_tx && i == 1) {
+        memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+               MTL_IP_ADDR_LEN);
+      }
+      ops_tx.codestream_size = s.ctx->frame_size / stream.compress_ratio;
+      if (opts.block_get) {
+        ops_tx.notify_frame_available = nullptr;
+        ops_tx.notify_event = nullptr;
+        ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
+      }
 
-  /* create TX to feed data */
-  auto test_ctx_tx = new tests_context();
-  ASSERT_TRUE(test_ctx_tx != NULL);
-  test_ctx_tx->idx = 0;
-  test_ctx_tx->ctx = ctx;
-  test_ctx_tx->fb_cnt = 3;
+      s.handle.reset(st22p_tx_create(st, &ops_tx));
+      ASSERT_TRUE(static_cast<bool>(s.handle));
+      if (opts.block_get) {
+        EXPECT_EQ(st22p_tx_set_block_timeout(s.handle.get(), NS_PER_S), 0);
+      }
 
-  memset(&ops_tx, 0, sizeof(ops_tx));
-  ops_tx.name = "st22p_abort_tx";
-  ops_tx.priv = test_ctx_tx;
-  ops_tx.port.num_port = 1;
-  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT;
-  ops_tx.port.payload_type = 114;
-  ops_tx.width = 1920;
-  ops_tx.height = 1080;
-  ops_tx.fps = ST_FPS_P59_94;
-  ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-  ops_tx.pack_type = ST22_PACK_CODESTREAM;
-  ops_tx.codec = ST22_CODEC_JPEGXS;
-  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
-  ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
-  ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
-  ops_tx.codestream_size =
-      st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, false) / 8;
-  ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
+      if (opts.populate_sha) {
+        populate_st22p_tx_sha(s.ctx.get(), s.handle.get(), false);
+        if (::testing::Test::HasFatalFailure()) return;
+      }
+      set_handle(s.ctx.get(), s.handle.get());
+      if (opts.start_tx_workers) start_tx_worker(static_cast<size_t>(i), opts.block_get);
+    }
 
-  auto tx_handle = st22p_tx_create(st, &ops_tx);
-  ASSERT_TRUE(tx_handle != NULL);
-
-  test_ctx_tx->handle = tx_handle;
-  test_ctx_tx->stop = false;
-  auto tx_thread = std::thread(
-      [](tests_context* s) {
-        auto handle = (st22p_tx_handle)s->handle;
-        while (!s->stop) {
-          auto frame = st22p_tx_get_frame(handle);
-          if (!frame) continue;
-          st22p_tx_put_frame(handle, frame);
-          s->fb_send++;
+    rx.emplace_back();
+    auto& r = rx.back();
+    r.ctx = make_st22p_context(ctx, 0, opts.fb_cnt);
+    r.ctx->width = stream.width;
+    r.ctx->height = stream.height;
+    r.ctx->fmt = stream.fmt;
+    r.ctx->block_get = opts.block_get;
+    if (opts.populate_sha) {
+      memcpy(r.ctx->shas, tx[0].ctx->shas, ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
+      if (opts.tx_sessions > 1) {
+        for (int f0 = 0; f0 < ST22_TEST_SHA_HIST_NUM; ++f0) {
+          for (int f1 = 0; f1 < ST22_TEST_SHA_HIST_NUM; ++f1) {
+            ASSERT_NE(
+                memcmp(tx[0].ctx->shas[f0], tx[1].ctx->shas[f1], SHA256_DIGEST_LENGTH), 0)
+                << "tx[0] and tx[1] SHA tables must be distinct";
+          }
         }
-      },
-      test_ctx_tx);
+        memcpy(r.ctx->alt_shas, tx[1].ctx->shas,
+               ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
+        r.ctx->check_dual_sha = true;
+      }
+    }
 
-  /* create RX */
-  auto test_ctx_rx = new tests_context();
-  ASSERT_TRUE(test_ctx_rx != NULL);
-  test_ctx_rx->idx = 0;
-  test_ctx_rx->ctx = ctx;
-  test_ctx_rx->fb_cnt = 3;
+    struct st22p_rx_ops ops_rx;
+    st22p_rx_ops_init(r.ctx.get(), &ops_rx);
+    mtl_test::fill_rx_port(ops_rx.port, ctx, ST22P_TEST_UDP_PORT,
+                           ST22P_TEST_PAYLOAD_TYPE);
+    if (opts.block_get) {
+      ops_rx.notify_frame_available = nullptr;
+      ops_rx.notify_event = nullptr;
+      ops_rx.flags |= ST22P_RX_FLAG_BLOCK_GET;
+    }
 
-  memset(&ops_rx, 0, sizeof(ops_rx));
-  ops_rx.name = "st22p_abort_rx";
-  ops_rx.priv = test_ctx_rx;
-  ops_rx.port.num_port = 1;
-  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_R]);
-  ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT;
-  ops_rx.port.payload_type = 114;
-  ops_rx.width = 1920;
-  ops_rx.height = 1080;
-  ops_rx.fps = ST_FPS_P59_94;
-  ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-  ops_rx.pack_type = ST22_PACK_CODESTREAM;
-  ops_rx.codec = ST22_CODEC_JPEGXS;
-  ops_rx.device = ST_PLUGIN_DEVICE_TEST;
-  ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
-  ops_rx.flags |= ST22P_RX_FLAG_BLOCK_GET;
+    r.handle.reset(st22p_rx_create(st, &ops_rx));
+    ASSERT_TRUE(static_cast<bool>(r.handle));
+    if (opts.block_get) {
+      EXPECT_EQ(st22p_rx_set_block_timeout(r.handle.get(), NS_PER_S), 0);
+    }
+    set_handle(r.ctx.get(), r.handle.get());
 
-  auto rx_handle = st22p_rx_create(st, &ops_rx);
-  ASSERT_TRUE(rx_handle != NULL);
-  ret = st22p_rx_set_block_timeout(rx_handle, NS_PER_S);
-  EXPECT_EQ(ret, 0);
+    if (opts.start_rx_worker) {
+      st22p_rx_handle raw_rx = r.handle.get();
+      auto wake = opts.block_get
+                      ? std::function<void()>([raw_rx]() { st22p_rx_wake_block(raw_rx); })
+                      : nullptr;
+      if (opts.populate_sha) {
+        workers.emplace_back(r.ctx.get(),
+                             std::thread(test_st22p_rx_frame_thread, r.ctx.get()), wake);
+      } else {
+        workers.emplace_back(r.ctx.get(),
+                             std::thread(
+                                 [](tests_context* s) {
+                                   auto h = (st22p_rx_handle)get_handle(s);
+                                   while (!s->stop) {
+                                     auto* frame = st22p_rx_get_frame(h);
+                                     if (!frame) continue;
+                                     st22p_rx_put_frame(h, frame);
+                                     atomic_inc(&s->fb_rec);
+                                   }
+                                 },
+                                 r.ctx.get()),
+                             wake);
+      }
+    }
 
-  ret = mtl_start(st);
-  EXPECT_GE(ret, 0);
-  sleep(2);
-
-  struct st_frame* frame = st22p_rx_get_frame(rx_handle);
-  if (frame) {
-    ret = st22p_rx_put_frame_abort(rx_handle, frame);
-    EXPECT_GE(ret, 0);
-    info("%s, st22p_rx_put_frame_abort succeeded\n", __func__);
-  } else {
-    info("%s, no rx frame available for st22p abort test\n", __func__);
+    if (opts.start_mtl) {
+      EXPECT_GE(mtl_guard.start(), 0);
+    }
   }
 
-  test_ctx_tx->stop = true;
-  st22p_tx_wake_block(tx_handle);
-  tx_thread.join();
+  void start_tx_worker(size_t idx, bool block_get) {
+    st22p_tx_handle raw_tx = tx[idx].handle.get();
+    workers.emplace_back(
+        tx[idx].ctx.get(), std::thread(test_st22p_tx_frame_thread, tx[idx].ctx.get()),
+        block_get ? std::function<void()>([raw_tx]() { st22p_tx_wake_block(raw_tx); })
+                  : nullptr);
+  }
 
-  ret = st22p_tx_free(tx_handle);
-  EXPECT_GE(ret, 0);
-  ret = st22p_rx_free(rx_handle);
-  EXPECT_GE(ret, 0);
+  void stop_all() {
+    for (auto& w : workers) w.stop();
+    EXPECT_GE(mtl_guard.stop(), 0);
+  }
+};
 
-  delete test_ctx_tx;
-  delete test_ctx_rx;
+}  // namespace
+
+static void st22p_update_src_dst_test(bool tx_update_dst) {
+  auto ctx = st_test_ctx();
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+
+  const double expect_fps = st_frame_rate(ST_FPS_P59_94);
+
+  St22pLoopback lb(ctx->handle);
+  St22pLoopback::Opts opts;
+  opts.tx_sessions = tx_update_dst ? 1 : 2;
+  opts.block_get = false;
+  opts.populate_sha = true;
+  opts.custom_mcast_tx = true;
+  lb.init(ctx, opts);
+  if (::testing::Test::HasFatalFailure()) return;
+
+  auto rx_ctxs = collect_ctxs(lb.rx);
+  EXPECT_TRUE(
+      mtl_test::wait_for_all(rx_ctxs, mtl_test::rx_frames, kSt22pRateWarmupFrames, 6000));
+  if (!tx_update_dst) {
+    EXPECT_GT(lb.rx[0].ctx->matched_tx0.load(std::memory_order_relaxed), 0);
+    EXPECT_EQ(lb.rx[0].ctx->matched_tx1.load(std::memory_order_relaxed), 0);
+  }
+
+  auto verify_switch = [&](const char* label, const uint8_t* tx_dst_ip,
+                           const uint8_t* rx_src_ip, uint16_t udp_port,
+                           int target_tx_idx) {
+    if (tx_update_dst) {
+      struct st_tx_dest_info dst = {};
+      dst.udp_port[MTL_SESSION_PORT_P] = udp_port;
+      memcpy(dst.dip_addr[MTL_SESSION_PORT_P], tx_dst_ip, MTL_IP_ADDR_LEN);
+      EXPECT_GE(st22p_tx_update_destination(lb.tx[0].handle.get(), &dst), 0);
+    }
+
+    struct st_rx_source_info src = {};
+    src.udp_port[MTL_SESSION_PORT_P] = udp_port;
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], rx_src_ip, MTL_IP_ADDR_LEN);
+    EXPECT_GE(st22p_rx_update_source(lb.rx[0].handle.get(), &src), 0);
+
+    /* Allow in-flight frames from the old source to drain before counting. */
+    st_usleep(150 * 1000);
+    lb.rx[0].ctx->matched_tx0.store(0, std::memory_order_relaxed);
+    lb.rx[0].ctx->matched_tx1.store(0, std::memory_order_relaxed);
+
+    const int base_rec = mtl_test::rx_frames(lb.rx[0].ctx.get());
+    auto delta_rec = [&](const tests_context* c) {
+      return mtl_test::rx_frames(c) - base_rec;
+    };
+    auto rate_res =
+        mtl_test::measure_rate_window(rx_ctxs, delta_rec, kSt22pRateWarmupFrames,
+                                      kSt22pRateMinDeltaFrames, kSt22pRateMinWindowMs);
+    EXPECT_TRUE(rate_res.warmed_up);
+    EXPECT_TRUE(rate_res.complete);
+    const int fb_rec = mtl_test::rx_frames(lb.rx[0].ctx.get()) - base_rec;
+    EXPECT_GT(fb_rec, 0);
+    info("%s, %s fb_rec %d framerate %f\n", __func__, label, fb_rec, rate_res.rate[0]);
+    EXPECT_NEAR(rate_res.rate[0], expect_fps, expect_fps * 0.1);
+
+    const int m0 = lb.rx[0].ctx->matched_tx0.load(std::memory_order_relaxed);
+    const int m1 = lb.rx[0].ctx->matched_tx1.load(std::memory_order_relaxed);
+    if (!tx_update_dst) {
+      if (target_tx_idx == 1) {
+        EXPECT_GT(m1, 5) << label << " did not receive frames from tx[1]";
+        EXPECT_EQ(m0, 0) << label << " still received frames from stale tx[0]";
+      } else {
+        EXPECT_GT(m0, 5) << label << " did not receive frames from tx[0]";
+        EXPECT_EQ(m1, 0) << label << " still received frames from stale tx[1]";
+      }
+    } else {
+      EXPECT_GT(m0, 5) << label << " did not receive frames from tx[0]";
+    }
+  };
+
+  verify_switch("mcast 1", ctx->mcast_ip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+                ST22P_TEST_UDP_PORT + 2, tx_update_dst ? 0 : 1);
+  verify_switch("unicast 0", ctx->para.sip_addr[MTL_PORT_R],
+                ctx->para.sip_addr[MTL_PORT_P], ST22P_TEST_UDP_PORT, 0);
+
+  lb.stop_all();
+  EXPECT_EQ(mtl_test::relaxed_load(&lb.rx[0].ctx->incomplete_frame_cnt), 0);
+  EXPECT_EQ(mtl_test::relaxed_load(&lb.rx[0].ctx->sha_fail_cnt), 0);
 }
 
-/* written on the pipeline scheduler thread, read from the test's main thread,
- * so they must be atomic. */
+TEST(St22p, rx_update_source) {
+  st22p_update_src_dst_test(/*tx_update_dst=*/false);
+}
+
+TEST(St22p, tx_update_destination) {
+  st22p_update_src_dst_test(/*tx_update_dst=*/true);
+}
+
+TEST(St22p, rx_pcapng_dump) {
+  auto ctx = st_test_ctx();
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+  if (!mtl_pmd_is_dpdk_based(ctx->handle, MTL_PORT_R)) {
+    GTEST_SKIP() << "MTL_PORT_R is not a DPDK-based PMD";
+  }
+
+  St22pLoopback lb(ctx->handle);
+  St22pLoopback::Opts opts;
+  lb.init(ctx, opts);
+  if (::testing::Test::HasFatalFailure()) return;
+
+  auto rx_ctxs = collect_ctxs(lb.rx);
+  EXPECT_TRUE(
+      mtl_test::wait_for_all(rx_ctxs, mtl_test::rx_frames, kSt22pRateWarmupFrames, 6000));
+
+  constexpr uint32_t kMaxDumpPackets = 100;
+  struct st_pcap_dump_meta meta = {};
+  int ret = st22p_rx_pcapng_dump(lb.rx[0].handle.get(), kMaxDumpPackets, true, &meta);
+  UnlinkGuard unlink_guard{meta.file_name[MTL_SESSION_PORT_P]};
+  EXPECT_GE(ret, 0);
+  if (ret >= 0) {
+    EXPECT_EQ(meta.dumped_packets[MTL_SESSION_PORT_P], kMaxDumpPackets);
+    dbg("%s, file_name %s\n", __func__, meta.file_name[MTL_SESSION_PORT_P]);
+    struct stat st_buf = {};
+    EXPECT_EQ(stat(meta.file_name[MTL_SESSION_PORT_P], &st_buf), 0);
+    EXPECT_GT(st_buf.st_size, 0);
+    mtl_test::verify_pcapng_file(meta.file_name[MTL_SESSION_PORT_P], kMaxDumpPackets);
+  }
+
+  lb.stop_all();
+}
+
+TEST(St22p, put_frame_abort) {
+  auto ctx = st_test_ctx();
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+
+  constexpr uint16_t kFbCnt = 3;
+  St22pLoopback lb(ctx->handle);
+  St22pLoopback::Opts opts;
+  opts.fb_cnt = kFbCnt;
+  opts.start_tx_workers = false;
+  opts.start_rx_worker = false;
+  opts.start_mtl = false;
+  lb.init(ctx, opts);
+  if (::testing::Test::HasFatalFailure()) return;
+
+  /* Exceed fb_cnt to verify each TX abort returns the slot to the free pool. */
+  for (int i = 0; i < kFbCnt + 2; ++i) {
+    struct st_frame* frame = st22p_tx_get_frame(lb.tx[0].handle.get());
+    ASSERT_NE(frame, nullptr) << "no frame available on st22p TX abort cycle " << i;
+    EXPECT_GE(st22p_tx_put_frame_abort(lb.tx[0].handle.get(), frame), 0);
+    if (i == 0) {
+      EXPECT_LT(st22p_tx_put_frame_abort(lb.tx[0].handle.get(), frame), 0);
+    }
+  }
+
+  lb.start_tx_worker(0, /*block_get=*/true);
+  EXPECT_GE(lb.mtl_guard.start(), 0);
+
+  auto get_rx_frame = [&]() -> struct st_frame* {
+    struct st_frame* frame = nullptr;
+    mtl_test::wait_until(
+        [&]() {
+          frame = st22p_rx_get_frame(lb.rx[0].handle.get());
+          return frame != nullptr;
+        },
+        /*timeout_ms=*/3000, /*poll_ms=*/1);
+    return frame;
+  };
+
+  /* Exceed fb_cnt to verify each RX abort returns the slot to the RX pool. */
+  for (int i = 0; i < kFbCnt + 1; ++i) {
+    struct st_frame* frame = get_rx_frame();
+    ASSERT_NE(frame, nullptr) << "no rx frame available on st22p abort cycle " << i;
+    EXPECT_GE(st22p_rx_put_frame_abort(lb.rx[0].handle.get(), frame), 0);
+    if (i == 0) {
+      EXPECT_LT(st22p_rx_put_frame_abort(lb.rx[0].handle.get(), frame), 0);
+    }
+  }
+
+  /* Verify normal frame delivery continues after repeated aborts. */
+  struct st_frame* clean_frame = get_rx_frame();
+  ASSERT_NE(clean_frame, nullptr) << "no clean rx frame available after aborts";
+  EXPECT_GE(st22p_rx_put_frame(lb.rx[0].handle.get(), clean_frame), 0);
+
+  lb.stop_all();
+}
+
+/* Written on the pipeline scheduler thread, read from the test's main thread. */
 struct st22p_tx_drop_late_ctx {
   std::atomic<int> dropped_done_calls{0};
   std::atomic<int> complete_done_calls{0};
   std::atomic<int> late_calls{0};
-  /* total frames that have left the pipeline (transmitted or dropped) */
+  std::atomic<uint64_t> last_complete_ts{0};
   int done_total() const {
     return dropped_done_calls.load() + complete_done_calls.load();
   }
 };
 
 static int test_st22p_tx_drop_late_frame_done(void* priv, struct st_frame* frame) {
-  auto* s = (st22p_tx_drop_late_ctx*)priv;
-  if (frame->status == ST_FRAME_STATUS_DROPPED)
+  auto* s = static_cast<st22p_tx_drop_late_ctx*>(priv);
+  if (frame->status == ST_FRAME_STATUS_DROPPED) {
     s->dropped_done_calls++;
-  else if (frame->status == ST_FRAME_STATUS_COMPLETE)
+  } else if (frame->status == ST_FRAME_STATUS_COMPLETE) {
+    s->last_complete_ts.store(frame->timestamp, std::memory_order_release);
     s->complete_done_calls++;
+  }
   return 0;
 }
 
-static int test_st22p_tx_drop_late_frame_late(void* priv, uint64_t epoch_skipped) {
-  auto* s = (st22p_tx_drop_late_ctx*)priv;
-  (void)epoch_skipped;
-  s->late_calls++;
+static int test_st22p_tx_drop_late_frame_late(void* priv, uint64_t /*epoch_skipped*/) {
+  static_cast<st22p_tx_drop_late_ctx*>(priv)->late_calls++;
   return 0;
 }
 
@@ -1596,79 +1553,50 @@ static int test_st22p_tx_drop_late_frame_late(void* priv, uint64_t epoch_skipped
  * normally with no late notification.
  */
 TEST(St22p, tx_drop_when_late) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = st_test_ctx();
   auto st = ctx->handle;
-  int ret;
 
-  const int fb_cnt = 4;
-  const int width = 1920, height = 1080;
-  const enum st_frame_fmt fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-  const enum st_fps fps = ST_FPS_P25;
+  constexpr int kFbCnt = 4;
+  constexpr enum st_fps kFps = ST_FPS_P25;
 
   st22p_tx_drop_late_ctx dctx;
+  auto dummy_ctx = make_st22p_context(ctx, 0, kFbCnt);
 
   struct st22p_tx_ops ops_tx;
-  memset(&ops_tx, 0, sizeof(ops_tx));
+  st22p_tx_ops_init(dummy_ctx.get(), &ops_tx);
   ops_tx.name = "st22p_tx_drop_when_late_test";
   ops_tx.priv = &dctx;
-  ops_tx.port.num_port = 1;
-  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT;
-  ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
-  ops_tx.width = width;
-  ops_tx.height = height;
-  ops_tx.fps = fps;
-  ops_tx.input_fmt = fmt;
-  ops_tx.pack_type = ST22_PACK_CODESTREAM;
-  ops_tx.codec = ST22_CODEC_JPEGXS;
-  ops_tx.device = ST_PLUGIN_DEVICE_TEST;
-  ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
-  ops_tx.framebuff_cnt = fb_cnt;
-  ops_tx.codestream_size = st_frame_size(fmt, width, height, false) / 8;
+  ops_tx.fps = kFps;
+  ops_tx.notify_frame_available = nullptr;
+  ops_tx.notify_event = nullptr;
   ops_tx.flags =
       ST22P_TX_FLAG_BLOCK_GET | ST22P_TX_FLAG_USER_PACING | ST22P_TX_FLAG_DROP_WHEN_LATE;
   ops_tx.notify_frame_done = test_st22p_tx_drop_late_frame_done;
   ops_tx.notify_frame_late = test_st22p_tx_drop_late_frame_late;
 
-  auto tx_handle = st22p_tx_create(st, &ops_tx);
-  ASSERT_TRUE(tx_handle != NULL);
+  ScopedSt22pTx tx_handle(st22p_tx_create(st, &ops_tx));
+  ASSERT_TRUE(static_cast<bool>(tx_handle));
+  EXPECT_EQ(st22p_tx_set_block_timeout(tx_handle.get(), (uint64_t)NS_PER_S * 3), 0);
 
-  ret = st22p_tx_set_block_timeout(tx_handle, (uint64_t)NS_PER_S * 3);
-  EXPECT_EQ(ret, 0);
+  mtl_test::ScopedMtlStart mtl_guard(st);
+  EXPECT_GE(mtl_guard.start(), 0);
 
-  ret = mtl_start(st);
-  EXPECT_GE(ret, 0);
+  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(kFps));
 
-  uint64_t frame_period_ns = (uint64_t)((double)NS_PER_S / st_frame_rate(fps));
-
-  /* Produce exactly one frame and block until it leaves the pipeline (either
-   * transmitted or dropped). Keeping a single frame in flight is essential:
-   * tx_st22p_next_frame() always services the NEWEST ENCODED frame, so with
-   * several queued at once the older on-time frames would miss their own TX
-   * window and be dropped too, making the drop count non-deterministic. */
+  /* Keep a single frame in flight so tx_st22p_next_frame() drop count is deterministic.
+   */
   auto put_one_and_drain = [&](uint64_t timestamp) -> bool {
     int done_before = dctx.done_total();
-    struct st_frame* frame = st22p_tx_get_frame(tx_handle);
+    struct st_frame* frame = st22p_tx_get_frame(tx_handle.get());
     if (!frame) return false;
     frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
     frame->timestamp = timestamp;
-    if (st22p_tx_put_frame(tx_handle, frame) < 0) return false;
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while (std::chrono::steady_clock::now() < deadline) {
-      if (dctx.done_total() > done_before) return true;
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    return false;
+    if (st22p_tx_put_frame(tx_handle.get(), frame) < 0) return false;
+    return mtl_test::wait_until([&]() { return dctx.done_total() > done_before; }, 3000,
+                                1);
   };
 
-  /* Warm-up: the first frames race session negotiation / link-up. Pump on-time
-   * frames one at a time until one actually transmits, proving the datapath is
-   * live, then snapshot the counters so link-up jitter cannot taint the asserts.
-   * The half-second margin keeps a warm-up frame from being ruled late while the
-   * link is still coming up. */
+  /* Warm-up until one on-time frame transmits, proving datapath/link is live. */
   bool link_up = false;
   auto warm_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
   while (std::chrono::steady_clock::now() < warm_deadline) {
@@ -1684,23 +1612,33 @@ TEST(St22p, tx_drop_when_late) {
   int base_complete = dctx.complete_done_calls.load();
   int base_late = dctx.late_calls.load();
 
-  /* Measured phase, datapath already live. On-time frames sit a few periods in
-   * the future so pipeline latency cannot make them late; each must transmit. */
-  const int on_time_cnt = 3;
-  for (int i = 0; i < on_time_cnt; i++) {
-    EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) + frame_period_ns * 4))
+  constexpr int kOnTimeCnt = 3;
+  for (int i = 0; i < kOnTimeCnt; i++) {
+    const uint64_t target_tai = mtl_ptp_read_time(st) + frame_period_ns * 4;
+    EXPECT_TRUE(put_one_and_drain(target_tai))
         << "on-time frame " << i << " never completed";
+    EXPECT_GE(dctx.last_complete_ts.load(std::memory_order_acquire),
+              target_tai - frame_period_ns);
   }
 
-  /* One clearly-stale frame: tx_st22p_if_frame_late() must drop it
-   * (notify_frame_done DROPPED + notify_frame_late) and free its slot. */
-  EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) - NS_PER_S))
-      << "stale frame never left the pipeline";
+  /* Exceed kFbCnt stale frames so leaking DROPPED slots exhausts the pool. */
+  constexpr int kStaleCnt = kFbCnt + 2;
+  for (int i = 0; i < kStaleCnt; i++) {
+    int late_before = dctx.late_calls.load();
+    EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) - NS_PER_S))
+        << "stale frame " << i << " never left the pipeline";
+    EXPECT_TRUE(mtl_test::wait_until(
+        [&]() { return dctx.late_calls.load() > late_before; }, 3000, 1))
+        << "stale frame " << i << " never triggered notify_frame_late";
+  }
 
-  EXPECT_EQ(dctx.dropped_done_calls.load() - base_dropped, 1);
-  EXPECT_EQ(dctx.complete_done_calls.load() - base_complete, on_time_cnt);
-  EXPECT_EQ(dctx.late_calls.load() - base_late, 1);
+  /* Confirm an on-time frame still succeeds after > kFbCnt drops. */
+  EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) + frame_period_ns * 4))
+      << "post-drop on-time frame never completed";
 
-  ret = st22p_tx_free(tx_handle);
-  EXPECT_GE(ret, 0);
+  EXPECT_EQ(dctx.dropped_done_calls.load() - base_dropped, kStaleCnt);
+  EXPECT_EQ(dctx.complete_done_calls.load() - base_complete, kOnTimeCnt + 1);
+  EXPECT_EQ(dctx.late_calls.load() - base_late, kStaleCnt);
+
+  EXPECT_GE(mtl_guard.stop(), 0);
 }

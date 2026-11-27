@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <mtl/st40_pipeline_api.h>
-
 #include <cstdint>
 #include <vector>
 
@@ -22,7 +20,7 @@ constexpr double kSt40pUserPacingStartFrames = 70.0;
 
 /* USER_PACING oracle. TX requests t_user(n) = (kSt40pUserPacingStartFrames + n +
  * offset[n % size]) * T from PTP zero; the expected TX is the epoch nearest t_user(n)
- * (expectedTransmitTimeNs()). getPacingParameters() always returns -ENOTSUP.
+ * (expectedTransmitTimeNs()).
  * Checks on every RX frame n:
  * 1. software RX time - expected TX in [0, kSt40pMaxLateNs]  verifyReceiveTiming()
  * 2. RTP == tick90k(expected TX)                            verifyMediaClock()
@@ -36,11 +34,6 @@ class St40pUserPacingOracle : public FrameTestStrategy {
 
   void txTestFrameModifier(void* frame, size_t frame_size) override;
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
-  int getPacingParameters();
-
-  double pacing_tr_offset_ns = 0.0;
-  double pacing_trs_ns = 0.0;
-  uint32_t pacing_vrx_pkts = 0;
 
  protected:
   void initializeTiming(St40pHandler* handler);

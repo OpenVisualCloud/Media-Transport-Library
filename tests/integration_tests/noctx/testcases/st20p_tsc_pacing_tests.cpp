@@ -10,7 +10,6 @@
 #include <thread>
 
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 
 /* The ice PF keeps VF queue rates across processes, so an RL child runs first */
 TEST_F(NoCtxTest, st20p_tsc_pacing_after_rl_process_full_fps) {
@@ -43,7 +42,7 @@ TEST_F(NoCtxTest, st20p_tsc_pacing_after_rl_process_full_fps) {
 
   StartFakePtpClock();
   handler->startSession();
-  ASSERT_GE(mtl_start(ctx->handle), 0);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   const int measureSeconds = 10;
   std::this_thread::sleep_for(std::chrono::seconds(3));

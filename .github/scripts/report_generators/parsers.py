@@ -2,14 +2,15 @@
 # Copyright(c) 2026 Intel Corporation
 """Parsers for pytest, gtest, and system information files."""
 
+import json
 import re
 from pathlib import Path
-
-from bs4 import BeautifulSoup
 
 
 def parse_pytest_html(html_file):
     """Parse pytest HTML report and extract test results and individual test cases."""
+    from bs4 import BeautifulSoup
+
     with open(html_file, "r") as f:
         soup = BeautifulSoup(f.read(), "html.parser")
 
@@ -45,44 +46,28 @@ def parse_pytest_html(html_file):
 
 
 def parse_gtest_log(log_file):
-    """Parse gtest log and extract test results."""
-    with open(log_file, "r") as f:
-        content = f.read()
+    """Parse gtest results from structured results.jsonl (or legacy gtest.log)."""
+    path = Path(log_file)
+    content = path.read_text(encoding="utf-8", errors="replace")
+    match = re.match(r"nightly-gtest-report-([^-]+)", path.stem)
+    default_nic = match.group(1).upper() if match else "UNKNOWN"
 
-    # Extract NIC from filename
-    filename = Path(log_file).stem
-    match = re.match(r"nightly-gtest-report-(.+)", filename)
-    nic = match.group(1).upper() if match else "UNKNOWN"
+    # Preferred format: structured JSON lines from tests/integration_tests/runner/
+    jsonl_records = []
+    for raw in content.splitlines():
+        line = raw.strip()
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                obj = json.loads(line)
+                if "case" in obj and "result" in obj:
+                    jsonl_records.append(obj)
+            except json.JSONDecodeError:
+                pass
+    if jsonl_records:
+        return _parse_gtest_jsonl(jsonl_records, default_nic)
 
-    # Try multi-execution format first (primary strategy for current logs)
-    results, all_test_cases = _parse_gtest_multi_execution(content, nic)
-
-    # Fallback: Try table format
-    if not results:
-        results = _parse_gtest_table(content, nic)
-        test_suites, all_test_cases = _parse_gtest_individual_tests(content, nic)
-
-        # If no table found, create results from test suites
-        if not results and test_suites:
-            results = _create_results_from_test_suites(test_suites, nic)
-
-    # Fallback: Try summary format
-    if not results:
-        results = _parse_gtest_summary(content, nic)
-        test_suites, all_test_cases = _parse_gtest_individual_tests(content, nic)
-
-    # Extract runner hostname from log content
-    runner = _extract_runner_from_gtest(content)
-
-    # Add test cases to results if not already added
-    for result in results:
-        if "test_cases" not in result:
-            result["test_cases"] = [
-                tc for tc in all_test_cases if tc["category"] == result["category"]
-            ]
-        result["runner"] = runner
-
-    return results
+    # Minimal legacy fallback for older plain-text gtest.log artifacts
+    return _parse_gtest_legacy_text(content, default_nic)
 
 
 def parse_system_info(info_file):
@@ -202,17 +187,6 @@ def _extract_runner_from_pytest(soup):
         match = re.search(r"Linux\s+([\w.-]+)\s+\d+\.\d+\.\d+", text)
         if match:
             return match.group(1)
-    return "unknown"
-
-
-def _extract_runner_from_gtest(content):
-    """Extract runner hostname from gtest log content.
-
-    Looks for uname output pattern: 'Linux <hostname> <kernel-version>'.
-    """
-    match = re.search(r"Linux\s+([\w.-]+)\s+\d+\.\d+\.\d+", content)
-    if match:
-        return match.group(1)
     return "unknown"
 
 
@@ -353,47 +327,6 @@ def _determine_test_result(test_classes, result_text):
     return "UNKNOWN"
 
 
-def _extract_gtest_failure_logs(content):
-    """Extract failure output for each test from gtest log.
-
-    For each test, finds ALL executions by pairing each '[ RUN      ]' with
-    its immediately following '[ FAILED  ] ... (N ms)' line. Collects output
-    from every failed execution so the full log is available in the report.
-    """
-    logs = {}
-    # Match [ FAILED ] lines WITH duration (actual test results, not summary)
-    marker_pattern = re.compile(
-        r"^\[ RUN      \]\s+(\S+)" r"|^\[  FAILED  \]\s+(\S+)\s+\(",
-        re.MULTILINE,
-    )
-
-    # Track the start of the current test run
-    current_test = None
-    current_start = None
-
-    for m in marker_pattern.finditer(content):
-        run_name = m.group(1)
-        fail_name = m.group(2)
-
-        if run_name:
-            # [ RUN ] marker — record start position
-            current_test = run_name
-            current_start = m.end()
-        elif fail_name and fail_name == current_test and current_start is not None:
-            # [ FAILED ] marker matching the current [ RUN ] — extract log
-            log_text = content[current_start : m.start()].strip()
-            if log_text:
-                if fail_name in logs:
-                    # Append subsequent execution logs separated by a header
-                    logs[fail_name] += f"\n\n--- retry ---\n\n{log_text}"
-                else:
-                    logs[fail_name] = log_text
-            current_test = None
-            current_start = None
-
-    return logs
-
-
 def _extract_suite_name(test_name):
     """Extract suite name from dotted test name (everything before the last dot)."""
     if "." in test_name:
@@ -417,215 +350,83 @@ def _init_suite_result(results, suite, nic):
         }
 
 
-def _parse_gtest_multi_execution(content, nic):
-    """Parse gtest logs - use bash script logic.
+def _parse_gtest_jsonl(records, default_nic):
+    """Aggregate structured results.jsonl records by suite without hiding failures."""
+    suites = {}
+    for rec in records:
+        case = rec["case"]
+        suite = _extract_suite_name(case)
+        nic = (rec.get("nic") or default_nic).upper()
+        runner = rec.get("host") or "Unknown"
+        _init_suite_result(suites, suite, nic)
+        suites[suite]["runner"] = runner
+        suites[suite].setdefault("test_cases", [])
 
-    Logic matches bash script:
-    1. Find all unique tests with [       OK ] (passed)
-    2. Find all unique tests with [  FAILED  ] (failed)
-    3. Tests that appear in BOTH lists: count as PASSED (eventually passed after retry)
-    4. Tests ONLY in failed list: count as FAILED (never passed)
-
-    Args:
-        content: Full log file content
-        nic: NIC identifier
-
-    Returns:
-        Tuple of (results list, all_test_cases list)
-    """
-    # Pattern to match test results with duration (excludes "listed below:" summary lines)
-    # [       OK ] Suite.TestName (123 ms) or [  FAILED  ] Suite.TestName (123 ms)
-    passed_pattern = r"\[       OK \]\s+(\S+)\s+\((\d+)\s*ms\)"
-    failed_pattern = r"\[  FAILED  \]\s+(\S+)\s+\((\d+)\s*ms\)"
-
-    # Track unique tests that passed and failed (using sets like bash script sort -u)
-    passed_tests = {}  # key: "Suite.TestName", value: duration
-    failed_tests = {}  # key: "Suite.TestName", value: duration
-
-    # Extract failure logs: text between [ RUN ] and [ FAILED ] for each test
-    failure_logs = _extract_gtest_failure_logs(content)
-
-    # Find all passed tests
-    for match in re.finditer(passed_pattern, content):
-        test_name, duration = match.group(1), match.group(2)
-        # Keep the last duration seen (though we mainly care about presence)
-        passed_tests[test_name] = duration
-
-    # Find all failed tests
-    for match in re.finditer(failed_pattern, content):
-        test_name, duration = match.group(1), match.group(2)
-        failed_tests[test_name] = duration
-
-    # Determine final results using bash script logic:
-    # - If test is in passed_tests: PASSED (even if also in failed_tests)
-    # - If test is ONLY in failed_tests: FAILED
-    results = {}  # Use dict to aggregate by test suite name
-    all_test_cases = []
-
-    # Process all passed tests (including those that also failed but eventually passed)
-    for test_name, duration in passed_tests.items():
-        suite = _extract_suite_name(test_name)
-        _init_suite_result(results, suite, nic)
-
-        results[suite]["passed"] += 1
-        results[suite]["total"] += 1
-
-        all_test_cases.append(
+        raw_res = str(rec.get("result", "")).lower()
+        status = {
+            "passed": "PASSED",
+            "flaky": "PASSED",
+            "failed": "FAILED",
+            "skipped": "SKIPPED",
+        }.get(raw_res, "FAILED")
+        key = (
+            "passed"
+            if status == "PASSED"
+            else ("skipped" if status == "SKIPPED" else "failed")
+        )
+        suites[suite][key] += 1
+        suites[suite]["total"] += 1
+        suites[suite]["test_cases"].append(
             {
                 "nic": nic,
                 "category": suite,
-                "test_name": test_name,
-                "result": "PASSED",
-                "duration": f"{duration} ms",
+                "test_name": case,
+                "profile": rec.get("profile", ""),
+                "result": status,
+                "duration": f"{rec.get('duration_ms', 0)} ms",
                 "platform": "gtest",
-                "unstable": test_name in failed_tests,
+                "unstable": raw_res == "flaky",
+                "log": (
+                    (rec.get("log") or rec.get("message", ""))
+                    if status in ("FAILED", "SKIPPED")
+                    else ""
+                ),
+            }
+        )
+    return list(suites.values())
+
+
+def _parse_gtest_legacy_text(content, nic):
+    """Minimal fallback parser for plain-text gtest.log artifacts."""
+    suites = {}
+    seen = {}
+    for pat, st in (
+        (r"\[\s+OK\s+\]\s+(\S+)\s+\((\d+)\s*ms\)", "PASSED"),
+        (r"\[\s+FAILED\s+\]\s+(\S+)\s+\((\d+)\s*ms\)", "FAILED"),
+        (r"\[\s+SKIPPED\s+\]\s+(\S+)\s+\((\d+)\s*ms\)", "SKIPPED"),
+    ):
+        for m in re.finditer(pat, content):
+            name, dur = m.group(1), m.group(2)
+            prev = seen.get(name)
+            if prev is None or st == "FAILED":
+                seen[name] = (st, dur, prev is not None and prev[0] != st)
+    for name, (st, dur, unstable) in seen.items():
+        suite = _extract_suite_name(name)
+        _init_suite_result(suites, suite, nic)
+        suites[suite]["runner"] = "Unknown"
+        suites[suite].setdefault("test_cases", [])
+        suites[suite][st.lower()] += 1
+        suites[suite]["total"] += 1
+        suites[suite]["test_cases"].append(
+            {
+                "nic": nic,
+                "category": suite,
+                "test_name": name,
+                "result": st,
+                "duration": f"{dur} ms",
+                "platform": "gtest",
+                "unstable": unstable,
                 "log": "",
             }
         )
-
-    # Process tests that ONLY failed (never passed)
-    for test_name, duration in failed_tests.items():
-        if test_name not in passed_tests:
-            suite = _extract_suite_name(test_name)
-            _init_suite_result(results, suite, nic)
-
-            results[suite]["failed"] += 1
-            results[suite]["total"] += 1
-
-            all_test_cases.append(
-                {
-                    "nic": nic,
-                    "category": suite,
-                    "test_name": test_name,
-                    "result": "FAILED",
-                    "duration": f"{duration} ms",
-                    "platform": "gtest",
-                    "unstable": False,
-                    "log": failure_logs.get(test_name, ""),
-                }
-            )
-
-    # Convert results dict to list
-    return list(results.values()), all_test_cases
-
-
-def _parse_gtest_table(content, nic):
-    """Parse gtest summary table format."""
-    results = []
-    table_pattern = (
-        r"(\S+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+([\d.]+)%"
-    )
-
-    for line in content.split("\n"):
-        match = re.search(table_pattern, line)
-        if match and match.group(1) not in ["Test", "TOTAL", "---"]:
-            results.append(
-                {
-                    "nic": nic,
-                    "category": match.group(1),
-                    "passed": int(match.group(2)),
-                    "failed": int(match.group(3)),
-                    "skipped": int(match.group(4)),
-                    "error": 0,
-                    "xpassed": 0,
-                    "xfailed": 0,
-                    "total": int(match.group(5)),
-                }
-            )
-
-    return results
-
-
-def _parse_gtest_individual_tests(content, nic):
-    """Parse individual gtest test cases."""
-    test_suites = {}
-    all_test_cases = []
-    failure_logs = _extract_gtest_failure_logs(content)
-
-    # (regex, result_string, has_duration)
-    patterns = [
-        (r"\[\s*PASSED\s*\]\s+(\w+)\.(\w+)\s*\((\d+)\s*ms\)", "PASSED", True),
-        (r"\[\s*FAILED\s*\]\s+(\w+)\.(\w+)\s*\((\d+)\s*ms\)", "FAILED", True),
-        (r"\[\s*SKIPPED\s*\]\s+(\w+)\.(\w+)", "SKIPPED", False),
-    ]
-
-    for line in content.split("\n"):
-        for pattern, result, has_duration in patterns:
-            match = re.search(pattern, line)
-            if match:
-                suite, test_name = match.group(1), match.group(2)
-                full_name = f"{suite}.{test_name}"
-                duration = f"{match.group(3)} ms" if has_duration else "N/A"
-                if suite not in test_suites:
-                    test_suites[suite] = {"passed": 0, "failed": 0, "skipped": 0}
-                test_suites[suite][result.lower()] += 1
-                log = failure_logs.get(full_name, "") if result == "FAILED" else ""
-                all_test_cases.append(
-                    {
-                        "nic": nic,
-                        "category": suite,
-                        "test_name": full_name,
-                        "result": result,
-                        "duration": duration,
-                        "platform": "gtest",
-                        "log": log,
-                    }
-                )
-                break  # Only match one pattern per line
-
-    return test_suites, all_test_cases
-
-
-def _create_results_from_test_suites(test_suites, nic):
-    """Create results list from test suite dictionary."""
-    results = []
-    for suite, counts in test_suites.items():
-        total = counts["passed"] + counts["failed"] + counts["skipped"]
-        if total > 0:
-            results.append(
-                {
-                    "nic": nic,
-                    "category": suite,
-                    "passed": counts["passed"],
-                    "failed": counts["failed"],
-                    "skipped": counts["skipped"],
-                    "error": 0,
-                    "xpassed": 0,
-                    "xfailed": 0,
-                    "total": total,
-                }
-            )
-    return results
-
-
-def _parse_gtest_summary(content, nic):
-    """Parse gtest summary at end of log."""
-    total_passed = 0
-    total_failed = 0
-
-    for line in content.split("\n"):
-        if re.search(r"\[\s*PASSED\s*\]\s+(\d+)\s+test", line):
-            match = re.search(r"(\d+)", line)
-            if match:
-                total_passed = int(match.group(1))
-        elif re.search(r"\[\s*FAILED\s*\]\s+(\d+)\s+test", line):
-            match = re.search(r"(\d+)", line)
-            if match:
-                total_failed = int(match.group(1))
-
-    if total_passed > 0 or total_failed > 0:
-        return [
-            {
-                "nic": nic,
-                "category": "all_tests",
-                "passed": total_passed,
-                "failed": total_failed,
-                "skipped": 0,
-                "error": 0,
-                "xpassed": 0,
-                "xfailed": 0,
-                "total": total_passed + total_failed,
-            }
-        ]
-
-    return []
+    return list(suites.values())

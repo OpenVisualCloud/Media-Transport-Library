@@ -11,9 +11,7 @@
 #include <fstream>
 #include <string>
 
-#include "core/constants.hpp"
 #include "core/test_fixture.hpp"
-#include "handlers/st30p_handler.hpp"
 #include "strategies/st30p_strategies.hpp"
 
 static_assert(kSt30pRxToleranceNs == int64_t{40} * NS_PER_US, "comments quote +40 us");
@@ -38,17 +36,17 @@ std::string exclusivePartitionError() {
          "partition: cgroup " +
          path + ", partition '" + partition +
          "', MTL_CPU_ISOLATION=" + (isolation ? isolation : "unset") +
-         "; run via tests/integration_tests/noctx/run.sh "
+         "; run via tests/integration_tests/runner/gtest_runner.py --profile '^noctx$' "
          "(tests/tools/isolate/isolate.sh) on a host that allows it; see "
          "tests/tools/isolate/README.md";
 }
 }  // namespace
 
 /* st30p_default_timestamps
- * Config:    mtl_init() with FakePtpClockNow and INFO log, DEV_AUTO_START_STOP as on
- *            the command line (run.sh: on; the test never calls mtl_start()); one
- *            session TX TEST_PORT_1 -> RX TEST_PORT_2, PCM16 48 kHz stereo, 1 ms
- *            packets, 10 ms buffers (B), 3 buffers (fillSt30pOps()); default pacing.
+ * Config:    initDefaultContext() (FakePtpClockNow, INFO log, DEV_AUTO_START_STOP off,
+ *            explicit mtl_start()); one session TX TEST_PORT_1 -> RX TEST_PORT_2,
+ *            PCM16 48 kHz stereo, 1 ms packets, 10 ms buffers (B), 3 buffers
+ *            (fillSt30pOps()); default pacing.
  * Plan:      none.
  * Expect:    on every buffer, St30pDefaultPacingOracle
  *            1. buffer 0 RTP, as TAI, on the 1 ms grid, not after its software RX
@@ -58,22 +56,22 @@ std::string exclusivePartitionError() {
  * Skip/Fail: none.
  */
 TEST_F(NoCtxTest, st30p_default_timestamps) {
-  ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
-  ctx->handle = mtl_init(&ctx->para);
-  ASSERT_TRUE(ctx->handle != nullptr);
+  initDefaultContext();
+  if (HasFatalFailure()) return;
 
   auto bundle = createSt30pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       [](St30pHandler* handler) { return new St30pDefaultPacingOracle(handler); });
   auto* handler = bundle.handler;
   auto* strategy = static_cast<St30pDefaultPacingOracle*>(bundle.strategy);
-  ASSERT_NE(handler, nullptr);
-  ASSERT_NE(strategy, nullptr);
 
   handler->startSession();
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
   sleepUntilFailure();
   handler->stopSession();
+
+  ASSERT_GT(strategy->idx_rx, 0u)
+      << "st30p_default_timestamps did not receive any frames";
 }
 
 /* st30p_user_pacing
@@ -110,15 +108,13 @@ TEST_F(NoCtxTest, st30p_user_pacing) {
       [](St30pHandler* handler) { handler->sessionsOpsTx.flags |= kTxFlags; });
   auto* handler = bundle.handler;
   auto* strategy = static_cast<St30pUserPacingOracle*>(bundle.strategy);
-  ASSERT_NE(handler, nullptr);
-  ASSERT_NE(strategy, nullptr);
 
   strategy->initializeTiming(handler);
   sleep(1);
 
   /* The plan counts from PTP zero; restarting before mtl_start() steps no tasklet. */
   StartFakePtpClock();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
   handler->startSession();
 
   sleepUntilFailure();

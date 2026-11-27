@@ -2,244 +2,261 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <atomic>
+#include <deque>
+
 #include "st20_common.h"
 
-static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
-                                    enum st_test_level level = ST_TEST_LEVEL_ALL) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  auto m_handle = ctx->handle;
-  int ret;
-  struct st20_tx_ops ops_tx;
-  struct st20_rx_ops ops_rx;
-  if (ctx->para.num_ports < 2) {
-    info(
-        "%s, dual port should be enabled for tx test, one for tx and one for "
-        "rx\n",
-        __func__);
-    throw std::runtime_error("Dual port not enabled");
+namespace {
+
+constexpr int kMaxUpdateSrcs = 3;
+constexpr uint8_t kFrameSrcMarkerBase = 0xA0;
+constexpr size_t kFrameSrcMarkerLen = 8;
+
+struct UpdateSourceRxState {
+  tests_context* ctx = nullptr;
+  std::atomic<int> src_hits[kMaxUpdateSrcs];
+  std::atomic<int> src_unknown{0};
+
+  UpdateSourceRxState() {
+    reset_counts();
   }
-  ASSERT_TRUE(tx_sessions >= 1);
-  bool tx_update_dst = (tx_sessions == 1);
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  void reset_counts() {
+    for (int i = 0; i < kMaxUpdateSrcs; i++) {
+      src_hits[i].store(0, std::memory_order_relaxed);
+    }
+    src_unknown.store(0, std::memory_order_relaxed);
+  }
+};
 
-  int rx_sessions = 1;
-  // 1501/1502 for one frame, max two frames.
-  int max_rtp_delta = 3003;
+int st20_update_src_rx_frame_ready(void* priv, void* frame,
+                                   struct st20_rx_frame_meta* meta) {
+  auto* state = static_cast<UpdateSourceRxState*>(priv);
+  if (!state || !state->ctx) return -EIO;
+  if (frame && st_is_frame_complete(meta->status)) {
+    const auto* bytes = static_cast<const uint8_t*>(frame);
+    int matched_src = -1;
+    for (int s = 0; s < kMaxUpdateSrcs; s++) {
+      const uint8_t expected = static_cast<uint8_t>(kFrameSrcMarkerBase + s);
+      bool ok = true;
+      for (size_t b = 0; b < kFrameSrcMarkerLen; b++) {
+        if (bytes[b] != expected) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) {
+        matched_src = s;
+        break;
+      }
+    }
+    if (matched_src >= 0) {
+      state->src_hits[matched_src].fetch_add(1, std::memory_order_relaxed);
+    } else {
+      state->src_unknown.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
+  return st20_rx_frame_ready(state->ctx, frame, meta);
+}
 
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
-  std::vector<st20_tx_handle> tx_handle;
-  std::vector<st20_rx_handle> rx_handle;
-  std::vector<double> expect_framerate;
-  std::vector<double> framerate;
-  std::vector<std::thread> rtp_thread_tx;
-  std::vector<std::thread> rtp_thread_rx;
+void verify_switch_phase(const std::vector<tests_context*>& test_ctx_rx,
+                         std::deque<UpdateSourceRxState>& rx_states,
+                         const std::vector<st20_rx_handle>& rx_handle,
+                         const std::vector<double>& expect_framerate,
+                         const struct st_rx_source_info& src, enum st20_type type,
+                         int expected_src, int max_rtp_delta, const char* label) {
+  const int rx_sessions = static_cast<int>(rx_handle.size());
+  std::vector<int> base_rec(rx_sessions, 0);
+  for (int i = 0; i < rx_sessions; i++) {
+    int ret = st20_rx_update_source(rx_handle[i], const_cast<st_rx_source_info*>(&src));
+    EXPECT_GE(ret, 0);
+    __atomic_store_n(&test_ctx_rx[i]->start_time, 0, __ATOMIC_RELEASE);
+  }
 
-  test_ctx_tx.resize(tx_sessions);
-  test_ctx_rx.resize(rx_sessions);
-  tx_handle.resize(tx_sessions);
-  rx_handle.resize(rx_sessions);
-  expect_framerate.resize(rx_sessions);
-  framerate.resize(rx_sessions);
-  rtp_thread_tx.resize(tx_sessions);
-  rtp_thread_rx.resize(rx_sessions);
+  /* Allow in-flight packets/frames from the previous source to drain before counting. */
+  st_usleep(150 * 1000);
+  for (int i = 0; i < rx_sessions; i++) {
+    rx_states[i].reset_counts();
+    base_rec[i] = mtl_test::rx_frames(test_ctx_rx[i]);
+  }
+
+  /*
+   * Measure steady-state RX FPS relative to base_rec[i] without resetting fb_rec:
+   * warmup=12 (~200 ms at 59.94 fps) absorbs the switch transition, then >=35 frames
+   * over >=1500 ms (~90 frames at 59.94 fps, <=1.1% edge error vs +/-10% tolerance).
+   */
+  auto rel_rx_frames = [&base_rec](const tests_context* c) {
+    return mtl_test::rx_frames(c) - base_rec[c->idx];
+  };
+  auto res = mtl_test::measure_rate_window(test_ctx_rx, rel_rx_frames, kSt20WarmupFrames,
+                                           kSt20MinRateFrames, kSt20MinRateWindowMs,
+                                           kSt20WarmupTimeoutMs, kSt20WindowTimeoutMs);
+  EXPECT_TRUE(res.warmed_up);
+  EXPECT_TRUE(res.complete);
+  const int min_hits = (type == ST20_TYPE_FRAME_LEVEL) ? 5 : 20;
+  const char* safe_label = label ? label : "(null)";
+  for (int i = 0; i < rx_sessions; i++) {
+    int rec = mtl_test::rx_frames(test_ctx_rx[i]);
+    EXPECT_GT(rec, base_rec[i]);
+    info("%s, session %d fb_rec %d framerate %f for %s\n", __func__, i, rec - base_rec[i],
+         res.rate[i], safe_label);
+    EXPECT_NEAR(res.rate[i], expect_framerate[i], expect_framerate[i] * 0.1);
+    EXPECT_GT(rx_states[i].src_hits[expected_src].load(std::memory_order_relaxed),
+              min_hits)
+        << "expected hits from source " << expected_src << " (" << safe_label << ")";
+    for (int other = 0; other < kMaxUpdateSrcs; other++) {
+      if (other == expected_src) continue;
+      EXPECT_EQ(rx_states[i].src_hits[other].load(std::memory_order_relaxed), 0)
+          << "unexpected hits from source " << other << " while expecting "
+          << expected_src << " (" << safe_label << ")";
+    }
+    EXPECT_EQ(rx_states[i].src_unknown.load(std::memory_order_relaxed), 0)
+        << "unexpected untagged frames/packets (" << safe_label << ")";
+    if (type == ST20_TYPE_FRAME_LEVEL) {
+      /* Acquire load on start_time pairs with release store after rtp_delta update. */
+      EXPECT_NE(__atomic_load_n(&test_ctx_rx[i]->start_time, __ATOMIC_ACQUIRE), 0u);
+      const int rtp_delta = __atomic_load_n(&test_ctx_rx[i]->rtp_delta, __ATOMIC_RELAXED);
+      EXPECT_GE(rtp_delta, 0);
+      EXPECT_LE(rtp_delta, max_rtp_delta);
+    }
+  }
+}
+
+void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
+  auto ctx = st_test_ctx();
+  auto m_handle = ctx->handle;
+
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
+  ASSERT_GE(tx_sessions, 1);
+  ASSERT_LE(tx_sessions, kMaxUpdateSrcs);
+
+  const bool tx_update_dst = (tx_sessions == 1);
+  const int rx_sessions = 1;
+  /* 1501/1502 for one frame, max two frames. */
+  constexpr int kMaxRtpDelta = 3003;
+  const St20StreamSpec st{type, type, ST20_PACKING_BPM, ST_FPS_P59_94, 1920, 1080};
+
+  /* Declare rx_states before St20DeinitGuard so handles/threads stop before destroy. */
+  std::deque<UpdateSourceRxState> rx_states(rx_sessions);
+  std::vector<tests_context*> test_ctx_tx(tx_sessions);
+  std::vector<tests_context*> test_ctx_rx(rx_sessions);
+  std::vector<st20_tx_handle> tx_handle(tx_sessions);
+  std::vector<st20_rx_handle> rx_handle(rx_sessions);
+  std::vector<double> expect_framerate(rx_sessions, st_frame_rate(st.fps));
+  std::vector<std::thread> rtp_thread_tx(tx_sessions);
+  std::vector<std::thread> rtp_thread_rx(rx_sessions);
 
   St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle,
                         &rtp_thread_tx, &rtp_thread_rx);
 
-  for (int i = 0; i < rx_sessions; i++)
-    expect_framerate[i] = st_frame_rate(ST_FPS_P59_94);
-
   for (int i = 0; i < tx_sessions; i++) {
     test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
-    ASSERT_TRUE(test_ctx_tx[i] != NULL);
-    test_ctx_tx[i]->stop = false;
-
-    init_single_port_tx(ops_tx, test_ctx_tx[i], "st20_test", udp_port_for_idx(i));
+    struct st20_tx_ops ops_tx;
+    st20_fill_loopback_tx_ops(ops_tx, test_ctx_tx[i], st, "st20_test",
+                              udp_port_for_idx(i));
     if (2 == i)
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
     else if (1 == i)
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
              MTL_IP_ADDR_LEN);
-    else if (ctx->mcast_only)
-      memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-             MTL_IP_ADDR_LEN);
     else
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
-    ops_tx.type = type;
-    ops_tx.width = 1920;
-    ops_tx.height = 1080;
-    ops_tx.fps = ST_FPS_P59_94;
-    ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
-    ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
-    ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.get_next_frame = tx_next_video_frame;
-    if (type == ST20_TYPE_RTP_LEVEL) {
-      rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
-    }
 
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
-    test_ctx_tx[i]->handle = tx_handle[i];
+    if (type == ST20_TYPE_FRAME_LEVEL) {
+      const uint8_t marker = static_cast<uint8_t>(kFrameSrcMarkerBase + i);
+      for (int f = 0; f < test_ctx_tx[i]->fb_cnt; f++) {
+        auto* fb = static_cast<uint8_t*>(
+            st20_tx_get_framebuffer(tx_handle[i], static_cast<uint16_t>(f)));
+        ASSERT_NE(fb, nullptr);
+        memset(fb, marker, kFrameSrcMarkerLen);
+      }
+    }
+    st20_set_handle(test_ctx_tx[i], tx_handle[i]);
     if (type == ST20_TYPE_RTP_LEVEL) {
-      test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(tx_feed_packet, test_ctx_tx[i]);
     }
   }
 
   for (int i = 0; i < rx_sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3);
-    ASSERT_TRUE(test_ctx_rx[i] != NULL);
-    test_ctx_rx[i]->stop = false;
-
-    init_single_port_rx(ops_rx, test_ctx_rx[i], "st20_test", udp_port_for_idx(i));
-    if (ctx->mcast_only)
-      memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-             MTL_IP_ADDR_LEN);
-    else
-      memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-             MTL_IP_ADDR_LEN);
-    ops_rx.type = type;
-    ops_rx.width = 1920;
-    ops_rx.height = 1080;
-    ops_rx.fps = ST_FPS_P59_94;
-    ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
-    ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
-    ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    ops_rx.notify_frame_ready = st20_rx_frame_ready;
-    ops_rx.notify_rtp_ready = rx_rtp_ready;
+    rx_states[i].ctx = test_ctx_rx[i];
+    struct st20_rx_ops ops_rx;
+    st20_fill_loopback_rx_ops(ops_rx, test_ctx_rx[i], st, "st20_test",
+                              udp_port_for_idx(i));
     ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+    if (type == ST20_TYPE_FRAME_LEVEL) {
+      ops_rx.priv = &rx_states[i];
+      ops_rx.notify_frame_ready = st20_update_src_rx_frame_ready;
+    }
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
 
     test_ctx_rx[i]->total_pkts_in_frame = test_ctx_tx[i]->total_pkts_in_frame;
-    test_ctx_rx[i]->handle = rx_handle[i];
+    st20_set_handle(test_ctx_rx[i], rx_handle[i]);
     if (type == ST20_TYPE_RTP_LEVEL) {
-      test_ctx_rx[i]->stop = false;
-      rtp_thread_rx[i] = std::thread(rx_get_packet, test_ctx_rx[i]);
+      UpdateSourceRxState* state = &rx_states[i];
+      rtp_thread_rx[i] = std::thread([rctx = test_ctx_rx[i], state]() {
+        rx_get_packet_ex(rctx, [state](const struct st20_rfc4175_rtp_hdr* hdr) {
+          const uint32_t ssrc = ntohl(hdr->base.ssrc);
+          if (ssrc >= kSt20RtpSsrcBase &&
+              ssrc < kSt20RtpSsrcBase + static_cast<uint32_t>(kMaxUpdateSrcs)) {
+            state->src_hits[ssrc - kSt20RtpSsrcBase].fetch_add(1,
+                                                               std::memory_order_relaxed);
+          } else {
+            state->src_unknown.fetch_add(1, std::memory_order_relaxed);
+          }
+        });
+      });
     }
   }
 
-  ret = mtl_start(m_handle);
+  int ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * tx_sessions); /* time for train_pacing */
-  sleep(5);
 
-  struct st_rx_source_info src;
-  /* switch to mcast port p(tx_session:1) */
-  memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
-  memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  if (tx_update_dst) {
-    test_ctx_tx[0]->seq_id = 0; /* reset seq id */
-    struct st_tx_dest_info dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
-    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-    ret = st20_tx_update_destination(tx_handle[0], &dst);
-    EXPECT_GE(ret, 0);
-  } else {
-    test_ctx_tx[1]->seq_id = 0; /* reset seq id */
-  }
-  for (int i = 0; i < rx_sessions; i++) {
-    ret = st20_rx_update_source(rx_handle[i], &src);
-    EXPECT_GE(ret, 0);
-    test_ctx_rx[i]->start_time = 0;
-    test_ctx_rx[i]->fb_rec = 0;
-  }
-  sleep(10);
-  /* check rx fps */
-  for (int i = 0; i < rx_sessions; i++) {
-    uint64_t cur_time_ns = st_test_get_monotonic_time();
-    double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
-    framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
+  EXPECT_TRUE(
+      mtl_test::wait_for_all(test_ctx_tx, mtl_test::tx_frames, 5, kSt20WarmupTimeoutMs));
+  EXPECT_TRUE(
+      mtl_test::wait_for_all(test_ctx_rx, mtl_test::rx_frames, 5, kSt20WarmupTimeoutMs));
+  EXPECT_GT(rx_states[0].src_hits[0].load(std::memory_order_relaxed), 0);
 
-    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f for mcast 1\n", __func__, i,
-         test_ctx_rx[i]->fb_rec, framerate[i]);
-    EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-    if (type == ST20_TYPE_FRAME_LEVEL) {
-      EXPECT_LE(test_ctx_rx[i]->rtp_delta, max_rtp_delta);
+  auto switch_and_verify = [&](int idx, const uint8_t* tx_ip, const uint8_t* rx_ip,
+                               int new_seq, const char* label) {
+    struct st_rx_source_info src = {};
+    src.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(idx);
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], rx_ip, MTL_IP_ADDR_LEN);
+    if (tx_update_dst) {
+      __atomic_store_n(&test_ctx_tx[0]->seq_id, new_seq, __ATOMIC_RELAXED);
+      struct st_tx_dest_info dst = {};
+      dst.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(idx);
+      memcpy(dst.dip_addr[MTL_SESSION_PORT_P], tx_ip, MTL_IP_ADDR_LEN);
+      EXPECT_GE(st20_tx_update_destination(tx_handle[0], &dst), 0);
+    } else {
+      __atomic_store_n(&test_ctx_tx[idx]->seq_id, new_seq, __ATOMIC_RELAXED);
     }
-  }
+    const int expected_src = tx_update_dst ? 0 : idx;
+    verify_switch_phase(test_ctx_rx, rx_states, rx_handle, expect_framerate, src, type,
+                        expected_src, kMaxRtpDelta, label);
+  };
 
+  switch_and_verify(1, ctx->mcast_ip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P], 0,
+                    "mcast 1");
   if (tx_sessions > 2) {
-    /* switch to mcast port r(tx_session:2) */
-    memset(&src, 0, sizeof(src));
-    src.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
-    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-    test_ctx_tx[2]->seq_id = rand(); /* random seq id */
-    for (int i = 0; i < rx_sessions; i++) {
-      ret = st20_rx_update_source(rx_handle[i], &src);
-      EXPECT_GE(ret, 0);
-      test_ctx_rx[i]->start_time = 0;
-      test_ctx_rx[i]->fb_rec = 0;
-    }
-    sleep(10);
-    /* check rx fps */
-    for (int i = 0; i < rx_sessions; i++) {
-      uint64_t cur_time_ns = st_test_get_monotonic_time();
-      double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
-      framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
-
-      EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-      info("%s, session %d fb_rec %d framerate %f for mcast 2\n", __func__, i,
-           test_ctx_rx[i]->fb_rec, framerate[i]);
-      EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-      if (type == ST20_TYPE_FRAME_LEVEL) {
-        EXPECT_LE(test_ctx_rx[i]->rtp_delta, max_rtp_delta);
-      }
-    }
+    switch_and_verify(2, ctx->mcast_ip_addr[MTL_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+                      rand(), "mcast 2");
   }
+  switch_and_verify(0, ctx->para.sip_addr[MTL_PORT_R], ctx->para.sip_addr[MTL_PORT_P],
+                    rand(), "unicast 0");
 
-  /* switch to unicast(tx_session:0) */
-  memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
-  memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  test_ctx_tx[0]->seq_id = rand(); /* random seq id */
-  if (tx_update_dst) {
-    struct st_tx_dest_info dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
-    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-    ret = st20_tx_update_destination(tx_handle[0], &dst);
-    EXPECT_GE(ret, 0);
-  }
-  for (int i = 0; i < rx_sessions; i++) {
-    ret = st20_rx_update_source(rx_handle[i], &src);
-    EXPECT_GE(ret, 0);
-    test_ctx_rx[i]->start_time = 0;
-    test_ctx_rx[i]->fb_rec = 0;
-  }
-  sleep(10);
-  /* check rx fps */
-  for (int i = 0; i < rx_sessions; i++) {
-    uint64_t cur_time_ns = st_test_get_monotonic_time();
-    double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
-    framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
-
-    EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f for unicast 0\n", __func__, i,
-         test_ctx_rx[i]->fb_rec, framerate[i]);
-    EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-    if (type == ST20_TYPE_FRAME_LEVEL) {
-      EXPECT_LE(test_ctx_rx[i]->rtp_delta, max_rtp_delta);
-    }
-  }
-
-  /* stop rtp thread */
-  guard.stop();
+  guard.release_sessions();
 }
+
+}  // namespace
 
 TEST(St20_rx, update_source_frame) {
   st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 3);

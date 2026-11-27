@@ -35,9 +35,7 @@
 #include <string>
 #include <utility>
 
-#include "core/constants.hpp"
-#include "handlers/st20p_handler.hpp"
-#include "tests.hpp"
+#include "core/test_fixture.hpp"
 
 namespace {
 constexpr uint64_t kBpmPayloadBytes = 1260;
@@ -83,12 +81,6 @@ void setPhcOffset(uint64_t base_mono_ns, int64_t base_offset_ns, int64_t slope_p
   g_phc_offset.base_offset_ns.store(base_offset_ns, std::memory_order_relaxed);
   g_phc_offset.slope_ppb.store(slope_ppb, std::memory_order_relaxed);
   g_phc_offset.seq.store(seq + 2, std::memory_order_release);
-}
-
-uint64_t monotonicRawNs() {
-  timespec mono;
-  (void)clock_gettime(CLOCK_MONOTONIC_RAW, &mono);
-  return static_cast<uint64_t>(mono.tv_sec) * NS_PER_S + mono.tv_nsec;
 }
 
 uint32_t expectedBpmPackets(const St20pHandler* handler) {
@@ -578,6 +570,24 @@ void St20pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_s
     ASSERT_EQ(st20p_tx_get_pacing_params(st20pParent->sessionsHandleTx, &trOffsetNs,
                                          &trsNs, &vrxPkts),
               0);
+    const auto& tx_ops = st20pParent->sessionsOpsTx;
+    const double frame_time_ns = static_cast<double>(NS_PER_S) *
+                                 static_cast<double>(rate.den) /
+                                 static_cast<double>(rate.mul);
+    double expected_tr_offset_ns = tx_ops.height >= 1080u
+                                       ? frame_time_ns * (43.0 / 1125.0)
+                                       : frame_time_ns * (28.0 / 750.0);
+    if (tx_ops.interlaced) {
+      if (tx_ops.height == 480u)
+        expected_tr_offset_ns = frame_time_ns * (20.0 / 525.0) * 2.0;
+      else if (tx_ops.height == 576u)
+        expected_tr_offset_ns = frame_time_ns * (26.0 / 625.0) * 2.0;
+      else
+        expected_tr_offset_ns = frame_time_ns * (22.0 / 1125.0) * 2.0;
+    }
+    EXPECT_NEAR(trOffsetNs, expected_tr_offset_ns, expected_tr_offset_ns * 0.05)
+        << "trOffsetNs=" << trOffsetNs
+        << " differs from ST 2110-21 narrow TR_OFFSET=" << expected_tr_offset_ns;
     const uint64_t rtp_ns = st10_media_clk_to_tai(
         mtl_ptp_read_time(st20pParent->ctx->handle), f->rtp_timestamp, VIDEO_CLOCK_HZ);
     const long double start = rtp_ns - (trOffsetNs - vrxPkts * (long double)trsNs);
@@ -600,11 +610,12 @@ void St20pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_s
 }
 
 St20pUserPacingOracle::St20pUserPacingOracle(St20pHandler* parentHandler,
-                                             std::vector<double> offsetMultipliers)
-    : FrameTestStrategy(parentHandler, true, true),
+                                             std::vector<double> offsetMultipliers,
+                                             bool enableRx)
+    : FrameTestStrategy(parentHandler, true, enableRx),
       timestampOffsetMultipliers(std::move(offsetMultipliers)) {
   initializeTiming(parentHandler);
-  rxPhc.start(parentHandler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P]);
+  if (enableRx) rxPhc.start(parentHandler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P]);
 }
 
 int St20pUserPacingOracle::getPacingParameters() {
@@ -705,13 +716,8 @@ void St20pUserPacingOracle::initializeTiming(St20pHandler* handler) {
 
 St20pRedundantStreamPlan::St20pRedundantStreamPlan(unsigned int latency,
                                                    St20pHandler* parentHandler)
-    : St20pUserPacingOracle(parentHandler), latencyInMs(latency) {
-  startingTime = (kSt20pRedundantStartMs + latencyInMs) * NS_PER_MS;
-}
-
-void St20pRedundantStreamPlan::rxTestFrameModifier(void* /*frame*/,
-                                                   size_t /*frame_size*/) {
-  idx_rx++;
+    : St20pUserPacingOracle(parentHandler, {}, /*enableRx=*/false) {
+  startingTime = (kSt20pRedundantStartMs + latency) * NS_PER_MS;
 }
 
 St20pExactUserPacingOracle::St20pExactUserPacingOracle(
@@ -745,14 +751,14 @@ void St20pInterlacedUserPacingOracle::rxTestFrameModifier(void* frame,
   St20pUserPacingOracle::rxTestFrameModifier(frame, frame_size);
 }
 
-St20pVrxRecorder::St20pVrxRecorder(St20pHandler* parentHandler, int64_t ptp_minus_phc,
-                                   int window)
+RlWireCheck::RlWireCheck(St20pHandler* parentHandler, int64_t ptp_minus_phc, int window)
     : FrameTestStrategy(parentHandler, false, true),
       window_s(window),
       ptp_minus_phc_ns(ptp_minus_phc) {
 }
 
-void St20pVrxRecorder::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
+void RlWireCheck::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
+  if (closed.load(std::memory_order_acquire)) return;
   auto* f = static_cast<st_frame*>(frame);
   auto* handler = static_cast<St20pHandler*>(parent);
   if (!first_rx_ns) first_rx_ns = f->receive_timestamp;
@@ -763,43 +769,6 @@ void St20pVrxRecorder::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   delivery_ns.push_back(static_cast<int64_t>(mtl_ptp_read_time(handler->ctx->handle) -
                                              f->receive_timestamp));
 
-  /* The parser's epochs come from its packet times: on the PHC they lag the TX epochs,
-   * and so the RTP, by ptp_minus_phc_ns; software times are PTP times and do not. */
-  const double frame_ticks = VIDEO_CLOCK_HZ / st_frame_rate(handler->sessionsOpsRx.fps);
-  const double shift_ticks = (double)ptp_minus_phc_ns * VIDEO_CLOCK_HZ / NS_PER_S;
-  for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
-    const st20_rx_tp_meta* tp = f->tp[port];
-    if (!tp || !tp->pkts_cnt) continue;
-    if (std::fabs(tp->rtp_offset) < frame_ticks) {
-      sw_rx_frames[port]++;
-      continue;
-    }
-    if (std::fabs(tp->rtp_offset - shift_ticks) >= frame_ticks / 2) {
-      off_band_frames[port]++;
-      continue;
-    }
-    vrx_min[port].push_back(tp->vrx_min);
-    const uint32_t missing =
-        f->pkts_total > tp->pkts_cnt ? f->pkts_total - tp->pkts_cnt : 0;
-    max_missing_pkts[port] = std::max(max_missing_pkts[port], missing);
-    if (missing > kSt20pVrxMaxLegLagPkts) partial_frames[port]++;
-  }
-}
-
-void RlWireCheck::rxTestFrameModifier(void* frame, size_t frame_size) {
-  if (closed.load(std::memory_order_acquire)) return;
-  auto* f = static_cast<st_frame*>(frame);
-  auto* handler = static_cast<St20pHandler*>(parent);
-  size_t recorded[MTL_SESSION_PORT_MAX];
-  uint64_t off_band[MTL_SESSION_PORT_MAX];
-  for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
-    recorded[port] = vrx_min[port].size();
-    off_band[port] = off_band_frames[port];
-  }
-  const size_t in_window = delivery_ns.size();
-  St20pVrxRecorder::rxTestFrameModifier(frame, frame_size);
-  if (delivery_ns.size() == in_window) return;
-
   const uint64_t pkt0_ptp_ns = f->receive_timestamp + ptp_minus_phc_ns;
   if (!window_from_ptp_ns) {
     ASSERT_EQ(st20p_tx_get_pacing_params(handler->sessionsHandleTx, &tr_offset_ns,
@@ -809,22 +778,37 @@ void RlWireCheck::rxTestFrameModifier(void* frame, size_t frame_size) {
   }
   window_to_ptp_ns = pkt0_ptp_ns;
 
+  /* The parser's epochs come from its packet times: on the PHC they lag the TX epochs,
+   * and so the RTP, by ptp_minus_phc_ns; software times are PTP times and do not. */
+  const double frame_ticks = VIDEO_CLOCK_HZ / st_frame_rate(handler->sessionsOpsRx.fps);
+  const double shift_ticks = (double)ptp_minus_phc_ns * VIDEO_CLOCK_HZ / NS_PER_S;
   const St20pFrameRate rate = st20pFrameRate(handler->sessionsOpsTx.fps);
   const uint64_t epoch = (uint64_t)((unsigned __int128)pkt0_ptp_ns * rate.mul /
                                     ((unsigned __int128)NS_PER_S * rate.den));
   const int64_t launch_ns =
       (int64_t)(st20pRoundedLaunchNs(rate, epoch, tr_offset_ns, trs_ns, vrx_pkts) -
                 st20pEpochTaiNs(rate, epoch));
-  const double shift_ticks = (double)ptp_minus_phc_ns * VIDEO_CLOCK_HZ / NS_PER_S;
   bool late = false;
   for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
     const st20_rx_tp_meta* tp = f->tp[port];
-    if (off_band_frames[port] != off_band[port] &&
-        std::fabs(tp->rtp_offset - shift_ticks) < shift_ticks) {
-      epoch_off_frames[port]++;
-      late = true;
+    if (!tp || !tp->pkts_cnt) continue;
+    if (std::fabs(tp->rtp_offset) < frame_ticks) {
+      sw_rx_frames[port]++;
+      continue;
     }
-    if (vrx_min[port].size() == recorded[port]) continue;
+    if (std::fabs(tp->rtp_offset - shift_ticks) >= frame_ticks / 2) {
+      off_band_frames[port]++;
+      if (std::fabs(tp->rtp_offset - shift_ticks) < shift_ticks) {
+        epoch_off_frames[port]++;
+        late = true;
+      }
+      continue;
+    }
+    vrx_min[port].push_back(tp->vrx_min);
+    const uint32_t missing =
+        f->pkts_total > tp->pkts_cnt ? f->pkts_total - tp->pkts_cnt : 0;
+    max_missing_pkts[port] = std::max(max_missing_pkts[port], missing);
+    if (missing > kSt20pVrxMaxLegLagPkts) partial_frames[port]++;
     frame_ptp_ns[port].push_back(pkt0_ptp_ns);
     pkt0_margin_trs[port].push_back((tr_offset_ns - tp->fpt) / trs_ns);
     vrx_rel[port].push_back(tp->vrx_min - (tr_offset_ns + trs_ns - tp->fpt) / trs_ns);

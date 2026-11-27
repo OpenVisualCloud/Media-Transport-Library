@@ -1,34 +1,45 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Copyright(c) 2026 Intel Corporation */
 
-#include <gtest/gtest.h>
-
 #include "core/test_fixture.hpp"
-#include "handlers/st40p_handler.hpp"
 
 namespace {
 
-/* Records whether any RX frame reported interlaced; the test asserts on it. */
+/* Records whether RX auto-detect observed interlaced F bits and both field polarities. */
 class St40pInterlaceFlagRecorder : public FrameTestStrategy {
  public:
-  St40pInterlaceFlagRecorder() : FrameTestStrategy(nullptr, false, true) {
+  St40pInterlaceFlagRecorder() : FrameTestStrategy(nullptr, true, true) {
+  }
+
+  void txTestFrameModifier(void* frame, size_t /*frame_size*/) override {
+    auto* info = static_cast<st40_frame_info*>(frame);
+    ASSERT_NE(info, nullptr);
+    ASSERT_NE(info->udw_buff_addr, nullptr);
+    ASSERT_GT(info->udw_buffer_fill, 0u);
+    info->udw_buff_addr[0] = static_cast<uint8_t>(tx_seq_++ & 1u);
   }
 
   void rxTestFrameModifier(void* frame, size_t /*frame_size*/) override {
     auto* info = static_cast<st40_frame_info*>(frame);
     ASSERT_NE(info, nullptr);
-    if (!info) return;
+    ASSERT_NE(info->udw_buff_addr, nullptr);
+    ASSERT_GT(info->udw_buffer_fill, 0u);
 
     if (info->interlaced) {
       saw_interlaced = true;
-      last_second_field = info->second_field;
-      second_field_sampled = true;
+      EXPECT_EQ(info->second_field, (info->udw_buff_addr[0] & 1u) != 0u)
+          << "Auto-detect inverted second_field polarity relative to TX field index";
+      if (info->second_field)
+        saw_second_field = true;
+      else
+        saw_first_field = true;
     }
   }
 
+  uint32_t tx_seq_ = 0;
   bool saw_interlaced = false;
-  bool last_second_field = false;
-  bool second_field_sampled = false;
+  bool saw_first_field = false;
+  bool saw_second_field = false;
 };
 
 }  // namespace
@@ -47,27 +58,23 @@ class St40pInterlaceFlagRecorder : public FrameTestStrategy {
 TEST_F(NoCtxTest, st40p_rx_auto_detect_interlace) {
   initDefaultContext();
 
-  constexpr bool kTxInterlaced = true;
-  constexpr bool kRxInterlaced = false;
-
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       [](St40pHandler*) { return new St40pInterlaceFlagRecorder(); },
       [](St40pHandler* handler) {
-        handler->sessionsOpsTx.interlaced = kTxInterlaced;
-        handler->sessionsOpsRx.interlaced = kRxInterlaced;
+        handler->sessionsOpsTx.interlaced = true;
+        handler->sessionsOpsRx.interlaced = false;
       });
 
   auto* handler = bundle.handler;
   auto* strategy = static_cast<St40pInterlaceFlagRecorder*>(bundle.strategy);
-  ASSERT_NE(handler, nullptr);
-  ASSERT_NE(strategy, nullptr);
 
   StartFakePtpClock();
   handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
-  sleepUntilFailure();
+  /* 5 s at 60 fields/s delivers ~300 fields to verify interlaced F-bit detection. */
+  sleepUntilFailure(5);
 
   handler->stopSession();
 
@@ -75,6 +82,6 @@ TEST_F(NoCtxTest, st40p_rx_auto_detect_interlace) {
   ASSERT_GT(handler->rxFrames(), 0u) << "No frames received";
   EXPECT_EQ(handler->txFrames(), handler->rxFrames()) << "TX/RX frame count mismatch";
   EXPECT_TRUE(strategy->saw_interlaced) << "Auto-detect did not see interlaced F bits";
-  EXPECT_TRUE(strategy->second_field_sampled)
-      << "Auto-detect did not surface field cadence metadata";
+  EXPECT_TRUE(strategy->saw_first_field) << "Auto-detect did not see first field";
+  EXPECT_TRUE(strategy->saw_second_field) << "Auto-detect did not see second field";
 }

@@ -20,13 +20,13 @@ from report_generators.regression_analyzer import analyze_regressions
 def collect_pytest_reports(pytest_dir):
     """Collect and parse all pytest HTML reports."""
     pytest_data = []
-    pytest_reports = list(Path(pytest_dir).glob("*.html"))
+    pytest_reports = sorted(Path(pytest_dir).glob("*.html"))
 
     if not pytest_reports:
         print(f"Warning: No pytest HTML reports found in {pytest_dir}")
         return pytest_data
 
-    print(f"Found {len(pytest_reports)} pytest reports")
+    print(f"Found {len(pytest_reports)} pytest HTML reports")
     for html_file in pytest_reports:
         try:
             stats = parse_pytest_html(html_file)
@@ -39,9 +39,13 @@ def collect_pytest_reports(pytest_dir):
 
 
 def collect_gtest_reports(gtest_dir):
-    """Collect and parse all gtest log files."""
+    """Collect and parse gtest JSONL (preferred) or legacy log files."""
     gtest_data = []
-    gtest_logs = list(Path(gtest_dir).glob("*.log"))
+    gdir = Path(gtest_dir)
+    jsonl_files = sorted(gdir.glob("*.jsonl"))
+    seen_stems = {p.stem for p in jsonl_files}
+    log_files = [p for p in sorted(gdir.glob("*.log")) if p.stem not in seen_stems]
+    gtest_logs = jsonl_files + log_files
 
     if not gtest_logs:
         print(f"Warning: No gtest log files found in {gtest_dir}")

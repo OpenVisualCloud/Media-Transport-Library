@@ -4,7 +4,6 @@
 noctx_sources = files(
     'core/session.cpp',
     'core/handler_base.cpp',
-    'core/strategy.cpp',
     'core/test_fixture.cpp',
     'handlers/st20p_handler.cpp',
     'handlers/st30p_handler.cpp',
@@ -26,5 +25,6 @@ noctx_sources = files(
     'testcases/st40p_auto_detect_tests.cpp',
     'testcases/st40p_user_pacing_tests.cpp',
     'testcases/queues.cpp',
+    'testcases/init_modes_tests.cpp',
     'testcases/st20p_vrx_margin_tests.cpp',
 )

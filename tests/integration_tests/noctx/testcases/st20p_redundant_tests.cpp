@@ -2,9 +2,12 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <chrono>
+#include <cstring>
+#include <thread>
+
 #include "core/constants.hpp"
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 #include "strategies/st20p_strategies.hpp"
 
 /* Indexes into --port_list. */
@@ -14,10 +17,10 @@ constexpr int kRxPortP = 2;
 constexpr int kRxPortR = 3;
 
 /* st20p_redundant_latency_drops_even_odd
- * Config:    4 ports, else std::runtime_error. MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS:
- *            kPrimaryTxPort drops even packets, kRedundantTxPort odd ones;
- *            initDefaultContext(). 1080p25 (T = 40 ms), 3 buffers.
- *            RX kRxPortP + kRxPortR on kUdpPortP / kUdpPortR (P and R);
+ * Config:    4 ports, else requireStrictTopology().
+ *            MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS: kPrimaryTxPort drops even packets,
+ *            kRedundantTxPort odd ones; initDefaultContext(). 1080p25 (T = 40 ms), 3
+ *            buffers. RX kRxPortP + kRxPortR on kUdpPortP / kUdpPortR (P and R);
  *            primary TX kPrimaryTxPort -> P mcast, kUdpPortP;
  *            redundant TX kRedundantTxPort -> R mcast, kUdpPortR,
  *            rtp_timestamp_delta_us = -testedLatencyMs * 1000;
@@ -36,7 +39,9 @@ constexpr int kRxPortR = 3;
  */
 TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   if (ctx->para.num_ports < 4) {
-    throw std::runtime_error("st20p_redundant_latency test ctx needs at least 4 ports");
+    requireStrictTopology(
+        "st20p_redundant_latency_drops_even_odd needs at least 4 ports");
+    return;
   }
 
 /**
@@ -73,15 +78,12 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   constexpr uint32_t kTxFlags = ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP;
 
   auto rxBundle = createSt20pHandlerBundle(
-      /*createTx=*/false, /*createRx=*/true,
-      [](St20pHandler* handler) { return new St20pRedundantStreamPlan(0, handler); },
-      [](St20pHandler* handler) {
+      /*createTx=*/false, /*createRx=*/true, nullptr, [](St20pHandler* handler) {
         handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = kUdpPortP;
         handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = kUdpPortR;
         handler->setSessionPorts(SESSION_SKIP_PORT, kRxPortP, SESSION_SKIP_PORT,
                                  kRxPortR);
       });
-  auto* rxStrategy = static_cast<St20pRedundantStreamPlan*>(rxBundle.strategy);
 
   auto primaryBundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
@@ -114,33 +116,30 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
     - primaryBundle sends the primary stream (no modifications)
     - latencyBundle sends the redundant stream delayed by testedLatencyMs
 
-    [primaryBundle]:          Tx ---> Rx [latencyBundle]
-    [latencyBundle]:          Tx ---> Rx [latencyBundle]
+    [primaryBundle]:          Tx ---> Rx [rxBundle]
+    [latencyBundle]:          Tx ---> Rx [rxBundle]
   */
 
   rxBundle.handler->startSessionRx();
-  ASSERT_TRUE(waitForSession(rxBundle.handler->session));
   primaryBundle.handler->startSessionTx();
-  ASSERT_TRUE(waitForSession(primaryBundle.handler->session));
   latencyBundle.handler->startSessionTx();
-  ASSERT_TRUE(waitForSession(latencyBundle.handler->session));
   StartFakePtpClock(); /* reset ptp time to 0 */
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
-  ASSERT_TRUE(waitForSession(latencyBundle.handler->session));
   sleepUntilFailure(testDurationS);
 
   /* Grab stats before stopping — captures steady-state counters before
    * session teardown introduces incomplete-frame artifacts. */
-  st20_rx_user_stats stats;
-  st20p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats);
+  st20_rx_user_stats stats = {};
+  ASSERT_EQ(st20p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats), 0);
 
   latencyBundle.handler->session.stop();
   primaryBundle.handler->session.stop();
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
   rxBundle.handler->session.stop();
 
   uint64_t framesSend = primaryStrategy->idx_tx;
-  uint64_t framesRecieved = rxStrategy->idx_rx;
+  uint64_t framesRecieved = rxBundle.handler->rxFrames();
 
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";

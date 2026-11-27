@@ -11,7 +11,6 @@
 #include <thread>
 
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 
 namespace {
 
@@ -20,7 +19,7 @@ constexpr uint16_t kFbCnt = 3;
 /* The port St20pHandler's RX listens on. */
 constexpr uint16_t kBusyUdpPort = 20000;
 constexpr uint16_t kIdleUdpPort = 20002;
-constexpr uint64_t kSleepUs = 1000;
+constexpr uint64_t kSleepUs = 4000;
 /* Each frame is requested this far ahead, so packet 0 waits 80-120 ms for its epoch. */
 constexpr uint64_t kLeadNs = 100 * NS_PER_MS;
 constexpr uint64_t kFramePeriodNs = 250 * NS_PER_MS;
@@ -31,15 +30,8 @@ constexpr uint64_t kIdleWindowStartNs = 20 * NS_PER_MS;
 constexpr uint64_t kIdleWindowEndNs = 60 * NS_PER_MS;
 /* Ring prefill is ~127 bulks; a sleep after each would allow ~11 in the busy window. */
 constexpr uint64_t kBusyWindowMinIterations = 64;
-/* One iteration per 200 us, the shortest real sleep (sch_zero_sleep_threshold_us). */
-constexpr uint64_t kIdleWindowMaxIterations =
-    (kIdleWindowEndNs - kIdleWindowStartNs) / (200 * NS_PER_US);
-
-uint64_t monotonicNs() {
-  struct timespec spec;
-  clock_gettime(CLOCK_MONOTONIC_RAW, &spec);
-  return (uint64_t)spec.tv_sec * NS_PER_S + spec.tv_nsec;
-}
+/* 40 ms idle window / 4000 us forced sleep = ~10 iterations; allow up to 20. */
+constexpr uint64_t kIdleWindowMaxIterations = 20;
 
 /* Written from the scheduler thread, read by the test thread. */
 struct TaskletSleepState {
@@ -55,7 +47,7 @@ struct TaskletSleepState {
 
 int busyNextFrame(void* priv, uint16_t* next_frame_idx, struct st20_tx_frame_meta* meta) {
   auto* st = static_cast<TaskletSleepState*>(priv);
-  const uint64_t now = monotonicNs();
+  const uint64_t now = monotonicRawNs();
   const int frame = st->frames_started.load(std::memory_order_relaxed);
 
   if (!st->running.load(std::memory_order_acquire) || frame >= kFrames) return -EBUSY;
@@ -90,7 +82,7 @@ int idleNextFrame(void* priv, uint16_t* next_frame_idx, struct st20_tx_frame_met
   if (!started) return -EBUSY;
   const int frame = started - 1;
   const uint64_t since =
-      monotonicNs() - st->start_ns[frame].load(std::memory_order_relaxed);
+      monotonicRawNs() - st->start_ns[frame].load(std::memory_order_relaxed);
   if (since <= kBusyWindowNs)
     st->busy_iterations[frame].fetch_add(1, std::memory_order_relaxed);
   else if (since >= kIdleWindowStartNs && since <= kIdleWindowEndNs)
@@ -175,7 +167,7 @@ TEST_F(NoCtxTest, st20_tx_tasklet_sleep_idle_peer) {
   rxBundle.handler->startSessionRx();
   StartFakePtpClock();
   ASSERT_EQ(mtl_start(ctx->handle), 0);
-  st.next_start_ns.store(monotonicNs() + NS_PER_S);
+  st.next_start_ns.store(monotonicRawNs() + NS_PER_S);
   st.running.store(true, std::memory_order_release);
 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
@@ -194,8 +186,10 @@ TEST_F(NoCtxTest, st20_tx_tasklet_sleep_idle_peer) {
                        std::to_string(st.idle_iterations[i].load()));
     EXPECT_GE(st.busy_iterations[i].load(), kBusyWindowMinIterations)
         << "frame " << i << ": the scheduler slept while the busy session had work";
+    EXPECT_GE(st.idle_iterations[i].load(), 2u)
+        << "frame " << i << ": scheduler stalled during idle window";
     EXPECT_LE(st.idle_iterations[i].load(), kIdleWindowMaxIterations)
-        << "frame " << i << ": the scheduler did not sleep with nothing to do";
+        << "frame " << i << ": the scheduler did not honor forced sleep us";
   }
   EXPECT_GE(st.frames_done.load(), kFrames - 1);
   EXPECT_GE(rxBundle.handler->rxFrames(), (uint32_t)(kFrames - 1));

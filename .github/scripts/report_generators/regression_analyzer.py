@@ -9,11 +9,17 @@ _REASON_VARIABLE = re.compile(r"0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|\d+")
 
 
 def _build_test_index(pytest_data, gtest_data):
-    """Build a dict mapping (platform, nic, category, test_name) -> (result, log)."""
+    """Build a dict mapping (platform, nic, category, profile, test_name) -> (result, log)."""
     index = {}
     for suite_data in [*pytest_data, *gtest_data]:
         for tc in suite_data.get("test_cases", []):
-            key = (tc["platform"], tc["nic"], tc["category"], tc["test_name"])
+            key = (
+                tc["platform"],
+                tc["nic"],
+                tc["category"],
+                tc.get("profile", ""),
+                tc["test_name"],
+            )
             index[key] = (tc["result"], tc.get("log", ""))
     return index
 
@@ -42,16 +48,22 @@ def analyze_regressions(current_pytest, current_gtest, baseline_pytest, baseline
     lost_coverage = []
 
     for key, (cur_result, cur_log) in current.items():
-        platform, nic, category, test_name = key
+        platform, nic, category, profile, test_name = key
+        display_name = f"[{profile}] {test_name}" if profile else test_name
         entry = {
             "platform": platform,
             "nic": nic,
             "category": category,
-            "test_name": test_name,
+            "test_name": display_name,
         }
 
-        if key in baseline:
-            base_result, _base_log = baseline[key]
+        base_entry = baseline.get(key)
+        if base_entry is None and profile:
+            # Backward compatibility: match legacy baselines that had no profile key.
+            base_entry = baseline.get((platform, nic, category, "", test_name))
+
+        if base_entry is not None:
+            base_result, _base_log = base_entry
             if _is_pass(base_result) and _is_fail(cur_result):
                 regressions.append(
                     {
@@ -123,10 +135,19 @@ def analyze_regressions(current_pytest, current_gtest, baseline_pytest, baseline
     changed_failures.sort(key=_sort_key)
     lost_coverage.sort(key=_sort_key)
 
-    # Coverage comparison: how many tests exist in each index
+    # Coverage comparison: match directly or via legacy unprofiled baseline key
+    # without double-counting shared legacy baseline rows.
     current_keys = set(current)
     baseline_keys = set(baseline)
-    common = len(current_keys & baseline_keys)
+    matched_current = set()
+    matched_baseline = set()
+    for k in current_keys:
+        if k in baseline_keys:
+            matched_current.add(k)
+            matched_baseline.add(k)
+        elif k[3] and (k[0], k[1], k[2], "", k[4]) in baseline_keys:
+            matched_current.add(k)
+            matched_baseline.add((k[0], k[1], k[2], "", k[4]))
 
     return {
         "regressions": regressions,
@@ -138,9 +159,9 @@ def analyze_regressions(current_pytest, current_gtest, baseline_pytest, baseline
         "coverage": {
             "current_total": len(current_keys),
             "baseline_total": len(baseline_keys),
-            "common": common,
-            "only_in_current": len(current_keys) - common,
-            "only_in_baseline": len(baseline_keys) - common,
+            "common": len(matched_current),
+            "only_in_current": len(current_keys) - len(matched_current),
+            "only_in_baseline": len(baseline_keys) - len(matched_baseline),
         },
     }
 
