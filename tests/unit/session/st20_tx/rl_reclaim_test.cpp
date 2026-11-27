@@ -10,6 +10,7 @@
 #include "session/st20_tx/rl_vrx_model.h"
 #include "session/st20_tx_harness.h"
 #include "session/st_video_transmitter_harness.h"
+#include "st2110/st_tx_video_rl.h"
 
 /* A reclaiming (deep) port at 720p59.94: the frame before left its whole TX ring done
  * and not freed, and the PMD frees one rs batch in each burst, before the doorbell. */
@@ -42,7 +43,10 @@ class St20TxRlReclaim : public ::testing::Test {
     credit_ = ut_txv_rl_credit(txv, kPortP);
     trs_ = ut_txv_pacing_trs(txv);
     warm_pkts_ = ut_txv_pacing_warm_pkts(txv);
+    normal_ = ut_txv_normal_size(txv);
+    pad_size_ = ut_txv_rl_pad_size(txv, kPortP);
     ut_txv_destroy(txv);
+    pkt_ = st_tx_video_rl_pad_ns(p_, pad_size_, normal_);
     window_ = (uint64_t)(warm_pkts_ * trs_);
   }
 
@@ -61,6 +65,7 @@ class St20TxRlReclaim : public ::testing::Test {
     ut_trs_set_warm_pkts_cap(ctx, warm_pkts_);
     ut_trs_set_drain(ctx, kPortP, p_);
     ut_trs_set_credit(ctx, kPortP, credit_);
+    EXPECT_EQ(0, ut_trs_set_pad_sizes(ctx, normal_, pad_size_));
     ut_trs_set_shaper_bucket(ctx, kPortP, kBurstBytes * 1e9L / bps_);
     ut_trs_set_mock_tsc_script(ctx, &now, 1);
     const uint64_t d[2] = {kFirstBurstNs, 200}, g[2] = {300, 250};
@@ -118,10 +123,11 @@ class St20TxRlReclaim : public ::testing::Test {
     ut_trs_set_warm_pkts_cap(ctx, warm_pkts_);
     ut_trs_set_drain(ctx, kPortP, p_);
     ut_trs_set_credit(ctx, kPortP, credit_);
+    EXPECT_EQ(0, ut_trs_set_pad_sizes(ctx, normal_, pad_size_));
     ut_trs_set_shaper_bucket(ctx, kPortP, kBurstBytes * 1e9L / bps_);
     ut_trs_set_mock_tsc_script(ctx, now, 1);
     ut_trs_set_pmd_done_batches(ctx, kRsThresh, 0, kBatchFreeNs);
-    const long double batch_ns = kRsThresh / 2 * p_;
+    const long double batch_ns = kRsThresh / 2 * pkt_;
     const uint32_t ring_batches = ut_trs_deep_nb_tx_desc() / kRsThresh;
     while (ut_trs_last_tsc(ctx) < *now + 2 * ring_batches * batch_ns) Visit(ctx);
     return ctx;
@@ -133,7 +139,9 @@ class St20TxRlReclaim : public ::testing::Test {
   }
 
   uint64_t bps_ = 0;
-  long double p_ = 0, credit_ = 0, trs_ = 0;
+  /* the pre-arm pad's drain, and the NORMAL pkt's */
+  long double p_ = 0, pkt_ = 0, credit_ = 0, trs_ = 0;
+  uint16_t normal_ = 0, pad_size_ = 0;
   uint32_t warm_pkts_ = 0;
   uint64_t window_ = 0;
   int stall_pkts_ = 0; /* the pkts FrameEnd() burst before its stall */
@@ -183,13 +191,14 @@ TEST_F(St20TxRlReclaim, IdleSessionReclaimsOnceABatchTime) {
   ut_trs_set_warm_pkts_cap(ctx, warm_pkts_);
   ut_trs_set_drain(ctx, kPortP, p_);
   ut_trs_set_credit(ctx, kPortP, credit_);
+  ASSERT_EQ(0, ut_trs_set_pad_sizes(ctx, normal_, pad_size_));
   ut_trs_set_mock_tsc_script(ctx, &now, 1);
   ut_trs_set_pmd_done_batches(ctx, kRsThresh, 0, kBatchFreeNs);
   while (ut_trs_last_tsc(ctx) < now + span) {
     ut_trs_call_rl_tasklet(ctx);
     ut_trs_advance_mock_tsc(ctx, kOthersNs);
   }
-  const long double batch_ns = kRsThresh / 2 * p_;
+  const long double batch_ns = kRsThresh / 2 * pkt_;
   const uint32_t ring_batches = ut_trs_deep_nb_tx_desc() / kRsThresh;
   const uint32_t calls = ut_trs_reclaim_calls(ctx);
   EXPECT_LE(calls, span / batch_ns + ring_batches + 1);
@@ -311,6 +320,7 @@ TEST_F(St20TxRlReclaim, ThreadStallInsideABatchFreeDelaysTheBurst) {
   ut_trs_set_trs(ctx, trs_);
   ut_trs_set_drain(ctx, kPortP, p_);
   ut_trs_set_credit(ctx, kPortP, credit_);
+  ASSERT_EQ(0, ut_trs_set_pad_sizes(ctx, normal_, pad_size_));
   ut_trs_set_mock_tsc_script(ctx, &now, 1);
   ut_trs_set_pmd_done_batches(ctx, kRsThresh, ut_trs_rl_kept_batches() + 1, kBatchFreeNs);
   const uint64_t start = ut_trs_get_mock_tsc(ctx);
@@ -328,7 +338,7 @@ TEST_F(St20TxRlReclaim, ThreadStallInsideABatchFreeDelaysTheBurst) {
 TEST_F(St20TxRlReclaim, OnlyABurstDelaysAReclaim) {
   uint64_t now = kTargetTsc;
   ut_trs_ctx* ctx = Idle(&now);
-  const long double batch_ns = kRsThresh / 2 * p_;
+  const long double batch_ns = kRsThresh / 2 * pkt_;
   uint32_t calls = ut_trs_reclaim_calls(ctx);
   while (ut_trs_reclaim_calls(ctx) == calls) Visit(ctx);
   const uint64_t last = ut_trs_last_tsc(ctx);
@@ -346,7 +356,7 @@ TEST_F(St20TxRlReclaim, OnlyABurstDelaysAReclaim) {
  * a batch time after it make an empty one */
 TEST_F(St20TxRlReclaim, EveryRlBurstKindCounts) {
   const char* kinds[] = {"pad inflight", "in-frame pad", "inflight2", "tail", "pre-arm"};
-  const long double batch_ns = kRsThresh / 2 * p_;
+  const long double batch_ns = kRsThresh / 2 * pkt_;
   for (int kind = 0; kind < 5; kind++) {
     uint64_t now = kTargetTsc;
     ut_trs_ctx* ctx = Idle(&now);

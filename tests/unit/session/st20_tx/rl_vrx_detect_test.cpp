@@ -45,7 +45,11 @@ TEST_P(St20TxRlVrxDetectBudget, KeepsVrxAndIsTight) {
   ut_txv_set_rl_format(txv, f.width, f.height, false, ST_FPS_P59_94);
   ASSERT_EQ(0, ut_txv_init_rl_pacing(txv, 1, 0, false, trained, false));
   ASSERT_TRUE(ut_txv_rl_armed(txv, kPortP));
-  const long double trs = ut_txv_pacing_trs(txv), p = ut_txv_rl_drain(txv, kPortP);
+  /* the NORMAL pkt's drain, from the pre-arm pad's */
+  const long double trs = ut_txv_pacing_trs(txv),
+                    p = st_tx_video_rl_pad_ns(ut_txv_rl_drain(txv, kPortP),
+                                              ut_txv_rl_pad_size(txv, kPortP),
+                                              ut_txv_normal_size(txv));
   const long double pi = ut_txv_pad_interval(txv);
   const uint32_t vrx = ut_txv_pacing_vrx(txv);
   const long double tpr0 =
@@ -109,9 +113,11 @@ class St20TxRlVrxDetectSnap : public ::testing::Test {
   /* the fewest packets the frame of epoch buffers, its packet 0 late_ns past its target
    */
   int Vrx(uint64_t epoch, long double late_ns, int extra_pads = 0) const {
-    return ut_rl_vrx(late_ns, vrx_ * trs_ - Snap(epoch), trs_,
-                     ut_txv_rl_drain(ctx_, kPortP), ut_txv_pad_interval(ctx_), kSlots,
-                     extra_pads);
+    const long double pkt_ns =
+        st_tx_video_rl_pad_ns(ut_txv_rl_drain(ctx_, kPortP),
+                              ut_txv_rl_pad_size(ctx_, kPortP), ut_txv_normal_size(ctx_));
+    return ut_rl_vrx(late_ns, vrx_ * trs_ - Snap(epoch), trs_, pkt_ns,
+                     ut_txv_pad_interval(ctx_), kSlots, extra_pads);
   }
   /* tv_sync_pacing() starts the frame of epoch late_ns past its target */
   uint64_t StartLate(uint64_t epoch, int64_t late_ns) {
@@ -262,7 +268,9 @@ class St20TxRlVrxDetectWire : public St20TxRlVrxDetectSnap,
     SetUpFormat(GetParam().width, GetParam().height);
     const long double pi = ut_txv_pad_interval(ctx_);
     const long double sawtooth =
-        (pi / 2 + ut_txv_bulk(ctx_)) / (pi + 1) * trs_ + ut_txv_rl_drain(ctx_, kPortP);
+        (pi / 2 + ut_txv_bulk(ctx_)) / (pi + 1) * trs_ +
+        st_tx_video_rl_pad_ns(ut_txv_rl_drain(ctx_, kPortP),
+                              ut_txv_rl_pad_size(ctx_, kPortP), ut_txv_normal_size(ctx_));
     slot_less_wire_ =
         (int64_t)(vrx_ * trs_ - Snap(worst_) - sawtooth - ST_TX_VIDEO_RL_WIRE_NS);
     ASSERT_GT(slot_less_wire_, 0);

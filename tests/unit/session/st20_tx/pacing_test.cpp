@@ -1050,6 +1050,10 @@ class St20TxRlPlanTest : public ::testing::Test {
   static constexpr int kPortP = 0;
   static constexpr int kPortR = 1;
   static constexpr long double kNormalPadSize = 1262;
+  /* the pre-arm's pad, the NORMAL one lengthened to ST_TX_VIDEO_RL_PAD_MIN */
+  static constexpr long double kPadSize = 1292;
+  /* RTE_ETHER_CRC_LEN: a shaper charges each frame its pkt and FCS bytes */
+  static constexpr long double kFcs = 4;
   static constexpr long double kVfBurstSize = 2048;
   /* tv_rl_bps() of 1080p59.94, 4320 pkts of 1262 B a frame */
   static constexpr uint64_t kRlBps = 326783616;
@@ -1071,16 +1075,18 @@ class St20TxRlPlanTest : public ::testing::Test {
   void TearDown() override {
     ut_txv_destroy(ctx_);
   }
-  /* The NORMAL pad's: training drains a frame of 1200-byte pkts of 2.5-byte pixels, and
-   * a 1920-pixel line splits into whole pkts, so every training pad is NORMAL. */
+  /* The pre-arm pad's, by its frame bytes over the NORMAL pad's: training drains a frame
+   * of 1200-byte pkts of 2.5-byte pixels, and a 1920-pixel line splits into whole pkts,
+   * so every training pad is NORMAL. */
   long double Drain(long double pad_interval) {
     EXPECT_EQ(ut_txv_normal_pkts(ctx_), (uint32_t)ut_txv_pipe_total_pkts(ctx_))
         << "this raster trains on pads other than NORMAL";
-    return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1);
+    return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1) *
+           (kPadSize + kFcs) / (kNormalPadSize + kFcs);
   }
   /* the shaper time of one token timeslot at most, the plan's aim past the target */
   static long double Aim(long double drain) {
-    return kQuantumBytes * drain / kNormalPadSize;
+    return kQuantumBytes * drain / kPadSize;
   }
   /* a full bucket at the rate programmed on the queue, plus the aim */
   static long double Credit(long double burst, uint64_t bps, long double drain) {
@@ -1101,16 +1107,16 @@ TEST_F(St20TxRlPlanTest, DrainFollowsEachPortsTrainedPadInterval) {
   EXPECT_NEAR((double)ut_txv_rl_drain(ctx_, kPortR), (double)Drain(170), kTolNs);
 }
 
-/* what the pre-arm reads besides the drain: the NORMAL pad and the pads its last
- * burst keeps for the cut, 1262 / 64 coarse + 64 / 8 fine ones */
-TEST_F(St20TxRlPlanTest, PlannedPortIsArmedWithItsNormalPad) {
+/* what the pre-arm reads besides the drain: its pad and the pads its last burst keeps
+ * for the cut, 1292 / 64 coarse + 64 / 8 fine ones */
+TEST_F(St20TxRlPlanTest, PlannedPortIsArmedWithItsPreArmPad) {
   ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 2, 0, false, kTrained, false), 0);
 
   for (int port : {kPortP, kPortR}) {
     SCOPED_TRACE(port);
     EXPECT_TRUE(ut_txv_rl_armed(ctx_, port));
-    EXPECT_EQ(ut_txv_rl_pad_size(ctx_, port), (uint16_t)kNormalPadSize);
-    EXPECT_EQ(ut_txv_rl_trim_pads(ctx_, port), 1262 / 64 + 64 / 8);
+    EXPECT_EQ(ut_txv_rl_pad_size(ctx_, port), (uint16_t)kPadSize);
+    EXPECT_EQ(ut_txv_rl_trim_pads(ctx_, port), 1292 / 64 + 64 / 8);
   }
 }
 
@@ -1253,23 +1259,32 @@ TEST_F(St20TxRlPlanTest, PortWithoutTrimPadsHolds) {
 }
 
 /* only an RL port uses them, and only where the NORMAL pkt less a 64-byte cut is still
- * a frame of 64 bytes: an RTP-level session may set an rtp_pkt_size of 1 */
+ * a frame of 64 bytes: an RTP-level session may set an rtp_pkt_size of 1. A NORMAL pkt
+ * of 1214 to 1291 B pre-arms with a 1292 B pad, which they are cut from. */
 TEST_F(St20TxRlPlanTest, TrimPadsOnlyForRlPortsWithAFrameAfterTheCut) {
   const struct {
     enum st21_tx_pacing_way way;
-    uint32_t normal, coarse, fine;
+    uint32_t normal, coarse, fine, uncut;
   } cases[] = {
-      {ST21_TX_PACING_WAY_RL, 1262, 1198, 1254}, {ST21_TX_PACING_WAY_RL, 128, 64, 120},
-      {ST21_TX_PACING_WAY_RL, 127, 0, 0},        {ST21_TX_PACING_WAY_RL, 1 + 42, 0, 0},
-      {ST21_TX_PACING_WAY_TSC, 1262, 0, 0},
+      {ST21_TX_PACING_WAY_RL, 1322, 1258, 1314, 0},
+      {ST21_TX_PACING_WAY_RL, 1292, 1228, 1284, 0},
+      {ST21_TX_PACING_WAY_RL, 1291, 1228, 1284, 1292},
+      {ST21_TX_PACING_WAY_RL, 1262, 1228, 1284, 1292},
+      {ST21_TX_PACING_WAY_RL, 1214, 1228, 1284, 1292},
+      {ST21_TX_PACING_WAY_RL, 1213, 1149, 1205, 0},
+      {ST21_TX_PACING_WAY_RL, 128, 64, 120, 0},
+      {ST21_TX_PACING_WAY_RL, 127, 0, 0, 0},
+      {ST21_TX_PACING_WAY_RL, 1 + 42, 0, 0, 0},
+      {ST21_TX_PACING_WAY_TSC, 1262, 0, 0, 0},
   };
 
   for (const auto& c : cases) {
     SCOPED_TRACE(c.normal);
-    uint32_t lens[2];
+    uint32_t lens[3];
     ASSERT_EQ(ut_txv_init_trim_pads(ctx_, c.way, c.normal, lens), 0);
     EXPECT_EQ(lens[0], c.coarse);
     EXPECT_EQ(lens[1], c.fine);
+    EXPECT_EQ(lens[2], c.uncut);
   }
 }
 
@@ -1294,7 +1309,7 @@ TEST_F(St20TxRlPlanTest, WindowShortOfTheTrimPadsHolds) {
  * takes trim_pads of them. A queue rate a tenth of the trained one, far from any NIC, is
  * only a knob that moves the credit across that edge. */
 TEST_F(St20TxRlPlanTest, PlanNeedsTheTrimPadsInItsWindow) {
-  constexpr int64_t kTrimPads = 1262 / 64 + 64 / 8;
+  constexpr int64_t kTrimPads = 1292 / 64 + 64 / 8;
   ut_txv_set_rl_format(ctx_, 1920, 576, false, ST_FPS_P119_88);
   ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
   const long double drain = Drain(164);
@@ -1369,7 +1384,7 @@ TEST_F(St20TxRlPlanTest, FourMicrosecondsBoundTheGridLateness) {
   for (uint64_t bps : {edge_bps - 1000, edge_bps}) {
     SCOPED_TRACE(bps);
     const long double late =
-        (kQuantumBytes + ut_ice_timeslot_tokens(bps)) * drain / kNormalPadSize;
+        (kQuantumBytes + ut_ice_timeslot_tokens(bps)) * drain / kPadSize;
     ut_txv_ctx* ctx = ut_txv_create();
     ASSERT_NE(ctx, nullptr);
     ut_txv_set_rl_format(ctx, 1280, 720, false, ST_FPS_P50);

@@ -37,7 +37,9 @@ class St20TxRlTail : public ::testing::Test {
     absorb_ = ut_txv_rl_absorb(txv, kPortP);
     trs_ = ut_txv_pacing_trs(txv);
     warm_pkts_ = ut_txv_pacing_warm_pkts(txv);
+    pad_size_ = ut_txv_rl_pad_size(txv, kPortP);
     ut_txv_destroy(txv);
+    trim_pads_ = st_tx_video_rl_trim_pads(pad_size_);
     ASSERT_GT(absorb_, p_);
   }
   void TearDown() override {
@@ -55,6 +57,7 @@ class St20TxRlTail : public ::testing::Test {
     ut_trs_set_warm_pkts_cap(ctx_, warm_pkts_);
     ut_trs_set_drain(ctx_, kPortP, p_);
     ut_trs_set_credit(ctx_, kPortP, credit_);
+    ASSERT_EQ(0, ut_trs_set_pad_sizes(ctx_, kPktLen, pad_size_));
     ut_trs_set_absorb(ctx_, kPortP, absorb_);
     ut_trs_set_shaper_bucket(ctx_, kPortP, kBurstBytes * 1e9L / bps_);
     ut_trs_set_mock_tsc_script(ctx_, &now, 1);
@@ -85,6 +88,7 @@ class St20TxRlTail : public ::testing::Test {
     EXPECT_GE(ut_trs_modeled_launch_tsc(ctx_, kPortP), kTargetTsc);
     EXPECT_EQ(0u, ut_trs_pad_inflight_num(ctx_));
     EXPECT_EQ(1u, ut_trs_pad_refcnt(ctx_));
+    EXPECT_EQ(1u, ut_trs_pre_arm_pad_refcnt(ctx_));
     EXPECT_EQ(1u, ut_trs_trim_pad_refcnt(ctx_, 0));
     EXPECT_EQ(1u, ut_trs_trim_pad_refcnt(ctx_, 1));
     EXPECT_EQ(1u, ut_trs_port_packets(ctx_));
@@ -97,7 +101,8 @@ class St20TxRlTail : public ::testing::Test {
   uint64_t bps_ = 0;
   long double p_ = 0, credit_ = 0, absorb_ = 0, trs_ = 0;
   uint32_t warm_pkts_ = 0;
-  const int64_t trim_pads_ = st_tx_video_rl_trim_pads(kPktLen);
+  uint16_t pad_size_ = 0;
+  int64_t trim_pads_ = 0;
 };
 
 /* the frame starts once, for packet 0's frame, though a pad heads the call */

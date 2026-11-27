@@ -74,10 +74,12 @@ constexpr Scenario kScenarios[] = {
 
 struct Plan {
   long double p = 0, credit = 0, absorb = 0, trs = 0, bucket = 0, tpr0 = 0;
+  long double pkt = 0; /* the NORMAL pkt's drain, p the pre-arm pad's */
   long double pad_interval = 0, refill = 0;
   int64_t budget = 0, trim_pads = 0;
   uint32_t warm_pkts = 0;
   uint64_t window = 0;
+  uint16_t normal = 0, pad_size = 0;
 };
 
 /* packet 0 of one session */
@@ -125,7 +127,10 @@ class St20TxRlStallContract : public ::testing::TestWithParam<Fmt> {
     plan_.absorb = ut_txv_rl_absorb(txv, kPortP);
     plan_.budget = ut_txv_rl_vrx_budget(txv, kPortP);
     plan_.refill = ut_txv_rl_refill(txv, kPortP);
-    plan_.trim_pads = st_tx_video_rl_trim_pads(ut_txv_rl_pad_size(txv, kPortP));
+    plan_.normal = ut_txv_normal_size(txv);
+    plan_.pad_size = ut_txv_rl_pad_size(txv, kPortP);
+    plan_.pkt = st_tx_video_rl_pad_ns(plan_.p, plan_.pad_size, plan_.normal);
+    plan_.trim_pads = st_tx_video_rl_trim_pads(plan_.pad_size);
     plan_.trs = ut_txv_pacing_trs(txv);
     plan_.warm_pkts = ut_txv_pacing_warm_pkts(txv);
     plan_.pad_interval = ut_txv_pad_interval(txv);
@@ -165,6 +170,7 @@ class St20TxRlStallContract : public ::testing::TestWithParam<Fmt> {
       ut_trs_set_warm_pkts_cap(ctx[i], plan_.warm_pkts);
       ut_trs_set_drain(ctx[i], kPortP, plan_.p);
       ut_trs_set_credit(ctx[i], kPortP, plan_.credit);
+      EXPECT_EQ(0, ut_trs_set_pad_sizes(ctx[i], plan_.normal, plan_.pad_size));
       ut_trs_set_absorb(ctx[i], kPortP, plan_.absorb);
       ut_trs_set_vrx_detect(ctx[i], kPortP, plan_.budget, plan_.refill);
       ut_trs_set_shaper_bucket(ctx[i], kPortP, plan_.bucket);
@@ -241,7 +247,7 @@ class St20TxRlStallContract : public ::testing::TestWithParam<Fmt> {
       q.late = launch - kTargetTsc;
       q.queued = queued - kTargetTsc;
       q.vrx =
-          ut_rl_vrx(launch, plan_.tpr0, plan_.trs, plan_.p, plan_.pad_interval, kSlots);
+          ut_rl_vrx(launch, plan_.tpr0, plan_.trs, plan_.pkt, plan_.pad_interval, kSlots);
       q.nic = launch > queued;
       q.flagged = ut_trs_get_rl_stat(ctx[i]).vrx_frames > 0;
       if (!i && sc.stall && c.stall_end)

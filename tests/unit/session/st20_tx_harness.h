@@ -407,6 +407,8 @@ int ut_txv_train_rl_gpm_sl(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width,
 long double ut_txv_gpm_sl_frame_ns(const ut_txv_ctx* ctx);
 uint32_t ut_txv_line_tail_pkts(const ut_txv_ctx* ctx);
 uint32_t ut_txv_normal_pkts(const ut_txv_ctx* ctx);
+/* bytes of the NORMAL pkt */
+uint16_t ut_txv_normal_size(const ut_txv_ctx* ctx);
 float ut_txv_pad_interval(const ut_txv_ctx* ctx);
 /* ops.type of the next ut_txv_train_rl_pacing(): RTP level trains on NORMAL pads only */
 void ut_txv_set_rtp_level(ut_txv_ctx* ctx, bool enable);
@@ -444,9 +446,9 @@ void ut_txv_init_tx_chain(ut_txv_ctx* ctx, const struct ut_txv_reclaim_case* c,
 /* ut_txv_init_rl_pacing() without the trim pads tv_init_hw() builds for RL ports */
 void ut_txv_set_no_trim_pads(ut_txv_ctx* ctx);
 /* tv_init_trim_pads() of port P with that pacing way and NORMAL pkt size: the lengths
- * of the pads it builds, 0 for none */
+ * of the coarse and fine trim pads and of the uncut pre-arm pad it builds, 0 for none */
 int ut_txv_init_trim_pads(ut_txv_ctx* ctx, enum st21_tx_pacing_way way,
-                          uint32_t normal_size, uint32_t lens[2]);
+                          uint32_t normal_size, uint32_t lens[3]);
 /* Drives the real tv_init_pacing() for a GPM RL session of ut_txv_set_rl_format() on
  * num_port ports, each with its RL queue (port i on physical port i, an iavf VF unless
  * ut_txv_set_ice_pf() made it an ice PF). tv_train_pacing() resolves pad_interval without

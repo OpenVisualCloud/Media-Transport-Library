@@ -576,7 +576,7 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     measured `pad_interval` pi (trained or pre-trained, `tv_set_measured_pad_interval()`), scaled
     to a NORMAL pad by bytes: training sends a frame's pkts as pads, as `tv_build_st20()`
     builds them (`tv_train_pad_type()`: EXTRA 6 bytes longer, FRAME_TAIL the frame's rest;
-    GPM_SL its NORMAL and LINE_TAIL ones), the pre-arm NORMAL ones. Unscaled, 1080p25 BPM
+    GPM_SL its NORMAL and LINE_TAIL ones), the pre-arm its own (pre-arm pad size, below). Unscaled, 1080p25 BPM
     (share 0.99881 before this fix, 0.99904 now) launched packet 0 13 ns a pad
     early on E830, 1.7 µs over a 130-pad warm-up. `tv_train_pacing()`
     keeps the whole ring full of pads for 71 frames, 32 a burst call (one a call measured an E810
@@ -601,7 +601,7 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
       A timeslot passes those tokens at the true rate, which drains at least S per `pad_ns`, so this holds whatever the NIC clock (`St20TxRlModelTest.TokensCoverEveryIceTimeslot` checks it against a copy of ice's encode on all four psm_clks).
 - With a plan, `video_trs_rl_pre_arm()` queues pads that a shaper with a `bucket_ns` bucket would finish at the target; the real one, an aim smaller, finishes them at target + aim. Packet 0 follows them to the NIC in the same pass, so the shaper, not the tasklet, sets its launch.
   Every drain end the pre-arm counts, its idle clamp included, is the shaper's less the aim (`St20TxRlFastClockTest.FluidShaperLaunchesOneAimPastTheTarget`).
-- The pads cover `(target − now) + bucket_ns`: `ceil()` NORMAL
+- The pads cover `(target − now) + bucket_ns`: `ceil()` pre-arm
   pads, the last burst holding the ≤ S/64 + 8 pads that take the surplus as cuts of 64 or 8 bytes
   (cut rounded down). `st_tx_video_rl_next_burst()` in `st_tx_video_rl.h` plans each burst, pure
   code that `St20TxRlModelTest` pins, and `video_trs_rl_trim()` points its cut pads at the two
@@ -611,7 +611,8 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
 - The model puts the launch at target + aim, or within one 8 B cut after it (~56 ns at 1080p25);
   never before it. It counts pkt bytes only: a shaper that charges a per-frame overhead o (FCS,
   preamble, gap: up to 24 B) makes the cuts and the NORMAL share save less, so the launch lands
-  later by up to ~o/S of the cut (~0.18 µs at 1080p25), never earlier.
+  later by up to ~o/S of the cut (~0.18 µs at 1080p25). The lengthened pre-arm pad (below) would
+  err the other way, so its `pad_ns` counts the o measured, the FCS (pre-arm pad size, below).
 - **Token timeslots.** The shaper adds its tokens a timeslot apart, so it releases packet 0 at a
   tick, up to one timeslot before or after the drain end; the target's phase in the grid, random
   per run and beating with the frame period, picks the group (hardware: 2 or 3 groups a timeslot
@@ -655,13 +656,42 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   | 1080p59.94 ×8, VRX margin | 0.75 µs | — | pass | armed |
 
   The bucket alone without the aim (720p25: +1.9..+6.0 µs over 4 runs) leaves the early group a timeslot before the plan, which the model says can go early.
+- Pre-arm pad size. The table is BPM, 1322 B pkts. An idle E830/E835 shaper starting on pads of ≤ 1274 B sends ~2 pads more at once than its 2 KB bucket:
+  EBU LIST packet 0 −1..−10 µs before its RTP timestamp, 1080p25 GPM_SL of 1214–1274 B (one size or with line tails, 126–192 MB/s, 512 or 2048 descriptors, chained or not),
+  against ±0.16 pad from 1292 B, also mixed 1352/1292. E810 is on the plan at every size. The uncut pads decide: lifted pre-arms end on 1228 B cut pads and land on plan.
+  With no plan (CPU-sent packet 0) those streams are on time but run VRX max 9–10 against 7: 720p25 GPM_SL (1132 B) is that case and is not covered here.
+  - `st_tx_video_rl_pad_size()`: a NORMAL pkt of `ST_TX_VIDEO_RL_PAD_LIFT_MIN` (1214 B) to 1291 B pre-arms with a 1292 B (`ST_TX_VIDEO_RL_PAD_MIN`) pad, `s->pre_arm_pad[]`, and the trim pads are cut from it;
+    others keep the NORMAL pad (`pre_arm_pad` NULL), plan and pads unchanged. No NIC trigger: a VF cannot tell E810 from E830, so E810 streams of 1214–1291 B change pads and `pad_ns` too.
+    On E810, main against the lift with byte scaling on the same rows but other hosts, the LIST packet-0 mean of the 8 lifted rows moved −0.79..+0.47 µs (mean −0.08), that of the 8 controls of ≥ 1292 B +0.02..+1.69 µs (mean +0.78); every lifted row stayed ≥ +3.1 µs (minimum).
+    The FCS below accounts for 0.04–0.18 µs of that 0.85 µs; o alone would need ~40 B, which the trained rates exclude, so the rest is the hosts or another pad-size effect.
+    Gating the lift on the measured over-delivery was considered and rejected: it is a clock fingerprint, not the cause, and E810 needs no exemption per that measurement. The lower bound: the over-delivery was the same ×1.1163–1.1169 for 1214–1382 B pads, while much shorter pads are not drained by bytes (above).
+  - `plan->pad_ns`, `pad_size`, `trim_pads` and `anchor_pads` are the pre-arm pad's. `st_tx_video_rl_pad_ns()` scales `pad_ns` by frame bytes, pkt + `RTE_ETHER_CRC_LEN`: (1292 + 4)/(S + 4).
+    With ice's profile rounding at the 446 MHz psm_clk, the trained rates of E810, E830 and E835 (16 rows each, 1214–1382 B) fit a per-frame charge o of 4.0 B (3.6–4.3), a spread ~20× smaller than at o = 0 and ~100× smaller than at 24 B.
+    Bytes alone (1292/S) would end the pre-arm early by L·4(1292 − S)/(1292(S + 4)), L its span: at 1080p25 GPM_SL 183 ns for 4:2:2-12 (1214 B), 85 ns for 4:2:2-10 and 57 ns for RGB-10 (1262 B).
+    The cushion is aim − T (token timeslots, below): RGB-10 at 192 MB/s has 23 ns on a 390 MHz psm_clk, 173 ns at 446 MHz, so with bytes alone it is never early only while o < 1.6 B there (12 B at 446 MHz).
+    A shaper that charged nothing would see packet 0 later by the same 0.04–0.18 µs.
+    The aim, the timeslot and the fine trim (bytes over `pad_ns`/`pad_size`) shrink with `pad_ns`, by 0.0073 % (1262 B) to 0.0198 % (1214 B): at 1080p25 GPM_SL `bucket_ns` moves −0.09..−0.30 ns (≤ 0.002 %) and `absorb_ns` +0.18..+0.55 ns (≤ 0.046 %); `vrx_budget_ns` and the sawtooth keep the NORMAL pad's time.
+    Only the lift counts the FCS, in `tv_rl_plan_init()` and `video_trs_rl_reclaim()`, where bytes alone would err early. The other byte ratios err late, by ≤ 4/(S + 4) (0.33 %) of what they scale:
+    `video_trs_pads_end()` and the cuts count a pad shorter than the pre-arm pad (cut, or an in-frame NORMAL one) as draining less than it does, and the aim, the timeslot and the fine trim count tokens as draining longer.
+    The exception is `tv_set_measured_pad_interval()`, which scales the training mean M to NORMAL by bytes: late where M > S (BPM's EXTRA pads), early by 4(S − M)/(M(S + 4)) of the pre-arm where GPM_SL line tails are shorter, ≤ 24 ns for the 4:2:2 and RGB formats from 720p to 2160p.
+    The in-frame pads stay NORMAL and `video_trs_rl_reclaim()`'s batch takes the NORMAL pad's time.
+  - `video_trs_rl_pad()` is what an armed port pre-arms with. `s->trs_pad_inflight[port]` is the pad the `trs_pad_inflight_num` refused copies hold references on and retry as, which the retry, the drop and the cleanup use: a refused pre-arm pad, cut or not, is the uncut pre-arm pad, so never shorter than the pad it replaces; a refused in-frame or warm-up pad stays NORMAL (`St20TxRlPadSizeTest`).
+    A port's refused pads are all of one kind. In-frame pads and the tail are sent only past the block retrying refused pads, which returns while any wait, so they are refused only beside their own kind (an unarmed port's warm-up refuses only NORMAL ones).
+    The NORMAL pads the call dequeuing packet 0 refused are dropped by the next visit's drop check, before any pre-arm, as `trs_rl_pads_end` is 0 from that dequeue.
+  - Behaviour that shifts for a lifted stream, besides its pads:
+    - Gates: fewer, longer pads fit the half-ring gate more easily, so 1080p25 4:2:2-12 GPM_SL arms on a 256-descriptor ring that main held (123.7 against 131.5 pads of 128);
+      the trim-pad gate, a window over (trim_pads − 1) `pad_ns`, tightens (203.6 against 177.2 µs at 1214 B).
+    - The late-entry zone, (trim_pads − 1) `pad_ns`, grows: +15 % at 1214 B, +6 % at 1262 B (27 pads of 1292 B against 26 of 1262 B), which adds one 2160p F3c cell in `St20TxRlVrxFaults` (kBelow).
+    - `St20TxRlAnchor`'s synthetic 4320p tick case: the 7.5 µs anchor keeps a 10 µs tick that the 7.4 µs one of 1262 B pads held, by 0.10–0.13 µs inside `absorb_ns`; a 10.5 µs tick starts the pre-arm over on the plan and a 15.5 µs one holds packet 0 (`ATickPastAbsorbBehindAFullAnchorStartsOverOrHolds`).
+  - Open: armed streams under 1214 B keep pads the ≤ 1274 B model puts ~2 pads early on E830/E835, e.g. 720p50/59.94 GPM_SL 4:2:2-10 (1132 B, within the aim + T gate); not measured.
+    A pre-arm whose first burst is its last (a late entry, a tail, a burst after an idle reset) starts the idle shaper on a 64 B-cut pad, 1228 B lifted and at most 1274 B for every NORMAL pkt up to 1338 B; not measured.
 - Target is MTL's PTP time turned into TSC once per frame in `tv_sync_pacing()`, so on the wire the launch also carries that clock's error. It is independent of how many sessions share the scheduler only while every warm-up starts before its target and has a plan.
 - The user-meta packet (`st20_frame_tx_start()`, sys queue) leaves when packet 0 is queued, up to `warm_pkts`·`trs` ahead of it, but after the previous frame's last packet; RX matches it by RTP timestamp and the timing parser skips it.
 - The first burst into an idle shaper is the anchor: `plan->anchor_pads` = `ceil((bucket_ns + ST_TX_VIDEO_RL_TICK_NS + ST_TX_VIDEO_RL_STALL_NS) / pad_ns)` pads, at most 32 (4-6 at 720p and 1080p, 15 at 2160p59.94, 32 at 4320p59.94).
   Its return bounds when the shaper started.
   After its doorbell the shaper drains for those pads less the bucket it sent at once: where the 32-pad cap does not bind, for the aim, a 10 µs tick and the 2 µs a healthy next burst takes to its own doorbell.
-  At 4320p59.94 the cap binds: 32 pads are 7.4 µs in all, so a 10 µs tick in the second burst is a counted stall there, and a 5 µs one is covered (`St20TxRlAnchor`).
-- NORMAL pads follow in bursts of up to `ST_TX_VIDEO_RL_MAX_PADS_PER_BURST` (32) copies of one mbuf (lib sets no `MBUF_FAST_FREE`, which would forbid the shared refcount). Each burst is sized from a fresh TSC and the drain end of a token bucket `bucket_ns` deep over what is queued.
+  At 4320p59.94 the cap binds: 32 pads are 7.5 µs in all, so a 10 µs tick in the second burst is a counted stall there, and a 5 µs one is covered (`St20TxRlAnchor`).
+- Pre-arm pads follow in bursts of up to `ST_TX_VIDEO_RL_MAX_PADS_PER_BURST` (32) copies of one mbuf (lib sets no `MBUF_FAST_FREE`, which would forbid the shared refcount). Each burst is sized from a fresh TSC and the drain end of a token bucket `bucket_ns` deep over what is queued.
 - Three events count `stat_trans_recalculate_warmup`, each once: a stall between bursts, a stall inside a burst, kept or not (so a pre-arm that starts over after one stalled burst counts 1, and 2 only if a burst of the second pre-arm stalls too), and a pre-arm restarted because its refused pads went stale (below). A tail call that stalls counts as a burst.
   - Between bursts: every queued pad reached the NIC before it. If the queue drained and the bucket refilled (the drain end fell behind TSC − `bucket_ns`), the drain end resets to TSC − `bucket_ns` and the rest shrinks. While `trim_pads` still fit it, the cuts land packet 0 on the plan;
     with fewer the pre-arm stops and WAIT_TARGET holds packet 0 behind the pads already queued, which drain before the target (`St20TxRlFastClockTest.PreemptedBetweenBurstsShortOfTheTrimPadsHolds`, `IdleShaperKeepsThePlanWhileTheTrimPadsFit`).
@@ -698,7 +728,7 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     - 720p60's grid repeats in 3 frames (50 ticks): on that boot one phase met the tick in 1687 of 2395 calls, the others never. 1080p59.94 drifts (1–2 of 7177).
     - Not isolated, `kworker` preemptions gave 33 single-leg shifts of 52–272 µs in 240 s, and once the next frame's pre-arm took the still-busy shaper as idle (104 µs late, no stall of its own).
     - One 139 µs stall had no context switch, traced interrupt or SMI: unexplained.
-- Refused pads count as queued and retry, batched the same way, via `trs_pad_inflight_num` ahead of packet 0, which can only delay it. They retry as NORMAL pads: a refused cut pad hands its reference to the NORMAL one, so packet 0 is later, never early. Ports without a plan keep one pad per burst and per retry.
+- Refused pads count as queued and retry, batched the same way, via `trs_pad_inflight_num` ahead of packet 0, which can only delay it. They retry as uncut pre-arm pads: a refused cut pad hands its reference to the uncut one, so packet 0 is later, never early. Ports without a plan keep one pad per burst and per retry.
   On a plan, that holds only while the pads the NIC took still drain.
   Once they have drained and the bucket refilled (TSC − `bucket_ns` ≥ `trs_rl_pads_end`, the test the pre-arm's entry makes), a retry would launch packet 0 late by the wait, so the tasklet (`_video_trs_rl_tasklet()`) drops the pads waiting ahead of an unsent packet 0,
   with their references, and a pre-arm they ended starts over (`St20TxRlAnchor.PadsRefusedBehindADrainedAnchorStartOver`, `St20TxRlWarmUpTest.RefusedPadsOfAnIdleShaperAreDroppedNotRetried`).

@@ -28,7 +28,6 @@ constexpr long double kBurstBytes = 2048;
 constexpr long double kCoverNs = 12000;
 constexpr uint64_t kOthersNs = 12000; /* the other tasklets of a scheduler round */
 constexpr int kRoundCap = 100000;
-constexpr uint16_t kPadSize = 1262; /* the harness's NORMAL pad */
 constexpr int kSlots = 512;
 /* a pad burst's cost before and after its doorbell, the anchor's first */
 constexpr uint64_t kBurstD[2] = {750, 200}, kBurstG[2] = {300, 250};
@@ -79,6 +78,7 @@ class St20TxRlAnchor : public ::testing::Test {
     ASSERT_TRUE(ut_txv_rl_armed(txv, kPortP)) << f.name;
     p_ = ut_txv_rl_drain(txv, kPortP);
     plan_pad_ = ut_txv_rl_pad_size(txv, kPortP);
+    normal_ = ut_txv_normal_size(txv);
     bps_ = ut_txv_rl_queue_bps(txv, kPortP);
     credit_ = ut_txv_rl_credit(txv, kPortP);
     absorb_ = ut_txv_rl_absorb(txv, kPortP);
@@ -96,9 +96,10 @@ class St20TxRlAnchor : public ::testing::Test {
         ut_rl_snap_loss(fps_tm.mul, fps_tm.den, ut_txv_pacing_tr_offset(txv), vrx, trs_);
     ut_txv_destroy(txv);
     aim_ = credit_ - refill_;
-    fine_ = p_ * ST_TX_VIDEO_RL_TRIM_FINE / kPadSize;
+    fine_ = p_ * ST_TX_VIDEO_RL_TRIM_FINE / plan_pad_;
+    pkt_ = st_tx_video_rl_pad_ns(p_, plan_pad_, normal_);
     window_ = (uint64_t)(warm_pkts_ * trs_);
-    trim_pads_ = st_tx_video_rl_trim_pads(kPadSize);
+    trim_pads_ = st_tx_video_rl_trim_pads(plan_pad_);
     anchor_ = (uint32_t)std::min<long double>(ceill((credit_ + kCoverNs) / p_),
                                               ST_TX_VIDEO_RL_MAX_PADS_PER_BURST);
   }
@@ -109,6 +110,7 @@ class St20TxRlAnchor : public ::testing::Test {
     ut_trs_set_warm_pkts_cap(ctx, warm_pkts_);
     ut_trs_set_drain(ctx, kPortP, p_);
     ut_trs_set_credit(ctx, kPortP, credit_);
+    EXPECT_EQ(0, ut_trs_set_pad_sizes(ctx, normal_, plan_pad_));
     ut_trs_set_absorb(ctx, kPortP, absorb_);
     ut_trs_set_vrx_detect(ctx, kPortP, budget_, refill_);
     ut_trs_set_shaper_bucket(ctx, kPortP, refill_);
@@ -125,10 +127,11 @@ class St20TxRlAnchor : public ::testing::Test {
     r.queued = (long double)ut_trs_last_real_send_tsc(ctx) - kTargetTsc;
     r.pads = ut_trs_pad_send_count(ctx);
     r.stalls = (uint32_t)ut_trs_stat_recalculate_warmup(ctx);
-    r.vrx = ut_rl_vrx(launch, tpr0_, trs_, p_, pad_interval_, kSlots);
+    r.vrx = ut_rl_vrx(launch, tpr0_, trs_, pkt_, pad_interval_, kSlots);
     r.flagged = ut_trs_get_rl_stat(ctx).vrx_frames > 0;
     r.leak = ut_trs_pad_inflight_num(ctx) || ut_trs_pad_refcnt(ctx) != 1 ||
-             ut_trs_trim_pad_refcnt(ctx, 0) != 1 || ut_trs_trim_pad_refcnt(ctx, 1) != 1;
+             ut_trs_pre_arm_pad_refcnt(ctx) != 1 || ut_trs_trim_pad_refcnt(ctx, 0) != 1 ||
+             ut_trs_trim_pad_refcnt(ctx, 1) != 1;
     return r;
   }
 
@@ -152,11 +155,13 @@ class St20TxRlAnchor : public ::testing::Test {
     return r;
   }
 
-  long double p_ = 0, credit_ = 0, absorb_ = 0, trs_ = 0, refill_ = 0, aim_ = 0;
+  /* the pre-arm pad's drain, and the NORMAL pkt's */
+  long double p_ = 0, pkt_ = 0;
+  long double credit_ = 0, absorb_ = 0, trs_ = 0, refill_ = 0, aim_ = 0;
   long double fine_ = 0, tpr0_ = 0, pad_interval_ = 0;
   int64_t budget_ = 0, trim_pads_ = 0;
   uint64_t window_ = 0, bps_ = 0;
-  uint16_t plan_pad_ = 0; /* the plan's NORMAL pad, kPadSize the harness's */
+  uint16_t plan_pad_ = 0, normal_ = 0; /* the plan's pre-arm pad, the NORMAL pkt */
   uint32_t warm_pkts_ = 0, anchor_ = 0;
   uint32_t plan_anchor_ = 0; /* what tv_rl_plan_init() sized, anchor_ what it should */
 };
@@ -185,8 +190,9 @@ TEST_F(St20TxRlAnchor, FirstBurstIsThePadsOfTheBucketAndATick) {
 /* A tick in the burst behind the anchor, before or after its doorbell, finds the shaper
  * still draining the anchor: no stall is counted and packet 0 leaves as on a frame with
  * none, within the fine trim its later sizing read moves the cut. At 4320p the anchor is
- * a full burst, 7.4 us of a 30 us window: a 10 us tick behind it is a counted stall that
- * leaves too few pads to the target, and packet 0 is held for the visit past it. */
+ * a full burst, 7.5 us of a 30 us window: a 10 us tick behind it is a counted stall whose
+ * gap is 0.10 to 0.13 us inside absorb_ns, 3.8 us, so it is kept and packet 0 lands
+ * within that past target + aim. */
 TEST_F(St20TxRlAnchor, ATickInTheBurstBehindTheAnchorChangesNothing) {
   for (const Fmt& f : kFormats) {
     ASSERT_NO_FATAL_FAILURE(Plan(f));
@@ -200,8 +206,9 @@ TEST_F(St20TxRlAnchor, ATickInTheBurstBehindTheAnchorChangesNothing) {
         const Pkt0 r = Frame(2, tick, after);
         if (full && tick > anchor_ * p_) {
           EXPECT_GT(r.stalls, 0u) << what;
-          EXPECT_GE(r.queued, 0) << what;
-          EXPECT_LT(r.queued, kOthersNs + kBurstD[0] + kBurstG[0]) << what;
+          EXPECT_LT(r.queued, 0) << what << ": not kept";
+          EXPECT_GE(r.late, aim_) << what;
+          EXPECT_LE(r.late, aim_ + fine_ + absorb_) << what;
           continue;
         }
         EXPECT_LT(r.queued, 0) << what;
@@ -209,6 +216,30 @@ TEST_F(St20TxRlAnchor, ATickInTheBurstBehindTheAnchorChangesNothing) {
         EXPECT_EQ(0u, r.stalls) << what;
         EXPECT_NEAR((double)plain.late, (double)r.late, (double)fine_) << what;
       }
+  }
+}
+
+/* At 4320p a tick behind the full anchor 0.5 us longer than 10 us is past absorb_ns: the
+ * pre-arm starts over behind it and lands packet 0 on the plan. At 15.5 us too few pads
+ * are left to start over, and packet 0 is held for the visit past its target. */
+TEST_F(St20TxRlAnchor, ATickPastAbsorbBehindAFullAnchorStartsOverOrHolds) {
+  ASSERT_NO_FATAL_FAILURE(Plan(Fmt{"4320p59", 7680, 4320}));
+  ASSERT_EQ(ST_TX_VIDEO_RL_MAX_PADS_PER_BURST, anchor_);
+  const Pkt0 plain = Frame(0, 0, false);
+  for (bool after : {false, true}) {
+    SCOPED_TRACE(after ? "after the doorbell" : "before the doorbell");
+    const Pkt0 over = Frame(2, 10500, after);
+    EXPECT_EQ(1u, over.stalls);
+    EXPECT_LT(over.queued, 0) << "held";
+    EXPECT_LT(over.pads, plain.pads) << "not started over";
+    EXPECT_GE(over.late, 0);
+    EXPECT_LE(over.late, aim_ + fine_ + ut_trs_rl_stall_ns());
+    EXPECT_FALSE(over.leak);
+    const Pkt0 held = Frame(2, 15500, after);
+    EXPECT_EQ(1u, held.stalls);
+    EXPECT_GE(held.queued, 0) << "not held";
+    EXPECT_LT(held.queued, kOthersNs + kBurstD[0] + kBurstG[0]);
+    EXPECT_FALSE(held.leak);
   }
 }
 

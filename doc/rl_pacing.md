@@ -60,7 +60,7 @@ A visit hands the NIC several packets at once. The shaper then sends them one pe
 MTL solves this by making sure the queue is not empty when packet 0's target comes. Shortly before the target it queues **pads**. A pad is a padding packet: an Ethernet frame of zeros, as long as a video packet, sent to a reserved link-local address (01:80:C2:00:00:01) that switches do not forward. The shaper spends time on a pad as it does on a video packet.
 MTL then queues packet 0 behind the pads. The shaper sends the pads one after another and reaches packet 0 by itself. The CPU is no longer needed at the target.
 
-The pads are queued during the **warm-up window**, here the last 0.50 ms before packet 0's target. MTL calls the pads of one frame start the **pre-arm**. Here the pre-arm is 131 pads.
+The pads are queued during the **warm-up window**, here the last 0.50 ms before packet 0's target. MTL calls the pads of one frame start the **pre-arm**. Here the pre-arm is 131 pads. Where the video packets are 1214 to 1291 bytes long, a pre-arm pad is 1292 bytes (chapter 12).
 Inside the frame MTL adds one more pad after about every 245 video packets, because the shaper is programmed slightly faster than the stream. All pads together cost about 3.6 % of the stream's rate, on the link to the first switch only.
 
 MTL chooses the number and the size of the pads so that the shaper finishes them just after the target. It shortens the last pads slightly to hit that time. It aims 0.75 µs after the target, not at it. This distance is the **aim**.
@@ -165,7 +165,7 @@ Check 1 measures only the first packet of a burst. If that burst finds the shape
 
 | Line | Level and time | Meaning | What to do |
 |---|---|---|---|
-| `port P rl plan, pad_ns … bucket_ns … burst size … bps …` | info, at session create | The port has a plan. The line shows its trained numbers. | nothing |
+| `port P rl plan, pad_ns … bucket_ns … burst size … bps … pad_size …` | info, at session create | The port has a plan. The line shows its numbers: `pad_ns` is the shaper time of its pre-arm pad of `pad_size` bytes, trained on the video packets and scaled by frame bytes. | nothing |
 | `port P no rl plan, holds packet 0, VRX at risk if late` | warn, at session create | The CPU sends every packet 0 of this port. | see chapter 8 |
 | `port P vrx V leaves no VRX budget, VRX not judged` | warn, at session create | The send-ahead of V packet times, a user `start_vrx`, leaves no VRX budget, so check 1 does not watch this port. | use a larger `start_vrx`, or none |
 | `port P vrx V leaves no stall limit, frames may be flagged` | warn, at session create | The VRX budget is so small that no stall is kept, and check 1 can report frames that are on time. | use a larger `start_vrx`, or none |
@@ -223,7 +223,29 @@ drain end = max(drain end, t_read − bucket_ns) + n × pad_ns
 `pad_ns` is the shaper time of one pad, 3.873 µs, and `t_read` the clock read before the call. The pre-arm is complete when the drain end reaches packet 0's target.
 
 The model leaves out everything that only delays a packet: the NIC's fetch of the descriptors, arbitration between queues, the wire. It assumes that the bucket is not larger than stated and that the shaper is not faster than trained. Either would make packet 0 early.
-Never early holds only as far as this model does. One exception is known: when a new session's rate is programmed on a VF, the sessions already streaming there can send their next packet 0 up to 1 µs early (measured).
+Never early holds only as far as this model does. Three exceptions are known. When a new session's rate is programmed on a VF, the sessions already streaming there can send their next packet 0 up to 1 µs early (measured).
+The other two are cases of the larger bucket below that the pre-arm does not avoid: a stream of video packets under 1214 bytes, and a pre-arm whose first burst is also its last, which starts an idle shaper on a pad cut by 64 bytes.
+
+The pre-arm avoids one more case of a larger bucket. An idle E830 or E835 shaper that starts on pads of 1274 bytes or less sends about two pads more at once than its bucket: packet 0 of a 1080p25 `ST20_PACKING_GPM_SL` stream of 1214 or 1262 byte packets left 1 to 10 µs before its target.
+On pads of 1292 bytes or more it starts on the model, and an E810 does at every size. So a pre-arm pad is at least 1292 bytes (`ST_TX_VIDEO_RL_PAD_MIN`) where the video packet is 1214 bytes or more (`ST_TX_VIDEO_RL_PAD_LIFT_MIN`).
+The E830 shaper was measured to drain pads by their bytes from 1214 to 1382 bytes, so `pad_ns` is scaled to the longer pad, and packet 0 keeps its target. Only the uncut pre-arm pads are 1292 bytes; the pads inside the frame stay as long as a video packet.
+A VF cannot tell an E810 from an E830, so such streams get the longer pads on an E810 too.
+The scaling counts frame bytes, the packet and its 4-byte FCS (`st_tx_video_rl_pad_ns()`): (1292 + 4) / (S + 4), S the video packet.
+The trained rates of E810, E830 and E835 fit a charge of 4 bytes per frame on top of the packet. Counted by packet bytes alone, the longer pad would drain faster than the plan counts, and end the pre-arm early by 4 × (1292 − S) / (1292 × (S + 4)) of it.
+That is 40 to 183 ns at 1080p25 `ST20_PACKING_GPM_SL`, while what covers it, the aim less one timeslot, is only 23 ns for RGB 10-bit at 192 MB/s on a 390 MHz NIC clock.
+
+The fit takes the 16 armed rows of a run, 1080p25 one-size and mixed `ST20_PACKING_GPM_SL`, BPM and GPM streams of 1214 to 1382 bytes, and divides each training's mean pad bytes per trained pad time by the rate ice programs: the rate truncated to kbps, rounded to whole tokens per timeslot of the 446 MHz psm_clk.
+A charge of o bytes per frame makes that ratio vary as M / (M + o) with the mean pad M, so o is the value that makes it the same on every row; the spread is its relative standard deviation over the 16 rows.
+
+| NIC | o, bytes | o where the spread is within twice its minimum | spread at o = 0 / 4 / 24 bytes |
+|---|---|---|---|
+| E810 | 3.9 | 3.6 to 4.2 | 1.10e-4 / 0.05e-4 / 5.51e-4 |
+| E830, first run | 4.0 | 3.7 to 4.3 | 1.12e-4 / 0.05e-4 / 5.49e-4 |
+| E830, second run | 4.0 | 3.9 to 4.2 | 1.13e-4 / 0.02e-4 / 5.48e-4 |
+| E835 | 4.0 | 3.9 to 4.2 | 1.13e-4 / 0.02e-4 / 5.48e-4 |
+
+The other psm_clks ice can read leave a spread of 18e-4 to 24e-4 at every o, so 446 MHz is the clock all four ran.
+Only this scaling and the reclaim batch that undoes it count the FCS. The other byte ratios of the model, the cuts, the drain end and the aim and timeslot over `pad_ns`, err late by at most 0.33 %; scaling the training's mean pad to the video packet errs at most 24 ns either way over a pre-arm.
 
 ### 13. Training and the plan
 
@@ -315,7 +337,7 @@ A start-over cannot make packet 0 early. If the pads left sooner than `trs_rl_pa
 
 At the stall and at each waiting visit, `video_trs_rl_fits()` tests whether `ceil((target − trs_rl_pads_end) / pad_ns)` is at least `trim_pads`. If not, no cut burst can fit after the wait, and the port holds at once. A visit that waits also frees sent descriptors (chapter 19) and returns "pending", so the scheduler does not sleep.
 
-Pads that a full NIC ring refused are a second way into a start-over. Normally a later visit retries them ahead of packet 0, and they still end on time, because the pads before them are still queued.
+Pads that a full NIC ring refused are a second way into a start-over. Normally a later visit retries them ahead of packet 0, and they still end on time, because the pads before them are still queued. A refused pre-arm pad, cut or not, is retried as an uncut one, which is no shorter than the pad it replaces, so a retry can only delay; a refused pad inside the frame is retried as itself.
 If the idle test above passes before the retry succeeds, the shaper has run idle, and the retried pads would end late by that idle time. MTL then drops them and starts the pre-arm over, even when all other pads and packet 0 were already handed over. The pads that the ring refused of a stalled burst are dropped with the stall, for the same reason.
 
 ### 17. Late entry and the tail
@@ -396,11 +418,11 @@ Either finding prints the `frames fall behind` line. Both checks report overload
 | Pacing way selection | `dev_if_select_pacing()` in `lib/src/dev/mt_dev.c` |
 | Training, pad interval | `tv_train_pacing()`, `tv_set_measured_pad_interval()` in `lib/src/st2110/st_tx_video_session.c` |
 | Plan, limit, anchor size, budget | `tv_rl_plan_init()`, `tv_rl_sawtooth_ns()`, `tv_snap_loss_ns()` in `st_tx_video_session.c` |
-| Burst sizing, cuts, constants | `st_tx_video_rl_next_burst()`, `st_tx_video_rl_trim_pads()`, `ST_TX_VIDEO_RL_STALL_NS`, `ST_TX_VIDEO_RL_TICK_NS`, `ST_TX_VIDEO_RL_GRID_LATE_MAX_NS`, `ST_TX_VIDEO_RL_WIRE_NS` in `lib/src/st2110/st_tx_video_rl.h` |
-| Pre-arm, stall test, start over, tail, hold | `video_trs_rl_pre_arm()`, `video_trs_pads_end()`, `video_trs_rl_fits()`, `video_trs_rl_pads_drop()`, `video_trs_rl_frame_start()`, `video_trs_rl_tail_burst()`, `_video_trs_rl_tasklet()` in `lib/src/st2110/st_video_transmitter.c` |
+| Burst sizing, cuts, constants | `st_tx_video_rl_next_burst()`, `st_tx_video_rl_trim_pads()`, `st_tx_video_rl_pad_size()`, `ST_TX_VIDEO_RL_PAD_MIN`, `ST_TX_VIDEO_RL_STALL_NS`, `ST_TX_VIDEO_RL_TICK_NS`, `ST_TX_VIDEO_RL_GRID_LATE_MAX_NS`, `ST_TX_VIDEO_RL_WIRE_NS` in `lib/src/st2110/st_tx_video_rl.h` |
+| Pre-arm, stall test, start over, tail, hold | `video_trs_rl_pad()`, `video_trs_rl_pre_arm()`, `video_trs_pads_end()`, `video_trs_rl_fits()`, `video_trs_rl_pads_drop()`, `video_trs_rl_frame_start()`, `video_trs_rl_tail_burst()`, `_video_trs_rl_tasklet()` in `lib/src/st2110/st_video_transmitter.c` |
 | Release scans, catch-up, reclaim | `video_trs_rl_release()`, `video_trs_rl_pkt0_tsc()`, `video_trs_rl_catch_up()`, `video_trs_rl_reclaim()` in `st_video_transmitter.c` |
 | Check 1, check 2 | `video_trs_vrx_check()`, `tv_stat_log()`; `tv_lead_visit()`, `tv_behind_err()` |
-| Unit tests | `tests/unit/session/st20_tx/`: `rl_anchor_test.cpp`, `rl_stall_contract_test.cpp`, `rl_vrx_faults_test.cpp`, `rl_vrx_detect_test.cpp`, `rl_release_test.cpp`, `rl_idle_cost_test.cpp`, `rl_model_test.cpp`, `pacing_test.cpp` |
+| Unit tests | `tests/unit/session/st20_tx/`: `rl_anchor_test.cpp`, `rl_stall_contract_test.cpp`, `rl_vrx_faults_test.cpp`, `rl_vrx_detect_test.cpp`, `rl_release_test.cpp`, `rl_idle_cost_test.cpp`, `rl_model_test.cpp`, `rl_pad_size_test.cpp`, `pacing_test.cpp` |
 | Hardware tests | `tests/integration_tests/noctx/`: `kNoCtxPacingLateMaxNs` in `strategies/st20p_strategies.hpp`, `testcases/st20p_vrx_margin_tests.cpp` |
 
 Terms and the chapter that defines each: aim 4, anchor 6, batch 19, bucket 6 and 12, builder 3, catch-up 19, check 1 and check 2 9, delay 5, doorbell 5, drain end 12, drain slot 1, fine trim 13, gap 14, hold 7, kept 7, late entry 17, launch bound 15, launch share 7, lead 9, limit 7 and 15, packet 0 3,

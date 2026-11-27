@@ -23,7 +23,6 @@ constexpr int kPortP = 0;
 constexpr uint64_t kTargetTsc = 100000000;
 constexpr long double kBurstBytes = 2048;
 constexpr int kRoundCap = 100000;
-constexpr uint16_t kPadSize = 1262;          /* the harness's NORMAL pad */
 constexpr long double kSpecNs = 10000;       /* the 0..+10 us launch budget */
 constexpr long double kGridLateMaxNs = 4000; /* ST_TX_VIDEO_RL_GRID_LATE_MAX_NS */
 
@@ -57,10 +56,13 @@ class St20TxRlAbsorb : public ::testing::Test {
     vrx_ = ut_txv_pacing_vrx(txv);
     tr_offset_ = ut_txv_pacing_tr_offset(txv);
     pad_interval_ = ut_txv_pad_interval(txv);
+    normal_ = ut_txv_normal_size(txv);
+    pad_size_ = ut_txv_rl_pad_size(txv, kPortP);
     ut_txv_destroy(txv);
     refill_ = kBurstBytes * 1e9L / bps_;
     aim_ = credit_ - refill_;
-    fine_ = p_ * ST_TX_VIDEO_RL_TRIM_FINE / kPadSize;
+    fine_ = p_ * ST_TX_VIDEO_RL_TRIM_FINE / pad_size_;
+    pkt_ = st_tx_video_rl_pad_ns(p_, pad_size_, normal_);
   }
 
   /* packet 0's launch past its target: the first pad burst costs first_ns before its
@@ -72,6 +74,7 @@ class St20TxRlAbsorb : public ::testing::Test {
     ut_trs_set_warm_pkts_cap(ctx, warm_pkts_);
     ut_trs_set_drain(ctx, kPortP, p_);
     ut_trs_set_credit(ctx, kPortP, credit_);
+    EXPECT_EQ(0, ut_trs_set_pad_sizes(ctx, normal_, pad_size_));
     ut_trs_set_absorb(ctx, kPortP, absorb_);
     ut_trs_set_shaper_bucket(ctx, kPortP, refill_);
     ut_trs_set_mock_tsc_script(ctx, &now, 1);
@@ -87,8 +90,10 @@ class St20TxRlAbsorb : public ::testing::Test {
     return late;
   }
 
-  long double p_ = 0, credit_ = 0, absorb_ = 0, trs_ = 0, refill_ = 0, aim_ = 0,
-              fine_ = 0;
+  /* the pre-arm pad's drain, and the NORMAL pkt's */
+  long double p_ = 0, pkt_ = 0;
+  long double credit_ = 0, absorb_ = 0, trs_ = 0, refill_ = 0, aim_ = 0, fine_ = 0;
+  uint16_t normal_ = 0, pad_size_ = 0;
   long double tr_offset_ = 0;
   float pad_interval_ = 0;
   uint64_t bps_ = 0;
@@ -118,7 +123,7 @@ TEST_F(St20TxRlAbsorb, AbsorbedLaunchKeepsVrx) {
         const long double tpr0 = kTargetTsc + vrx_ * trs_ - snap;
         const long double launch = kTargetTsc + aim_ + fine_ + absorb_;
         const int pkts = (int)(4 * pad_interval_);
-        EXPECT_GE(ut_rl_vrx(launch, tpr0, trs_, p_, pad_interval_, pkts, 1), 0) << what;
+        EXPECT_GE(ut_rl_vrx(launch, tpr0, trs_, pkt_, pad_interval_, pkts, 1), 0) << what;
         if (user_ts) {
           EXPECT_GE(absorb_, snapped) << what;
         } else {
@@ -136,7 +141,7 @@ TEST_F(St20TxRlAbsorb, StalledBurstKeepsPacket0WithinTheLaunchBudget) {
   for (const Fmt& f : {Fmt{"1080p25", 1920, 1080, ST_FPS_P25}, Fmt{"720p59", 1280, 720},
                        Fmt{"1080p59", 1920, 1080}, Fmt{"2160p59", 3840, 2160}}) {
     ASSERT_NO_FATAL_FAILURE(Plan(f, true));
-    const long double timeslot = st_tx_video_rl_timeslot_tokens(bps_) * p_ / kPadSize;
+    const long double timeslot = st_tx_video_rl_timeslot_tokens(bps_) * p_ / pad_size_;
     for (uint64_t first = ut_trs_rl_stall_ns() + 500; first <= kSpecNs; first += 500)
       for (uint64_t others : {250, 12000}) {
         const long double late = Late(first, others);

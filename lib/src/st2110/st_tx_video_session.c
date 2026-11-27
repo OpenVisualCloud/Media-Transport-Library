@@ -454,7 +454,7 @@ static void tv_set_measured_pad_interval(struct st_tx_video_session_impl* s,
   tv_train_mix(s, &mix);
   s->pacing.pad_interval = pad_interval;
   /* the shaper drains a pad by its bytes: training measured the mean of a frame's pads,
-   * the pre-arm queues NORMAL ones */
+   * this is the NORMAL one's */
   s->rl_plan[s_port].pad_ns = s->pacing.trs * pad_interval / (pad_interval + 1) *
                               mix.normal * mix.pkts / mix.bytes;
 }
@@ -533,7 +533,8 @@ static long double tv_rl_sawtooth_ns(struct st_tx_video_session_impl* s,
 static void tv_rl_plan_init(struct mtl_main_impl* impl,
                             struct st_tx_video_session_impl* s) {
   struct st_tx_video_pacing* pacing = &s->pacing;
-  uint16_t pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+  uint32_t normal = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+  uint16_t pad_size = st_tx_video_rl_pad_size(normal);
   int idx = s->idx;
   long double snap_loss = tv_snap_loss_ns(s);
   /* Packet j must reach the receiver by its drain slot, vrx trs after its place on the
@@ -550,8 +551,11 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
     bool armed = pacing->warm_pkts && s->pacing_way[i] == ST21_TX_PACING_WAY_RL &&
                  plan->pad_ns && burst_size && bps &&
                  s->trim_pad[i][ST_TX_VIDEO_RL_TRIM_PAD_COARSE];
+    /* the in-frame pad is NORMAL, the pre-arm's drains by its own bytes */
+    long double normal_ns = plan->pad_ns;
 
     if (armed) {
+      plan->pad_ns = st_tx_video_rl_pad_ns(normal_ns, normal, pad_size);
       /* the timeslot grid releases packet 0 up to a timeslot early: aim one late */
       long double aim = st_tx_video_rl_tokens(bps) * plan->pad_ns / pad_size;
       long double timeslot =
@@ -563,7 +567,7 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
        * takes packet 0 a fine trim and two aims late, its pads' and the timeslot's. The
        * rest of the slot may go to a stalled burst, or to what a late entry's tail cannot
        * cut, within what the grid and the cut leave of the launch budget. */
-      long double late = tv_rl_sawtooth_ns(s, plan->pad_ns);
+      long double late = tv_rl_sawtooth_ns(s, normal_ns);
       long double fine = plan->pad_ns * ST_TX_VIDEO_RL_TRIM_FINE / pad_size;
       long double lead = slot - late - 2 * aim - fine;
       plan->absorb_ns =
@@ -596,7 +600,7 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
     if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL && pacing->vrx &&
         s->s_type != MT_ST22_HANDLE_TX_VIDEO) {
       plan->vrx_budget_ns = RTE_MAX(
-          0, (int64_t)(slot - tv_rl_sawtooth_ns(s, armed ? plan->pad_ns : pacing->trs)));
+          0, (int64_t)(slot - tv_rl_sawtooth_ns(s, armed ? normal_ns : pacing->trs)));
       if (!plan->vrx_budget_ns)
         warn("%s[%02d], port %d vrx %u leaves no VRX budget, VRX not judged\n", __func__,
              idx, i, pacing->vrx);
@@ -615,12 +619,13 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
              __func__, idx, i);
       continue;
     }
-    plan->pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+    plan->pad_size = pad_size;
     plan->trim_pads = st_tx_video_rl_trim_pads(plan->pad_size);
     plan->armed = true;
     info("%s[%02d], port %d rl plan, pad_ns %Lf bucket_ns %Lf burst size %u bps %" PRIu64
-         "\n",
-         __func__, idx, i, plan->pad_ns, plan->bucket_ns, burst_size, bps);
+         " pad_size %u\n",
+         __func__, idx, i, plan->pad_ns, plan->bucket_ns, burst_size, bps,
+         plan->pad_size);
   }
 }
 
@@ -3686,26 +3691,36 @@ static int tv_uinit_hw(struct st_tx_video_session_impl* s) {
         s->trim_pad[i][j] = NULL;
       }
     }
+    if (s->pre_arm_pad[i]) {
+      rte_pktmbuf_free(s->pre_arm_pad[i]);
+      s->pre_arm_pad[i] = NULL;
+    }
   }
 
   return 0;
 }
 
-/* the pre-arm's cut pads, the NORMAL pad less ST_TX_VIDEO_RL_TRIM_COARSE and _FINE bytes,
- * only on an RL port whose NORMAL pkt is still a frame 64 bytes short */
+/* the pre-arm's pads: an uncut one where it is longer than the NORMAL pad, and the cut
+ * ones, ST_TX_VIDEO_RL_TRIM_COARSE and _FINE bytes shorter; only on an RL port whose
+ * NORMAL pkt is still a frame 64 bytes short */
 static int tv_init_trim_pads(struct mtl_main_impl* impl,
                              struct st_tx_video_session_impl* s, int i,
                              enum mtl_port port, struct rte_mempool* pool) {
   const uint16_t trims[ST_TX_VIDEO_RL_TRIM_PAD_MAX] = {ST_TX_VIDEO_RL_TRIM_COARSE,
                                                        ST_TX_VIDEO_RL_TRIM_FINE};
   uint32_t normal = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+  uint16_t size = st_tx_video_rl_pad_size(normal);
 
   if (s->pacing_way[i] != ST21_TX_PACING_WAY_RL ||
       normal < ST_TX_VIDEO_RL_TRIM_COARSE + RTE_ETHER_MIN_LEN)
     return 0;
+  if (size != normal) {
+    s->pre_arm_pad[i] = mt_build_pad(impl, pool, port, RTE_ETHER_TYPE_IPV4, size);
+    if (!s->pre_arm_pad[i]) return -ENOMEM;
+  }
   for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX; j++) {
     s->trim_pad[i][j] =
-        mt_build_pad(impl, pool, port, RTE_ETHER_TYPE_IPV4, normal - trims[j]);
+        mt_build_pad(impl, pool, port, RTE_ETHER_TYPE_IPV4, (uint16_t)(size - trims[j]));
     if (!s->trim_pad[i][j]) return -ENOMEM;
   }
   return 0;
@@ -4278,15 +4293,15 @@ static void tv_frames_release(struct st_tx_video_session_impl* s) {
 }
 
 /* Releases every mbuf reference this port still holds in software. Must run before
- * tv_uinit_hw(), which frees and clears s->pad[]: the pad references retained by
- * failed bursts can only be given back while that pointer is still live.
+ * tv_uinit_hw(), which frees and clears s->pad[] and s->pre_arm_pad[]: the pad references
+ * retained by failed bursts can only be given back while those pointers are still live.
  *
  * A chain mbuf may carry an extbuf reference to the frame, so freeing it may run
  * tx_video_frame_release_callback() while the NIC still owns earlier pkts of the
  * frame: a direct chain's only reference is its last pkt, so tv_frames_hold() must run
  * first. tv_uinit_hw() still has to precede tv_free_frames(). */
 static void tv_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s, int i) {
-  struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
+  struct rte_mbuf* pad = s->trs_pad_inflight[i];
 
   if (s->inflight[i][0]) rte_pktmbuf_free_bulk(s->inflight[i], s->bulk);
   if (s->trs_inflight_num[i])
@@ -4295,7 +4310,7 @@ static void tv_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s
   if (s->trs_inflight_num2[i])
     rte_pktmbuf_free_bulk(&s->trs_inflight2[i][s->trs_inflight_idx2[i]],
                           s->trs_inflight_num2[i]);
-  /* every pad that failed to burst kept the reference taken before the attempt */
+  /* every pad that failed to burst holds a reference on the pad it retries as */
   if (pad)
     for (unsigned int j = 0; j < s->trs_pad_inflight_num[i]; j++) rte_pktmbuf_free(pad);
 
